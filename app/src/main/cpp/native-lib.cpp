@@ -1,31 +1,43 @@
 #include <jni.h>
 #include <string>
+#include <mutex>
 #include "AudioEngine.h"
 
-// 全局唯一的音频引擎实例
+// 全局唯一的音频引擎实例和保护它的锁喵！
 static AudioEngine *audioEngine = nullptr;
+static std::mutex engineMutex; 
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_cpu_seamlessloopmobile_MainActivity_startAudioEngine(
         JNIEnv* env,
-        jobject /* this */) {
+        jobject /* this */,
+        jint fd,
+        jlong offset,
+        jlong length) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    
     if (audioEngine == nullptr) {
         audioEngine = new AudioEngine();
     }
-    // 先启动流（这样才能获取实际采样率）
+    
+    // 加载音频数据（通过文件描述符）
+    audioEngine->loadAudioSource(fd, offset, length);
+    // 启动流
     audioEngine->start();
-    // 再加载音频数据
-    audioEngine->loadAudioSource("dummy_path");
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_cpu_seamlessloopmobile_MainActivity_stopAudioEngine(
         JNIEnv* env,
         jobject /* this */) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    
     if (audioEngine != nullptr) {
-        audioEngine->stop();
+        LOGD("Stopping and deleting AudioEngine...");
+        audioEngine->stop(); // 这个方法里有 mStream->close()
         delete audioEngine;
         audioEngine = nullptr;
+        LOGD("AudioEngine deleted successfully.");
     }
 }
 
@@ -35,6 +47,8 @@ Java_com_cpu_seamlessloopmobile_MainActivity_setLoopPoints(
         jobject /* this */,
         jlong startFrame,
         jlong endFrame) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    
     if (audioEngine != nullptr) {
         audioEngine->setLoopPoints(startFrame, endFrame);
     }

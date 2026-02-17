@@ -9,7 +9,8 @@ find_package(oboe REQUIRED CONFIG)
 # 定义我们的动态库
 add_library(${CMAKE_PROJECT_NAME} SHARED
         native-lib.cpp
-        AudioEngine.cpp)
+        AudioEngine.cpp
+        AudioDecoder.cpp)
 
 # 链接库
 target_link_libraries(${CMAKE_PROJECT_NAME}
@@ -18,4 +19,5 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
         
         # 链接系统库
         android
-        log)
+        log
+        mediandk)

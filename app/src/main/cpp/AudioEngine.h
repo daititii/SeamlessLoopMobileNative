@@ -6,6 +6,7 @@
 #include <vector>
 #include <android/log.h>
 #include <cmath>
+#include <mutex>
 #include <atomic>
 
 // 日志宏定义
@@ -18,37 +19,27 @@ public:
     AudioEngine();
     ~AudioEngine();
 
-    // 启动音频流
     bool start();
-
-    // 暂停音频流
     void stop();
-
-    // 设置循环点（采样级）
     void setLoopPoints(int64_t startFrame, int64_t endFrame);
+    void loadAudioSource(int fd, int64_t offset, int64_t length);
 
-    // 加载音频数据（这里暂时简化，后续需要接入解码器）
-    // 目前仅做结构搭建
-    void loadAudioSource(const std::string& filePath);
-
-    // Oboe 回调：当设备需要音频数据时调用
-    oboe::DataCallbackResult onAudioReady(oboe::AudioStream *oboeStream,
-                                          void *audioData,
-                                          int32_t numFrames) override;
-
-    // Oboe 回调：当出现断连等错误时调用
+    oboe::DataCallbackResult onAudioReady(oboe::AudioStream *oboeStream, void *audioData, int32_t numFrames) override;
     void onErrorAfterClose(oboe::AudioStream *oboeStream, oboe::Result error) override;
 
 private:
     std::shared_ptr<oboe::AudioStream> mStream;
+    
+    std::vector<float> mAudioBuffer;
+    std::mutex mBufferMutex; // 用于保护缓冲区的锁喵
+    
     std::atomic<int64_t> mLoopStartFrame {0};
     std::atomic<int64_t> mLoopEndFrame {0};
     std::atomic<int64_t> mCurrentReadFrame {0};
     std::atomic<bool> mIsLooping {false};
     
-    // 简单的 PCM 数据缓存（仅作原型演示，实际应使用环形缓冲或流式解码）
-    std::vector<float> mAudioBuffer; 
-    int32_t mChannelCount = 2; // 默认为立体声
+    std::atomic<int32_t> mChannelCount {2};
+    std::atomic<int32_t> mSampleRate {44100};
 };
 
 #endif //SEAMLESSLOOPMOBILE_AUDIOENGINE_H

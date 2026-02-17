@@ -9,6 +9,10 @@ import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.cpu.seamlessloopmobile.adapter.SongAdapter
 import com.cpu.seamlessloopmobile.databinding.ActivityMainBinding
 import com.cpu.seamlessloopmobile.scanner.AudioScanner
@@ -30,20 +34,45 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupRecyclerView() {
         adapter = SongAdapter(emptyList()) { song ->
-            Toast.makeText(this, "正在使用 Oboe 播放: ${song.displayName}", Toast.LENGTH_SHORT).show()
-            
-            // 停止之前的播放
-            stopAudioEngine()
-            
-            // 启动引擎（目前是播放由于模拟的正弦波）
-            startAudioEngine()
-            
-            // 设置循环点（如果数据库里有的话，现在先设个假的测试一下）
-            // 假设循环点是 1秒 到 5秒 (44100Hz)
-            if (song.loopEnd > 0) {
-                setLoopPoints(song.loopStart, song.loopEnd)
-            } else {
-                setLoopPoints(44100, 44100 * 5)
+            // 弹出提示
+            Toast.makeText(this, "正在为您疯狂解码: ${song.displayName}...", Toast.LENGTH_SHORT).show()
+
+            // 开启后台协程，避免卡死 cpu 大人的 UI
+            lifecycleScope.launch(Dispatchers.IO) {
+                // 停止之前的播放
+                stopAudioEngine()
+                
+                // 使用 ContentResolver 以 FD 方式安全打开音频文件
+                try {
+                    val uri = android.content.ContentUris.withAppendedId(
+                        android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        song.id
+                    )
+                    contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                        val actualLength = if (afd.declaredLength < 0) afd.length else afd.declaredLength
+                        
+                        android.util.Log.d("MainActivity", "Opening FD: ${afd.parcelFileDescriptor.fd}, length: $actualLength")
+                        
+                        // 真正的解码和启动引擎
+                        startAudioEngine(
+                            afd.parcelFileDescriptor.fd,
+                            afd.startOffset,
+                            actualLength
+                        )
+                    }
+
+                    // 设置循环点（如果数据库里有的话）
+                    if (song.loopEnd > 0) {
+                        setLoopPoints(song.loopStart, song.loopEnd)
+                    } 
+                    // 删掉了这里强制 1-5 秒预览的代码喵！
+
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "Failed to open audio FD", e)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "文件解析失败喵 (T_T)", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
         binding.rvSongs.layoutManager = LinearLayoutManager(this)
@@ -80,7 +109,7 @@ class MainActivity : AppCompatActivity() {
 
     // --- JNI 接口 ---
     external fun stringFromJNI(): String
-    external fun startAudioEngine()
+    external fun startAudioEngine(fd: Int, offset: Long, length: Long)
     external fun stopAudioEngine()
     external fun setLoopPoints(start: Long, end: Long)
 

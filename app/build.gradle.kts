@@ -60,4 +60,6 @@ dependencies {
 
     // Google Oboe (高性能音频库)
     implementation("com.google.oboe:oboe:1.9.3")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
 }
