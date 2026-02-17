@@ -5,9 +5,11 @@
 #include <string>
 #include <vector>
 #include <android/log.h>
-#include <cmath>
+#include "AudioDecoder.h"
 #include <mutex>
 #include <atomic>
+#include <thread>
+#include <memory>
 
 // 日志宏定义
 #define LOG_TAG "SeamlessLoopEngine"
@@ -21,17 +23,17 @@ public:
 
     bool start();
     void stop();
-    void setLoopPoints(int64_t startFrame, int64_t endFrame);
     void loadAudioSource(int fd, int64_t offset, int64_t length);
+    void setLoopPoints(int64_t startFrame, int64_t endFrame);
+    void seekTo(int64_t frame);
 
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream *oboeStream, void *audioData, int32_t numFrames) override;
     void onErrorAfterClose(oboe::AudioStream *oboeStream, oboe::Result error) override;
 
 private:
     std::shared_ptr<oboe::AudioStream> mStream;
-    
-    std::vector<float> mAudioBuffer;
-    std::mutex mBufferMutex; // 用于保护缓冲区的锁喵
+    std::unique_ptr<AudioDecoder> mDecoder;
+    std::mutex mDecoderMutex; // 用于保护解码器操作喵
     
     std::atomic<int64_t> mLoopStartFrame {0};
     std::atomic<int64_t> mLoopEndFrame {0};

@@ -1,123 +1,174 @@
 #include "AudioDecoder.h"
+#include <android/log.h>
 #include <unistd.h>
 
 #define LOG_TAG "AudioDecoder"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-#include <unistd.h> // 需要 dup
-#include <fcntl.h>
+AudioDecoder::AudioDecoder() {}
 
-bool AudioDecoder::decode(int fd, int64_t offset, int64_t length,
-                         std::vector<float>& outData, 
-                         int32_t& outSampleRate, 
-                         int32_t& outChannelCount) {
-    
-    // 复制 FD，防止外部过早关闭
-    int dupFd = dup(fd);
-    if (dupFd < 0) {
-        LOGE("Failed to dup FD: %d", fd);
-        return false;
-    }
-    
-    AMediaExtractor* extractor = AMediaExtractor_new();
-    media_status_t status = AMediaExtractor_setDataSourceFd(extractor, dupFd, offset, length);
+AudioDecoder::~AudioDecoder() {
+    close();
+}
+
+bool AudioDecoder::open(int fd, int64_t offset, int64_t length) {
+    close();
+
+    mDupFd = dup(fd);
+    mExtractor = AMediaExtractor_new();
+    media_status_t status = AMediaExtractor_setDataSourceFd(mExtractor, mDupFd, offset, length);
     if (status != AMEDIA_OK) {
-        LOGE("Failed to set data source via FD");
-        AMediaExtractor_delete(extractor);
-        close(dupFd); // 记得关闭复制的 FD
+        LOGE("Failed to set data source");
         return false;
     }
 
-    AMediaCodec* codec = nullptr;
-    AMediaFormat* format = nullptr;
-    int32_t trackCount = AMediaExtractor_getTrackCount(extractor);
-    
-    for (int i = 0; i < trackCount; i++) {
-        format = AMediaExtractor_getTrackFormat(extractor, i);
+    int numTracks = AMediaExtractor_getTrackCount(mExtractor);
+    for (int i = 0; i < numTracks; i++) {
+        AMediaFormat* format = AMediaExtractor_getTrackFormat(mExtractor, i);
         const char* mime;
-        if (!AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime)) continue;
+        AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime);
 
         if (strncmp(mime, "audio/", 6) == 0) {
-            AMediaExtractor_selectTrack(extractor, i);
-            codec = AMediaCodec_createDecoderByType(mime);
-            AMediaCodec_configure(codec, format, nullptr, nullptr, 0);
-            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, &outSampleRate);
-            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &outChannelCount);
-            break;
+            AMediaExtractor_selectTrack(mExtractor, i);
+            mCodec = AMediaCodec_createDecoderByType(mime);
+            AMediaCodec_configure(mCodec, format, nullptr, nullptr, 0);
+            AMediaCodec_start(mCodec);
+
+            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, &mSampleRate);
+            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &mChannelCount);
+            AMediaFormat_getInt64(format, AMEDIAFORMAT_KEY_DURATION, &mDurationUs);
+            
+            mTotalFrames = (mDurationUs / 1000000.0) * mSampleRate;
+            mFormat = format;
+            LOGD("Stream opened: %d Hz, %d channels, %lld frames", mSampleRate, mChannelCount, mTotalFrames);
+            return true;
         }
         AMediaFormat_delete(format);
-        format = nullptr;
     }
 
-    if (!codec) {
-        LOGE("No audio track found in FD: %d", fd);
-        AMediaExtractor_delete(extractor);
-        return false;
-    }
+    return false;
+}
 
-    AMediaCodec_start(codec);
+int32_t AudioDecoder::readSamples(float* targetBuffer, int32_t numSamples) {
+    int32_t samplesRead = 0;
 
-    bool sawInputEOS = false;
-    bool sawOutputEOS = false;
-    const int64_t timeoutUs = 10000;
+    while (samplesRead < numSamples) {
+        // 1. 如果内部缓冲区还有存货，先清仓
+        if (mInternalBufferIdx < mInternalBuffer.size()) {
+            size_t available = mInternalBuffer.size() - mInternalBufferIdx;
+            size_t toCopy = std::min((size_t)(numSamples - samplesRead), available);
+            memcpy(targetBuffer + samplesRead, &mInternalBuffer[mInternalBufferIdx], toCopy * sizeof(float));
+            samplesRead += toCopy;
+            mInternalBufferIdx += toCopy;
+        } else {
+            // Buffer 空了，清掉它准备下一块
+            mInternalBuffer.clear();
+            mInternalBufferIdx = 0;
 
-    outData.clear();
-    
-    while (!sawOutputEOS) {
-        if (!sawInputEOS) {
-            ssize_t bufIdx = AMediaCodec_dequeueInputBuffer(codec, timeoutUs);
-            if (bufIdx >= 0) {
-                size_t bufSize;
-                uint8_t* buf = AMediaCodec_getInputBuffer(codec, bufIdx, &bufSize);
-                ssize_t sampleSize = AMediaExtractor_readSampleData(extractor, buf, bufSize);
-                
-                if (sampleSize < 0) {
-                    sawInputEOS = true;
-                    AMediaCodec_queueInputBuffer(codec, bufIdx, 0, 0, 0, AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
-                } else {
-                    int64_t presentationTimeUs = AMediaExtractor_getSampleTime(extractor);
-                    AMediaCodec_queueInputBuffer(codec, bufIdx, 0, sampleSize, presentationTimeUs, 0);
-                    AMediaExtractor_advance(extractor);
-                }
-            }
-        }
-
-        AMediaCodecBufferInfo info;
-        ssize_t status = AMediaCodec_dequeueOutputBuffer(codec, &info, timeoutUs);
-        if (status >= 0) {
-            if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) {
-                sawOutputEOS = true;
-            }
-
-            size_t bufSize;
-            uint8_t* buf = AMediaCodec_getOutputBuffer(codec, status, &bufSize);
+            // 2. 驱动解码器解码下一块数据
+            if (isFinished()) break; // 真的结束了喵！
             
-            // 假设解码出来的是 16-bit PCM (MediaCodec 默认)
-            int16_t* pcmData = reinterpret_cast<int16_t*>(buf + info.offset);
-            size_t sampleCount = info.size / sizeof(int16_t);
-            
-            for (size_t i = 0; i < sampleCount; i++) {
-                // 转换为 Float 并归一化到 [-1.0, 1.0]
-                outData.push_back(pcmData[i] / 32768.0f);
+            // 尝试解码。如果返回 false (TryAgainLater)，我们还是不能退出循环，
+            // 但如果一直失败会导致 Oboe 回调超时，所以这里限制一下重试次数或者直接 break 出去
+            // 让上层函数决定是 Underrun 还是 Finished
+            if (!decodeNextBlock()) {
+                 break; // 暂时解不出来，先返回已经读到的部分
             }
-
-            AMediaCodec_releaseOutputBuffer(codec, status, false);
-        } else if (status == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
-            auto newFormat = AMediaCodec_getOutputFormat(codec);
-            AMediaFormat_getInt32(newFormat, AMEDIAFORMAT_KEY_SAMPLE_RATE, &outSampleRate);
-            AMediaFormat_getInt32(newFormat, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &outChannelCount);
-            LOGD("Format changed: SampleRate %d, Channels %d", outSampleRate, outChannelCount);
-            AMediaFormat_delete(newFormat);
         }
     }
 
-    AMediaCodec_stop(codec);
-    AMediaCodec_delete(codec);
-    AMediaFormat_delete(format);
-    AMediaExtractor_delete(extractor);
-    close(dupFd); // 释放 dup 的 FD
+    return samplesRead;
+}
 
-    LOGD("Decoding finished. Total samples: %zu", outData.size());
+bool AudioDecoder::decodeNextBlock() {
+    if (mSawOutputEOS) return false;
+
+    // A. 填充输入缓冲区
+    if (!mSawInputEOS) {
+        ssize_t inputBufIdx = AMediaCodec_dequeueInputBuffer(mCodec, 2000);
+        if (inputBufIdx >= 0) {
+            size_t inputBufSize;
+            uint8_t* inputBuf = AMediaCodec_getInputBuffer(mCodec, inputBufIdx, &inputBufSize);
+            
+            ssize_t sampleSize = AMediaExtractor_readSampleData(mExtractor, inputBuf, inputBufSize);
+            if (sampleSize < 0) {
+                mSawInputEOS = true;
+                AMediaCodec_queueInputBuffer(mCodec, inputBufIdx, 0, 0, 0, AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
+            } else {
+                int64_t presentationTimeUs = AMediaExtractor_getSampleTime(mExtractor);
+                AMediaCodec_queueInputBuffer(mCodec, inputBufIdx, 0, sampleSize, presentationTimeUs, 0);
+                AMediaExtractor_advance(mExtractor);
+            }
+        }
+    }
+
+    // B. 获取输出缓冲区
+    AMediaCodecBufferInfo info;
+    ssize_t outputBufIdx = AMediaCodec_dequeueOutputBuffer(mCodec, &info, 2000);
+    if (outputBufIdx >= 0) {
+        if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) {
+            mSawOutputEOS = true;
+        }
+
+        size_t outputBufSize;
+        uint8_t* outputBuf = AMediaCodec_getOutputBuffer(mCodec, outputBufIdx, &outputBufSize);
+        
+        // 把 16-bit PCM (MediaCodec默认) 转换成 float
+        int16_t* pcmData = reinterpret_cast<int16_t*>(outputBuf + info.offset);
+        size_t numPoints = info.size / sizeof(int16_t);
+        
+        mInternalBuffer.resize(numPoints);
+        for (size_t i = 0; i < numPoints; i++) {
+            mInternalBuffer[i] = pcmData[i] / 32768.0f;
+        }
+
+        AMediaCodec_releaseOutputBuffer(mCodec, outputBufIdx, false);
+        return true;
+    } else if (outputBufIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
+        auto format = AMediaCodec_getOutputFormat(mCodec);
+        AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, &mSampleRate);
+        AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &mChannelCount);
+        AMediaFormat_delete(format);
+        return decodeNextBlock(); // 递归解下一块
+    }
+
+    return false;
+}
+
+bool AudioDecoder::seekToFrame(int64_t frameIndex) {
+    int64_t seekTimeUs = (frameIndex * 1000000LL) / mSampleRate;
+    AMediaExtractor_seekTo(mExtractor, seekTimeUs, AMEDIAEXTRACTOR_SEEK_CLOSEST_SYNC);
+    AMediaCodec_flush(mCodec);
+    mInternalBuffer.clear();
+    mInternalBufferIdx = 0;
+    mSawInputEOS = false;
+    mSawOutputEOS = false;
     return true;
+}
+
+bool AudioDecoder::isFinished() const {
+    return mSawOutputEOS && mInternalBuffer.empty();
+}
+
+void AudioDecoder::close() {
+    if (mCodec) {
+        AMediaCodec_stop(mCodec);
+        AMediaCodec_delete(mCodec);
+        mCodec = nullptr;
+    }
+    if (mExtractor) {
+        AMediaExtractor_delete(mExtractor);
+        mExtractor = nullptr;
+    }
+    if (mFormat) {
+        AMediaFormat_delete(mFormat);
+        mFormat = nullptr;
+    }
+    if (mDupFd != -1) {
+        ::close(mDupFd);
+        mDupFd = -1;
+    }
+    mInternalBuffer.clear();
+    mSawInputEOS = mSawOutputEOS = false;
 }
