@@ -26,6 +26,9 @@ public:
     void loadAudioSource(int fd, int64_t offset, int64_t length);
     void setLoopPoints(int64_t startFrame, int64_t endFrame);
     void seekTo(int64_t frame);
+    int64_t getCurrentPosition();
+    int64_t getDuration();
+    int32_t getSampleRate();
 
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream *oboeStream, void *audioData, int32_t numFrames) override;
     void onErrorAfterClose(oboe::AudioStream *oboeStream, oboe::Result error) override;

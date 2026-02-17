@@ -41,6 +41,7 @@ private:
     int32_t mChannelCount = 0;
     int64_t mTotalFrames = 0;
     int64_t mDurationUs = 0;
+    int64_t mSeekTargetFrame = -1; // 新增：记录我们到底想跳到哪喵！
 
     int mDupFd = -1;
 

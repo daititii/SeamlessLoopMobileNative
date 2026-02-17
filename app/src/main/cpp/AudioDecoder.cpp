@@ -41,7 +41,7 @@ bool AudioDecoder::open(int fd, int64_t offset, int64_t length) {
             
             mTotalFrames = (mDurationUs / 1000000.0) * mSampleRate;
             mFormat = format;
-            LOGD("Stream opened: %d Hz, %d channels, %lld frames", mSampleRate, mChannelCount, mTotalFrames);
+            LOGD("Stream opened: %d Hz, %d channels, %lld frames", mSampleRate, mChannelCount, (long long)mTotalFrames);
             return true;
         }
         AMediaFormat_delete(format);
@@ -67,14 +67,19 @@ int32_t AudioDecoder::readSamples(float* targetBuffer, int32_t numSamples) {
             mInternalBufferIdx = 0;
 
             // 2. 驱动解码器解码下一块数据
-            if (isFinished()) break; // 真的结束了喵！
+            if (isFinished()) break; 
             
-            // 尝试解码。如果返回 false (TryAgainLater)，我们还是不能退出循环，
-            // 但如果一直失败会导致 Oboe 回调超时，所以这里限制一下重试次数或者直接 break 出去
-            // 让上层函数决定是 Underrun 还是 Finished
-            if (!decodeNextBlock()) {
-                 break; // 暂时解不出来，先返回已经读到的部分
+            // 为了解决 Loop 时的 Gap，我们在 buffer 为空时尝试多次解码（预热）喵！
+            bool gotData = false;
+            for (int retry = 0; retry < 10; retry++) {
+                if (decodeNextBlock()) {
+                    gotData = true;
+                    break;
+                }
+                if (isFinished()) break;
             }
+
+            if (!gotData) break; 
         }
     }
 
@@ -114,17 +119,44 @@ bool AudioDecoder::decodeNextBlock() {
         size_t outputBufSize;
         uint8_t* outputBuf = AMediaCodec_getOutputBuffer(mCodec, outputBufIdx, &outputBufSize);
         
-        // 把 16-bit PCM (MediaCodec默认) 转换成 float
+        // 把 16-bit PCM 转换成 float
         int16_t* pcmData = reinterpret_cast<int16_t*>(outputBuf + info.offset);
         size_t numPoints = info.size / sizeof(int16_t);
+        size_t numFrames = numPoints / mChannelCount;
         
-        mInternalBuffer.resize(numPoints);
-        for (size_t i = 0; i < numPoints; i++) {
-            mInternalBuffer[i] = pcmData[i] / 32768.0f;
+        // 计算这个 buffer 的起始帧位置喵
+        int64_t bufferStartFrame = (info.presentationTimeUs * mSampleRate) / 1000000LL;
+        int64_t skipFrames = 0;
+
+        // 如果我们正在寻找精准跳转点喵！
+        if (mSeekTargetFrame >= 0) {
+            if (bufferStartFrame + (int64_t)numFrames <= mSeekTargetFrame) {
+                // 这一整块都在目标点之前，直接扔掉！
+                AMediaCodec_releaseOutputBuffer(mCodec, outputBufIdx, false);
+                return decodeNextBlock(); 
+            } else if (bufferStartFrame < mSeekTargetFrame) {
+                // 目标点就在这一块里，切掉前面的部分！
+                skipFrames = mSeekTargetFrame - bufferStartFrame;
+                mSeekTargetFrame = -1; // 找到了喵！
+            } else {
+                // 已经跳过了？说明之前的同步点找得有误差
+                mSeekTargetFrame = -1;
+            }
         }
 
-        AMediaCodec_releaseOutputBuffer(mCodec, outputBufIdx, false);
-        return true;
+        size_t startPoint = skipFrames * mChannelCount;
+        if (startPoint < numPoints) {
+            size_t validPoints = numPoints - startPoint;
+            mInternalBuffer.resize(validPoints);
+            for (size_t i = 0; i < validPoints; i++) {
+                mInternalBuffer[i] = pcmData[startPoint + i] / 32768.0f;
+            }
+            AMediaCodec_releaseOutputBuffer(mCodec, outputBufIdx, false);
+            return true;
+        } else {
+            AMediaCodec_releaseOutputBuffer(mCodec, outputBufIdx, false);
+            return decodeNextBlock();
+        }
     } else if (outputBufIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
         auto format = AMediaCodec_getOutputFormat(mCodec);
         AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, &mSampleRate);
@@ -137,9 +169,13 @@ bool AudioDecoder::decodeNextBlock() {
 }
 
 bool AudioDecoder::seekToFrame(int64_t frameIndex) {
+    mSeekTargetFrame = frameIndex;
     int64_t seekTimeUs = (frameIndex * 1000000LL) / mSampleRate;
-    AMediaExtractor_seekTo(mExtractor, seekTimeUs, AMEDIAEXTRACTOR_SEEK_CLOSEST_SYNC);
+    
+    // 使用 PREVIOUS_SYNC，我们要确保跳到目标点之前，然后靠解析丢弃多余帧来达到精准位置喵！
+    AMediaExtractor_seekTo(mExtractor, seekTimeUs, AMEDIAEXTRACTOR_SEEK_PREVIOUS_SYNC);
     AMediaCodec_flush(mCodec);
+    
     mInternalBuffer.clear();
     mInternalBufferIdx = 0;
     mSawInputEOS = false;

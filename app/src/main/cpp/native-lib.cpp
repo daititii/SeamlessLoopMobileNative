@@ -54,6 +54,50 @@ Java_com_cpu_seamlessloopmobile_MainActivity_setLoopPoints(
     }
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_cpu_seamlessloopmobile_MainActivity_seekTo(
+        JNIEnv* env,
+        jobject /* this */,
+        jlong frame) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    
+    if (audioEngine != nullptr) {
+        audioEngine->seekTo(frame);
+    }
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_cpu_seamlessloopmobile_MainActivity_getCurrentPosition(
+        JNIEnv* env,
+        jobject /* this */) {
+    // 读操作一般不需要加锁，因为 atomic 很安全，但也取决于具体场景
+    // 这里为了不阻塞音频线程太久，我们不加锁直接读 atomic
+    if (audioEngine != nullptr) {
+        return audioEngine->getCurrentPosition();
+    }
+    return 0;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_cpu_seamlessloopmobile_MainActivity_getDuration(
+        JNIEnv* env,
+        jobject /* this */) {
+    if (audioEngine != nullptr) {
+        return audioEngine->getDuration();
+    }
+    return 0;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_cpu_seamlessloopmobile_MainActivity_getSampleRate(
+        JNIEnv* env,
+        jobject /* this */) {
+    if (audioEngine != nullptr) {
+        return (jint)audioEngine->getSampleRate();
+    }
+    return 44100;
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_cpu_seamlessloopmobile_MainActivity_stringFromJNI(
         JNIEnv* env,

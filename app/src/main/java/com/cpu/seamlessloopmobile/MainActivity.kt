@@ -21,6 +21,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: SongAdapter
+    private var updateProgressJob: kotlinx.coroutines.Job? = null
+    private var isUserSeeking = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,7 +31,71 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupRecyclerView()
+        setupSeekBar()
         checkPermissionsAndScan()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        updateProgressJob?.cancel()
+        stopAudioEngine()
+    }
+
+    private fun setupSeekBar() {
+        binding.seekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    val sampleRate = getSampleRate().toLong()
+                    binding.tvCurrentTime.text = formatTime(progress.toLong(), sampleRate)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {
+                isUserSeeking = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
+                seekBar?.let {
+                    // 调用 JNI seekTo
+                    seekTo(it.progress.toLong())
+                    isUserSeeking = false
+                }
+            }
+        })
+    }
+
+    private fun startProgressUpdater() {
+        updateProgressJob?.cancel()
+        updateProgressJob = lifecycleScope.launch(Dispatchers.Main) {
+            while (true) {
+                if (!isUserSeeking) {
+                    val currentFrame = getCurrentPosition()
+                    val totalFrames = getDuration()
+                    val sampleRate = getSampleRate().toLong()
+                    
+                    if (totalFrames > 0) {
+                        // 防止 SeekBar 溢出（Int.MAX_VALUE 限制）
+                        val maxValue = totalFrames.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                        val progressValue = currentFrame.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                        
+                        binding.seekBar.max = maxValue
+                        binding.seekBar.progress = progressValue
+                        
+                        binding.tvCurrentTime.text = formatTime(currentFrame, sampleRate)
+                        binding.tvTotalTime.text = formatTime(totalFrames, sampleRate)
+                    }
+                }
+                kotlinx.coroutines.delay(50) // 20 FPS refresh rate
+            }
+        }
+    }
+
+    private fun formatTime(frames: Long, sampleRate: Long): String {
+        val safeSampleRate = if (sampleRate > 0) sampleRate else 44100L
+        val totalSeconds = frames / safeSampleRate
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return String.format("%02d:%02d", minutes, seconds)
     }
 
     private fun setupRecyclerView() {
@@ -40,6 +106,7 @@ class MainActivity : AppCompatActivity() {
             // 开启后台协程，避免卡死 cpu 大人的 UI
             lifecycleScope.launch(Dispatchers.IO) {
                 // 停止之前的播放
+                updateProgressJob?.cancel()
                 stopAudioEngine()
                 
                 // 使用 ContentResolver 以 FD 方式安全打开音频文件
@@ -65,7 +132,11 @@ class MainActivity : AppCompatActivity() {
                     if (song.loopEnd > 0) {
                         setLoopPoints(song.loopStart, song.loopEnd)
                     } 
-                    // 删掉了这里强制 1-5 秒预览的代码喵！
+                    
+                    // 启动 UI 更新
+                    withContext(Dispatchers.Main) {
+                        startProgressUpdater()
+                    }
 
                 } catch (e: Exception) {
                     android.util.Log.e("MainActivity", "Failed to open audio FD", e)
@@ -112,6 +183,10 @@ class MainActivity : AppCompatActivity() {
     external fun startAudioEngine(fd: Int, offset: Long, length: Long)
     external fun stopAudioEngine()
     external fun setLoopPoints(start: Long, end: Long)
+    external fun seekTo(frame: Long)
+    external fun getCurrentPosition(): Long
+    external fun getDuration(): Long
+    external fun getSampleRate(): Int
 
     companion object {
         private const val REQUEST_CODE_PERMISSION = 1001

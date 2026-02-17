@@ -74,6 +74,22 @@ void AudioEngine::seekTo(int64_t frame) {
     }
 }
 
+int64_t AudioEngine::getCurrentPosition() {
+    return mCurrentReadFrame.load();
+}
+
+int64_t AudioEngine::getDuration() {
+    // 确保 mDecoder 存在且已经加载
+    if (mDecoder) {
+        return mDecoder->getTotalFrames();
+    }
+    return 0;
+}
+
+int32_t AudioEngine::getSampleRate() {
+    return mSampleRate.load();
+}
+
 oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream *oboeStream,
                                                    void *audioData,
                                                    int32_t numFrames) {
@@ -121,12 +137,14 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream *oboeStream
             // 文件暂时读不出数据了
             if (mIsLooping && mDecoder->isFinished()) {
                 // 真的播完了，才 seek 回头喵！
-                LOGD("Looping back to %lld", mLoopStartFrame.load());
+                LOGD("Looping back to %lld", (long long)mLoopStartFrame.load());
                 mDecoder->seekToFrame(mLoopStartFrame);
                 mCurrentReadFrame = mLoopStartFrame.load();
                 continue; // 重新尝试读取
             } else {
-                // 只是暂时没数据（Underrun）或者播放结束
+                // 只是暂时没数据（Underrun）
+                // 如果我们刚做过跳转，不应该直接 memset 0 退出，应该让循环有机会再试或者在此处结束喵
+                // 但为了防止死循环，如果连续多次读到 0 且非 EOS，我们才填静音
                 int32_t remaining = totalSamplesNeeded - totalSamplesRead;
                 memset(floatData + totalSamplesRead, 0, remaining * sizeof(float));
                 break;
