@@ -19,6 +19,7 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += "-std=c++17"
+                arguments += "-DANDROID_STL=c++_shared"
             }
         }
     }
@@ -44,6 +45,7 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        prefab = true
     }
 }
 
@@ -55,4 +57,7 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+
+    // Google Oboe (高性能音频库)
+    implementation("com.google.oboe:oboe:1.9.3")
 }
