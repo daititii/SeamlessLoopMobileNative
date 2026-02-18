@@ -23,6 +23,8 @@ public:
 
     bool start();
     void stop();
+    void pause();
+    void resume();
     void loadAudioSource(int fd, int64_t offset, int64_t length);
     void setLoopPoints(int64_t startFrame, int64_t endFrame);
     void seekTo(int64_t frame);

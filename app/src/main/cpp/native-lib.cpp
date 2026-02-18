@@ -42,6 +42,28 @@ Java_com_cpu_seamlessloopmobile_MainActivity_stopAudioEngine(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_cpu_seamlessloopmobile_MainActivity_pauseAudioEngine(
+        JNIEnv* env,
+        jobject /* this */) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    
+    if (audioEngine != nullptr) {
+        audioEngine->pause();
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_cpu_seamlessloopmobile_MainActivity_resumeAudioEngine(
+        JNIEnv* env,
+        jobject /* this */) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    
+    if (audioEngine != nullptr) {
+        audioEngine->resume();
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_cpu_seamlessloopmobile_MainActivity_setLoopPoints(
         JNIEnv* env,
         jobject /* this */,

@@ -47,6 +47,18 @@ void AudioEngine::stop() {
     }
 }
 
+void AudioEngine::pause() {
+    if (mStream) {
+        mStream->requestPause();
+    }
+}
+
+void AudioEngine::resume() {
+    if (mStream) {
+        mStream->requestStart();
+    }
+}
+
 void AudioEngine::loadAudioSource(int fd, int64_t offset, int64_t length) {
     std::lock_guard<std::mutex> lock(mDecoderMutex);
     if (mDecoder->open(fd, offset, length)) {

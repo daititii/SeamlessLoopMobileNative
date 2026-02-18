@@ -23,10 +23,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var songAdapter: SongAdapter
     private lateinit var folderAdapter: com.cpu.seamlessloopmobile.adapter.FolderAdapter
     
-    // 状态管理
     private var allSongs: List<com.cpu.seamlessloopmobile.model.Song> = emptyList()
     private var folders: List<com.cpu.seamlessloopmobile.model.Folder> = emptyList()
     private var isShowingFolders = true
+    
+    // 播放状态管理
+    private var currentPlaylist: List<com.cpu.seamlessloopmobile.model.Song> = emptyList()
+    private var currentSongIndex: Int = -1
+    private var isPlaying = false
     
     private var updateProgressJob: kotlinx.coroutines.Job? = null
     private var isUserSeeking = false
@@ -39,6 +43,7 @@ class MainActivity : AppCompatActivity() {
 
         setupRecyclerView()
         setupSeekBar()
+        setupPlaybackControls()
         checkPermissionsAndScan()
     }
 
@@ -69,6 +74,37 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    private fun setupPlaybackControls() {
+        // 播放/暂停按钮
+        binding.btnPlayPause.setOnClickListener {
+            if (isPlaying) {
+                pauseAudioEngine()
+                isPlaying = false
+                binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+            } else {
+                resumeAudioEngine()
+                isPlaying = true
+                binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+            }
+        }
+
+        // 上一首
+        binding.btnPrevious.setOnClickListener {
+            if (currentPlaylist.isNotEmpty() && currentSongIndex > 0) {
+                currentSongIndex--
+                playSong(currentPlaylist[currentSongIndex])
+            }
+        }
+
+        // 下一首
+        binding.btnNext.setOnClickListener {
+            if (currentPlaylist.isNotEmpty() && currentSongIndex < currentPlaylist.size - 1) {
+                currentSongIndex++
+                playSong(currentPlaylist[currentSongIndex])
+            }
+        }
     }
 
     private fun startProgressUpdater() {
@@ -123,6 +159,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openFolder(folder: com.cpu.seamlessloopmobile.model.Folder) {
         isShowingFolders = false
+        currentPlaylist = folder.songs // 记录当前播放列表
         songAdapter.updateSongs(folder.songs)
         binding.rvSongs.adapter = songAdapter
         
@@ -143,6 +180,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun playSong(song: com.cpu.seamlessloopmobile.model.Song) {
+        // 更新当前播放索引
+        currentSongIndex = currentPlaylist.indexOf(song)
+        
         // 弹出提示
         Toast.makeText(this, "正在为您疯狂解码: ${song.displayName}...", Toast.LENGTH_SHORT).show()
 
@@ -178,6 +218,8 @@ class MainActivity : AppCompatActivity() {
                 
                 // 启动 UI 更新
                 withContext(Dispatchers.Main) {
+                    isPlaying = true
+                    binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
                     startProgressUpdater()
                 }
 
@@ -273,6 +315,8 @@ class MainActivity : AppCompatActivity() {
     external fun getCurrentPosition(): Long
     external fun getDuration(): Long
     external fun getSampleRate(): Int
+    external fun pauseAudioEngine()
+    external fun resumeAudioEngine()
 
     companion object {
         private const val REQUEST_CODE_PERMISSION = 1001
