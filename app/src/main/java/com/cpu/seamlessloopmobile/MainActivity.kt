@@ -20,7 +20,14 @@ import com.cpu.seamlessloopmobile.scanner.AudioScanner
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private lateinit var adapter: SongAdapter
+    private lateinit var songAdapter: SongAdapter
+    private lateinit var folderAdapter: com.cpu.seamlessloopmobile.adapter.FolderAdapter
+    
+    // 状态管理
+    private var allSongs: List<com.cpu.seamlessloopmobile.model.Song> = emptyList()
+    private var folders: List<com.cpu.seamlessloopmobile.model.Folder> = emptyList()
+    private var isShowingFolders = true
+    
     private var updateProgressJob: kotlinx.coroutines.Job? = null
     private var isUserSeeking = false
 
@@ -99,55 +106,88 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView() {
-        adapter = SongAdapter(emptyList()) { song ->
-            // 弹出提示
-            Toast.makeText(this, "正在为您疯狂解码: ${song.displayName}...", Toast.LENGTH_SHORT).show()
+        // 初始化歌曲列表适配器
+        songAdapter = SongAdapter(emptyList()) { song ->
+            playSong(song)
+        }
+        
+        // 初始化文件夹列表适配器
+        folderAdapter = com.cpu.seamlessloopmobile.adapter.FolderAdapter(emptyList()) { folder ->
+            openFolder(folder)
+        }
 
-            // 开启后台协程，避免卡死 cpu 大人的 UI
-            lifecycleScope.launch(Dispatchers.IO) {
-                // 停止之前的播放
-                updateProgressJob?.cancel()
-                stopAudioEngine()
-                
-                // 使用 ContentResolver 以 FD 方式安全打开音频文件
-                try {
-                    val uri = android.content.ContentUris.withAppendedId(
-                        android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                        song.id
-                    )
-                    contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
-                        val actualLength = if (afd.declaredLength < 0) afd.length else afd.declaredLength
-                        
-                        android.util.Log.d("MainActivity", "Opening FD: ${afd.parcelFileDescriptor.fd}, length: $actualLength")
-                        
-                        // 真正的解码和启动引擎
-                        startAudioEngine(
-                            afd.parcelFileDescriptor.fd,
-                            afd.startOffset,
-                            actualLength
-                        )
-                    }
+        binding.rvSongs.layoutManager = LinearLayoutManager(this)
+        // 默认显示文件夹
+        binding.rvSongs.adapter = folderAdapter
+    }
 
-                    // 设置循环点（如果数据库里有的话）
-                    if (song.loopEnd > 0) {
-                        setLoopPoints(song.loopStart, song.loopEnd)
-                    } 
+    private fun openFolder(folder: com.cpu.seamlessloopmobile.model.Folder) {
+        isShowingFolders = false
+        songAdapter.updateSongs(folder.songs)
+        binding.rvSongs.adapter = songAdapter
+        
+        // 更新标题栏显示当前文件夹名
+        binding.toolbar.title = folder.name
+        // 显示返回按钮
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        binding.toolbar.setNavigationOnClickListener {
+            onBackPressed()
+        }
+    }
+
+    private fun showFolderList() {
+        isShowingFolders = true
+        binding.rvSongs.adapter = folderAdapter
+        binding.toolbar.title = "Seamless Loop"
+        binding.toolbar.navigationIcon = null
+    }
+
+    private fun playSong(song: com.cpu.seamlessloopmobile.model.Song) {
+        // 弹出提示
+        Toast.makeText(this, "正在为您疯狂解码: ${song.displayName}...", Toast.LENGTH_SHORT).show()
+
+        // 开启后台协程，避免卡死 cpu 大人的 UI
+        lifecycleScope.launch(Dispatchers.IO) {
+            // 停止之前的播放
+            updateProgressJob?.cancel()
+            stopAudioEngine()
+            
+            // 使用 ContentResolver 以 FD 方式安全打开音频文件
+            try {
+                val uri = android.content.ContentUris.withAppendedId(
+                    android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    song.id
+                )
+                contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                    val actualLength = if (afd.declaredLength < 0) afd.length else afd.declaredLength
                     
-                    // 启动 UI 更新
-                    withContext(Dispatchers.Main) {
-                        startProgressUpdater()
-                    }
+                    android.util.Log.d("MainActivity", "Opening FD: ${afd.parcelFileDescriptor.fd}, length: $actualLength")
+                    
+                    // 真正的解码和启动引擎
+                    startAudioEngine(
+                        afd.parcelFileDescriptor.fd,
+                        afd.startOffset,
+                        actualLength
+                    )
+                }
 
-                } catch (e: Exception) {
-                    android.util.Log.e("MainActivity", "Failed to open audio FD", e)
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "文件解析失败喵 (T_T)", Toast.LENGTH_SHORT).show()
-                    }
+                // 设置循环点（如果数据库里有的话）
+                if (song.loopEnd > 0) {
+                    setLoopPoints(song.loopStart, song.loopEnd)
+                } 
+                
+                // 启动 UI 更新
+                withContext(Dispatchers.Main) {
+                    startProgressUpdater()
+                }
+
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Failed to open audio FD", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "文件解析失败喵 (T_T)", Toast.LENGTH_SHORT).show()
                 }
             }
         }
-        binding.rvSongs.layoutManager = LinearLayoutManager(this)
-        binding.rvSongs.adapter = adapter
     }
 
     private fun checkPermissionsAndScan() {
@@ -165,8 +205,54 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scanSongs() {
-        val songs = AudioScanner.scan(this)
-        adapter.updateSongs(songs)
+        allSongs = AudioScanner.scan(this)
+        
+        // 按文件夹分组逻辑
+        val folderMap = mutableMapOf<String, MutableList<com.cpu.seamlessloopmobile.model.Song>>()
+        
+        for (song in allSongs) {
+            try {
+                // 提取父目录路径
+                val file = java.io.File(song.filePath)
+                val parentPath = file.parent ?: "Unknown"
+                
+                if (!folderMap.containsKey(parentPath)) {
+                    folderMap[parentPath] = mutableListOf()
+                }
+                folderMap[parentPath]?.add(song)
+            } catch (e: Exception) {
+                // 如果路径解析失败，放到 Unknown
+                if (!folderMap.containsKey("Unknown")) {
+                    folderMap["Unknown"] = mutableListOf()
+                }
+                folderMap["Unknown"]?.add(song)
+            }
+        }
+        
+        // 转换为 Folder 对象列表
+        folders = folderMap.map { (path, songs) ->
+            val folderName = try {
+                val file = java.io.File(path)
+                file.name // 只取最后一级目录名
+            } catch (e: Exception) {
+                path
+            }
+            com.cpu.seamlessloopmobile.model.Folder(folderName, path, songs.size, songs)
+        }.sortedBy { it.name }
+        
+        folderAdapter.updateFolders(folders)
+        showFolderList() // 默认显示文件夹列表
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (!isShowingFolders) {
+            // 如果在看歌，就退回文件夹列表
+            showFolderList()
+        } else {
+            // 如果已经在文件夹列表，执行系统默认操作（退出）
+            super.onBackPressed()
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
