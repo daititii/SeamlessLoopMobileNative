@@ -41,6 +41,7 @@ bool AudioDecoder::open(int fd, int64_t offset, int64_t length) {
             
             mTotalFrames = (mDurationUs / 1000000.0) * mSampleRate;
             mFormat = format;
+            mCurrentPosition = 0;
             LOGD("Stream opened: %d Hz, %d channels, %lld frames", mSampleRate, mChannelCount, (long long)mTotalFrames);
             return true;
         }
@@ -83,7 +84,9 @@ int32_t AudioDecoder::readSamples(float* targetBuffer, int32_t numSamples) {
         }
     }
 
-    return samplesRead;
+    int32_t finalSamplesRead = samplesRead;
+    mCurrentPosition += (finalSamplesRead / mChannelCount);
+    return finalSamplesRead;
 }
 
 bool AudioDecoder::decodeNextBlock() {
@@ -170,6 +173,7 @@ bool AudioDecoder::decodeNextBlock() {
 
 bool AudioDecoder::seekToFrame(int64_t frameIndex) {
     mSeekTargetFrame = frameIndex;
+    mCurrentPosition = frameIndex;
     int64_t seekTimeUs = (frameIndex * 1000000LL) / mSampleRate;
     
     // 使用 PREVIOUS_SYNC，我们要确保跳到目标点之前，然后靠解析丢弃多余帧来达到精准位置喵！

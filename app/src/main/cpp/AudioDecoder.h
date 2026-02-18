@@ -31,6 +31,7 @@ public:
     int32_t getSampleRate() const { return mSampleRate; }
     int32_t getChannelCount() const { return mChannelCount; }
     int64_t getTotalFrames() const { return mTotalFrames; }
+    int64_t getCurrentPosition() const { return mCurrentPosition; }
 
 private:
     AMediaExtractor* mExtractor = nullptr;
@@ -41,6 +42,7 @@ private:
     int32_t mChannelCount = 0;
     int64_t mTotalFrames = 0;
     int64_t mDurationUs = 0;
+    int64_t mCurrentPosition = 0; 
     int64_t mSeekTargetFrame = -1; // 新增：记录我们到底想跳到哪喵！
 
     int mDupFd = -1;

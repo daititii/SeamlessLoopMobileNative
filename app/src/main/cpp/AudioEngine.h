@@ -10,6 +10,7 @@
 #include <atomic>
 #include <thread>
 #include <memory>
+#include <condition_variable>
 
 // 日志宏定义
 #define LOG_TAG "SeamlessLoopEngine"
@@ -45,6 +46,26 @@ private:
     std::atomic<int64_t> mCurrentReadFrame {0};
     std::atomic<bool> mIsLooping {false};
     
+    // --- 异步解码核心组件喵 ---
+    std::thread mDecodingThread;
+    std::atomic<bool> mIsDecoding {false};
+    std::atomic<bool> mShouldSeek {false};
+    std::atomic<int64_t> mSeekTarget {0};
+    
+    std::mutex mFifoMutex;
+    std::condition_variable mFifoCond;
+    std::vector<float> mFifo;
+    size_t mFifoReadPos {0};
+    size_t mFifoWritePos {0};
+    size_t mFifoFullCount {0};
+    const size_t kFifoSize = 192000; // 约 2 秒的立体声 48kHz 缓冲区
+    // -------------------------
+
+    void decodingLoop(); // 后台解码线程喵！
+    bool writeToFifo(const float* data, int32_t numSamples);
+    int32_t readFromFifo(float* data, int32_t numSamples);
+    void resetFifo();
+
     std::atomic<int32_t> mChannelCount {2};
     std::atomic<int32_t> mSampleRate {44100};
 };
