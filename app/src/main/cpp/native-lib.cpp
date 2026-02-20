@@ -115,7 +115,7 @@ Java_com_cpu_seamlessloopmobile_MainActivity_getSampleRate(
         JNIEnv* env,
         jobject /* this */) {
     if (audioEngine != nullptr) {
-        return (jint)audioEngine->getSampleRate();
+        return static_cast<jint>(audioEngine->getSampleRate());
     }
     return 44100;
 }

@@ -85,6 +85,10 @@ void AudioEngine::setLoopPoints(int64_t startFrame, int64_t endFrame) {
     mLoopStartFrame = startFrame;
     mLoopEndFrame = endFrame;
     mIsLooping = (endFrame > startFrame);
+    
+    // 强制清空缓冲区，让新的循环点立即生效喵！
+    resetFifo();
+    mFifoCond.notify_all();
 }
 
 void AudioEngine::seekTo(int64_t frame) {
@@ -125,13 +129,24 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream *oboeStream
         memset(floatData + read, 0, (samplesNeeded - read) * sizeof(float));
     }
 
+    // 安全检查：防止声道数为 0 导致除零崩溃喵！
+    if (channels <= 0) {
+        memset(floatData, 0, numFrames * sizeof(float)); // 既然不知道声道，就填 0 静音吧
+        return oboe::DataCallbackResult::Continue;
+    }
+
     // 更新当前播放时间（近似值，因为 FIFO 是平滑的）
     int32_t framesRead = read / channels;
-    mCurrentReadFrame += framesRead;
+    mCurrentReadFrame.fetch_add(static_cast<int64_t>(framesRead));
     
     // 如果播放超过了循环点，就在 UI 进度上做个模拟回跳（真正的跳转由后台完成）
-    if (mIsLooping && mCurrentReadFrame >= mLoopEndFrame) {
-        mCurrentReadFrame = mLoopStartFrame + (mCurrentReadFrame - mLoopEndFrame);
+    if (mIsLooping.load() && mCurrentReadFrame.load() >= mLoopEndFrame.load()) {
+        auto start = mLoopStartFrame.load();
+        auto end = mLoopEndFrame.load();
+        // 只有当 end 大于 start 时才调整，防止逻辑死循环
+        if (end > start) {
+             mCurrentReadFrame.store(start + (mCurrentReadFrame.load() - end));
+        }
     }
 
     return oboe::DataCallbackResult::Continue;
@@ -168,17 +183,21 @@ void AudioEngine::decodingLoop() {
         int64_t currentFrame = mDecoder->getCurrentPosition(); 
         int32_t framesToDecode = kBlockFrames;
         
-        if (mIsLooping && currentFrame >= mLoopEndFrame) {
-            mDecoder->seekToFrame(mLoopStartFrame);
-            currentFrame = mLoopStartFrame;
+        if (mIsLooping.load() && currentFrame >= mLoopEndFrame.load()) {
+            mDecoder->seekToFrame(mLoopStartFrame.load());
+            currentFrame = mLoopStartFrame.load();
         }
 
         if (mIsLooping) {
-            framesToDecode = (int32_t)std::min((int64_t)kBlockFrames, (int64_t)(mLoopEndFrame - currentFrame));
+            auto remainingFrames = mLoopEndFrame.load() - currentFrame;
+            // 如果剩余帧是负数（比如 End 突然变到了 Current 之前），直接设为 0，让下一行的大循环里的 <= 0 逻辑去处理 Seek
+            if (remainingFrames < 0) remainingFrames = 0;
+            
+            framesToDecode = static_cast<int32_t>(std::min(static_cast<int64_t>(kBlockFrames), remainingFrames));
         }
 
-        if (framesToDecode <= 0 && mIsLooping) {
-            mDecoder->seekToFrame(mLoopStartFrame);
+        if (framesToDecode <= 0 && mIsLooping.load()) {
+            mDecoder->seekToFrame(mLoopStartFrame.load());
             continue;
         }
 
@@ -187,8 +206,8 @@ void AudioEngine::decodingLoop() {
         if (read > 0) {
             writeToFifo(decodeBuffer.data(), read);
         } else {
-            if (mIsLooping && mDecoder->isFinished()) {
-                mDecoder->seekToFrame(mLoopStartFrame);
+            if (mIsLooping.load() && mDecoder->isFinished()) {
+                mDecoder->seekToFrame(mLoopStartFrame.load());
             } else {
                 // 真的没数据了，休息一下防死循环
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));

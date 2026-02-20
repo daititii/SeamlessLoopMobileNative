@@ -1,5 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
+    // alias(libs.plugins.kotlin.android) // 暂时注释掉，怀疑重复应用导致冲突
+    alias(libs.plugins.google.devtools.ksp)
 }
 
 android {
@@ -57,6 +59,11 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+
+    // Room 数据库喵
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 
     // Google Oboe (高性能音频库)
     implementation("com.google.oboe:oboe:1.9.3")

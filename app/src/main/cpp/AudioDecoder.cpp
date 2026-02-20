@@ -6,8 +6,7 @@
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-AudioDecoder::AudioDecoder() {}
-
+// 构造函数已在头文件中默认化
 AudioDecoder::~AudioDecoder() {
     close();
 }
@@ -39,7 +38,7 @@ bool AudioDecoder::open(int fd, int64_t offset, int64_t length) {
             AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &mChannelCount);
             AMediaFormat_getInt64(format, AMEDIAFORMAT_KEY_DURATION, &mDurationUs);
             
-            mTotalFrames = (mDurationUs / 1000000.0) * mSampleRate;
+            mTotalFrames = static_cast<int64_t>((static_cast<double>(mDurationUs) / 1000000.0) * mSampleRate);
             mFormat = format;
             mCurrentPosition = 0;
             LOGD("Stream opened: %d Hz, %d channels, %lld frames", mSampleRate, mChannelCount, (long long)mTotalFrames);
@@ -58,9 +57,9 @@ int32_t AudioDecoder::readSamples(float* targetBuffer, int32_t numSamples) {
         // 1. 如果内部缓冲区还有存货，先清仓
         if (mInternalBufferIdx < mInternalBuffer.size()) {
             size_t available = mInternalBuffer.size() - mInternalBufferIdx;
-            size_t toCopy = std::min((size_t)(numSamples - samplesRead), available);
+            auto toCopy = std::min(static_cast<size_t>(numSamples - samplesRead), available);
             memcpy(targetBuffer + samplesRead, &mInternalBuffer[mInternalBufferIdx], toCopy * sizeof(float));
-            samplesRead += toCopy;
+            samplesRead += static_cast<int32_t>(toCopy);
             mInternalBufferIdx += toCopy;
         } else {
             // Buffer 空了，清掉它准备下一块
@@ -128,7 +127,7 @@ bool AudioDecoder::decodeNextBlock() {
         size_t numFrames = numPoints / mChannelCount;
         
         // 计算这个 buffer 的起始帧位置喵
-        int64_t bufferStartFrame = (info.presentationTimeUs * mSampleRate) / 1000000LL;
+        auto bufferStartFrame = static_cast<int64_t>((info.presentationTimeUs * static_cast<int64_t>(mSampleRate)) / 1000000LL);
         int64_t skipFrames = 0;
 
         // 如果我们正在寻找精准跳转点喵！
@@ -152,7 +151,7 @@ bool AudioDecoder::decodeNextBlock() {
             size_t validPoints = numPoints - startPoint;
             mInternalBuffer.resize(validPoints);
             for (size_t i = 0; i < validPoints; i++) {
-                mInternalBuffer[i] = pcmData[startPoint + i] / 32768.0f;
+                mInternalBuffer[i] = static_cast<float>(pcmData[startPoint + i]) / 32768.0f;
             }
             AMediaCodec_releaseOutputBuffer(mCodec, outputBufIdx, false);
             return true;

@@ -54,14 +54,15 @@ object AudioScanner {
                 if (file.exists()) {
                     songs.add(
                         Song(
-                            id = id,
+                            id = 0, // 新扫描的歌曲，数据库 ID 设为 0
+                            mediaId = id, // 记录媒体库原始 ID
                             fileName = fileName,
                             filePath = filePath,
                             displayName = title,
                             artist = artist,
                             duration = duration,
-                            totalSamples = 0, // 初始设为 0，后续需要解析文件头获取准确采样数
-                            isLoopEnabled = false // 默认关闭，等待匹配数据库中的循环点
+                            totalSamples = 0,
+                            isLoopEnabled = false
                         )
                     )
                 }

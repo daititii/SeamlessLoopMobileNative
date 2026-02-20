@@ -50,6 +50,18 @@ class SongAdapter(
     }
 
     /**
+     * 单独更新某一项（用于修改循环点后刷新状态）
+     */
+    fun updateSongItem(index: Int, newSong: Song) {
+        if (index in songs.indices) {
+            val mutableList = songs.toMutableList()
+            mutableList[index] = newSong
+            songs = mutableList
+            notifyItemChanged(index)
+        }
+    }
+
+    /**
      * DiffUtil 回调类，负责计算列表项差异
      */
     private class SongDiffCallback(

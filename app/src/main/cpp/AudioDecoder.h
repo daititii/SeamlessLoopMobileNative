@@ -9,7 +9,7 @@
 
 class AudioDecoder {
 public:
-    AudioDecoder();
+    AudioDecoder() = default;
     ~AudioDecoder();
 
     // 准备解码（打开文件，初始化 Codec）
