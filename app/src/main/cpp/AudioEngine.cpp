@@ -86,8 +86,9 @@ void AudioEngine::setLoopPoints(int64_t startFrame, int64_t endFrame) {
     mLoopEndFrame = endFrame;
     mIsLooping = (endFrame > startFrame);
     
-    // 强制清空缓冲区，让新的循环点立即生效喵！
-    resetFifo();
+    // 不再这里强制重置 FIFO 喵！
+    // 这样微调循环点时就不会导致播放位置突然跳跃了。
+    // 后台解码线程在下一次填充时会自动应用新的循环点。
     mFifoCond.notify_all();
 }
 
