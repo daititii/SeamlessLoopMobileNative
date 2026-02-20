@@ -5,112 +5,62 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="#1E1E2E"
-    android:padding="16dp">
+    android:paddingHorizontal="12dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="12dp">
 
-    <!-- 顶部横杠，提示可以下拉 -->
+    <!-- 顶部极窄横杠 -->
     <View
-        android:layout_width="40dp"
-        android:layout_height="4dp"
+        android:layout_width="30dp"
+        android:layout_height="3dp"
         android:layout_gravity="center_horizontal"
         android:background="#444466"
-        android:layout_marginBottom="16dp"/>
+        android:layout_marginBottom="8dp"/>
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Loop &amp; Playback Control"
-        android:textSize="18sp"
-        android:textColor="#FFFFFF"
-        android:textStyle="bold"
-        android:gravity="center"
-        android:layout_marginBottom="16dp"/>
-
-    <!-- 播放器控制区（从主界面上升而来的感觉） -->
+    <!-- 极简播放器控制区 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:background="#2E2E3E"
-        android:padding="12dp"
-        android:elevation="4dp"
-        android:layout_marginBottom="16dp">
+        android:padding="8dp"
+        android:layout_marginBottom="8dp">
 
-        <!-- 播放/暂停控制 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center">
-            <ImageButton
-                android:id="@+id/btn_dialog_prev"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@android:drawable/ic_media_previous"
-                app:tint="#FFFFFF"/>
-            <ImageButton
-                android:id="@+id/btn_dialog_play_pause"
-                android:layout_width="64dp"
-                android:layout_height="64dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@android:drawable/ic_media_play"
-                android:scaleType="fitCenter"
-                android:padding="8dp"
-                app:tint="#BB86FC"/>
-            <ImageButton
-                android:id="@+id/btn_dialog_next"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@android:drawable/ic_media_next"
-                app:tint="#FFFFFF"/>
+            <ImageButton android:id="@+id/btn_dialog_prev" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_media_previous" app:tint="#FFFFFF" android:scaleType="fitCenter"/>
+            <ImageButton android:id="@+id/btn_dialog_play_pause" android:layout_width="44dp" android:layout_height="44dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_media_play" android:scaleType="fitCenter" android:padding="4dp" app:tint="#BB86FC"/>
+            <ImageButton android:id="@+id/btn_dialog_next" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_media_next" app:tint="#FFFFFF" android:scaleType="fitCenter"/>
         </LinearLayout>
 
-        <!-- 进度条 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginTop="8dp">
-            <TextView
-                android:id="@+id/tv_dialog_current_time"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="00:00"
-                android:textColor="#BBBBCC"
-                android:textSize="12sp"/>
-            <SeekBar
-                android:id="@+id/sb_dialog_progress"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:progressTint="#BB86FC"
-                android:thumbTint="#BB86FC"/>
-            <TextView
-                android:id="@+id/tv_dialog_total_time"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="00:00"
-                android:textColor="#BBBBCC"
-                android:textSize="12sp"/>
+            android:gravity="center_vertical">
+            <TextView android:id="@+id/tv_dialog_current_time" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="00:00" android:textColor="#BBBBCC" android:textSize="10sp"/>
+            <SeekBar android:id="@+id/sb_dialog_progress" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:progressTint="#BB86FC" android:thumbTint="#BB86FC" android:paddingVertical="4dp" android:maxHeight="3dp"/>
+            <TextView android:id="@+id/tv_dialog_total_time" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="00:00" android:textColor="#BBBBCC" android:textSize="10sp"/>
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 循环点微调区 -->
+    <!-- 紧凑微调主体 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <!-- A 点 (Start) -->
+        <!-- 循环起点 (A) 紧凑版 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="#252535"
-            android:padding="10dp"
-            android:layout_marginBottom="12dp">
+            android:padding="8dp"
+            android:layout_marginBottom="6dp">
             
             <LinearLayout
                 android:layout_width="match_parent"
@@ -121,52 +71,60 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Loop Start (A)"
-                    android:textColor="#E0E0E0"
+                    android:text="循环起点 (A)"
+                    android:textColor="#8FBBD9"
+                    android:textSize="12sp"
                     android:textStyle="bold" />
                 <TextView
                     android:id="@+id/tv_loop_start_time"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="00:00.000"
-                    android:textColor="#BB86FC"
-                    android:textStyle="bold"/>
+                    android:text="20.647"
+                    android:textColor="#E0E0E0"
+                    android:textSize="12sp"/>
             </LinearLayout>
+
             <TextView
                 android:id="@+id/tv_loop_start_samples"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Samples: 0"
-                android:textColor="#BB86FC"
-                android:textSize="12sp"
-                android:gravity="end"
-                android:padding="4dp"
-                android:background="#1AFFFFFF"
-                android:layout_marginBottom="8dp"
-                android:drawableEnd="@android:drawable/ic_menu_edit"
-                android:drawableTint="#8888AA"/>
+                android:text="991043"
+                android:textColor="#A0C3FF"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:layout_marginVertical="2dp"/>
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center">
-                <Button android:id="@+id/btn_dec_start_50ms" android:layout_width="wrap_content" android:layout_height="36dp" android:text="-50ms" android:textSize="10sp" android:layout_marginEnd="4dp" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:textColor="#E0E0E0"/>
-                <Button android:id="@+id/btn_dec_start_10ms" android:layout_width="wrap_content" android:layout_height="36dp" android:text="-10ms" android:textSize="10sp" android:layout_marginEnd="4dp" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:textColor="#E0E0E0"/>
-                <Button android:id="@+id/btn_set_start_current" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="SET CURRENT" android:textSize="10sp" android:backgroundTint="#BB86FC" android:textColor="#000000" />
-                <Button android:id="@+id/btn_inc_start_10ms" android:layout_width="wrap_content" android:layout_height="36dp" android:text="+10ms" android:textSize="10sp" android:layout_marginStart="4dp" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:textColor="#E0E0E0"/>
-                <Button android:id="@+id/btn_inc_start_50ms" android:layout_width="wrap_content" android:layout_height="36dp" android:text="+50ms" android:textSize="10sp" android:layout_marginStart="4dp" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:textColor="#E0E0E0"/>
+            <!-- 按钮组 A -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="2dp">
+                <Button android:id="@+id/btn_a_min" android:layout_width="0dp" android:layout_height="28dp" android:layout_weight="1" android:text="最小" android:textSize="10sp" android:backgroundTint="#353545" android:layout_marginEnd="2dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_a_set_current" android:layout_width="0dp" android:layout_height="28dp" android:layout_weight="1" android:text="当前" android:textSize="10sp" android:backgroundTint="#554477" android:layout_marginEnd="2dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_a_max" android:layout_width="0dp" android:layout_height="28dp" android:layout_weight="1" android:text="最大" android:textSize="10sp" android:backgroundTint="#353545" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+            </LinearLayout>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="2dp">
+                <Button android:id="@+id/btn_a_dec_5s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="-5s" android:textSize="9sp" android:backgroundTint="#353545" android:layout_marginEnd="1dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_a_dec_1s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="-1s" android:textSize="9sp" android:backgroundTint="#353545" android:layout_marginEnd="1dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_a_inc_1s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="+1s" android:textSize="9sp" android:backgroundTint="#353545" android:layout_marginEnd="1dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_a_inc_5s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="+5s" android:textSize="9sp" android:backgroundTint="#353545" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+            </LinearLayout>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+                <Button android:id="@+id/btn_a_dec_01s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="-0.1s" android:textSize="9sp" android:backgroundTint="#353545" android:layout_marginEnd="1dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_a_dec_001s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="-0.01s" android:textSize="9sp" android:backgroundTint="#353545" android:layout_marginEnd="1dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_a_inc_001s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="+0.01s" android:textSize="9sp" android:backgroundTint="#353545" android:layout_marginEnd="1dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_a_inc_01s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="+0.1s" android:textSize="9sp" android:backgroundTint="#353545" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
             </LinearLayout>
         </LinearLayout>
 
-        <!-- B 点 (End) -->
+        <!-- 循环终点 (B) 紧凑版 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="#252535"
-            android:padding="10dp"
-            android:layout_marginBottom="12dp">
+            android:padding="8dp"
+            android:layout_marginBottom="8dp">
             
             <LinearLayout
                 android:layout_width="match_parent"
@@ -177,41 +135,49 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Loop End (B)"
-                    android:textColor="#E0E0E0"
+                    android:text="循环终点 (B)"
+                    android:textColor="#F398AF"
+                    android:textSize="12sp"
                     android:textStyle="bold" />
                 <TextView
                     android:id="@+id/tv_loop_end_time"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="00:00.000"
-                    android:textColor="#BB86FC"
-                    android:textStyle="bold"/>
+                    android:text="84.651"
+                    android:textColor="#E0E0E0"
+                    android:textSize="12sp"/>
             </LinearLayout>
+
             <TextView
                 android:id="@+id/tv_loop_end_samples"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Samples: 0"
-                android:textColor="#BB86FC"
-                android:textSize="12sp"
-                android:gravity="end"
-                android:padding="4dp"
-                android:background="#1AFFFFFF"
-                android:layout_marginBottom="8dp"
-                android:drawableEnd="@android:drawable/ic_menu_edit"
-                android:drawableTint="#8888AA"/>
+                android:text="4063248"
+                android:textColor="#FFB0C0"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:layout_marginVertical="2dp"/>
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center">
-                <Button android:id="@+id/btn_dec_end_50ms" android:layout_width="wrap_content" android:layout_height="36dp" android:text="-50ms" android:textSize="10sp" android:layout_marginEnd="4dp" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:textColor="#E0E0E0"/>
-                <Button android:id="@+id/btn_dec_end_10ms" android:layout_width="wrap_content" android:layout_height="36dp" android:text="-10ms" android:textSize="10sp" android:layout_marginEnd="4dp" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:textColor="#E0E0E0"/>
-                <Button android:id="@+id/btn_set_end_current" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="SET CURRENT" android:textSize="10sp" android:backgroundTint="#BB86FC" android:textColor="#000000" />
-                <Button android:id="@+id/btn_inc_end_10ms" android:layout_width="wrap_content" android:layout_height="36dp" android:text="+10ms" android:textSize="10sp" android:layout_marginStart="4dp" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:textColor="#E0E0E0"/>
-                <Button android:id="@+id/btn_inc_end_50ms" android:layout_width="wrap_content" android:layout_height="36dp" android:text="+50ms" android:textSize="10sp" android:layout_marginStart="4dp" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:textColor="#E0E0E0"/>
+            <!-- 按钮组 B -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="2dp">
+                <Button android:id="@+id/btn_b_min" android:layout_width="0dp" android:layout_height="28dp" android:layout_weight="1" android:text="最小" android:textSize="10sp" android:backgroundTint="#353545" android:layout_marginEnd="2dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_b_set_current" android:layout_width="0dp" android:layout_height="28dp" android:layout_weight="1" android:text="当前" android:textSize="10sp" android:backgroundTint="#554477" android:layout_marginEnd="2dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_b_max" android:layout_width="0dp" android:layout_height="28dp" android:layout_weight="1" android:text="最大" android:textSize="10sp" android:backgroundTint="#353545" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+            </LinearLayout>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="2dp">
+                <Button android:id="@+id/btn_b_dec_5s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="-5s" android:textSize="9sp" android:backgroundTint="#353545" android:layout_marginEnd="1dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_b_dec_1s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="-1s" android:textSize="9sp" android:backgroundTint="#353545" android:layout_marginEnd="1dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_b_inc_1s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="+1s" android:textSize="9sp" android:backgroundTint="#353545" android:layout_marginEnd="1dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_b_inc_5s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="+5s" android:textSize="9sp" android:backgroundTint="#353545" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+            </LinearLayout>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+                <Button android:id="@+id/btn_b_dec_01s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="-0.1s" android:textSize="9sp" android:backgroundTint="#353545" android:layout_marginEnd="1dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_b_dec_001s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="-0.01s" android:textSize="9sp" android:backgroundTint="#353545" android:layout_marginEnd="1dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_b_inc_001s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="+0.01s" android:textSize="9sp" android:backgroundTint="#353545" android:layout_marginEnd="1dp" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
+                <Button android:id="@+id/btn_b_inc_01s" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:text="+0.1s" android:textSize="9sp" android:backgroundTint="#353545" style="@style/Widget.MaterialComponents.Button.UnelevatedButton" android:padding="0dp"/>
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
@@ -219,10 +185,12 @@
     <Button
         android:id="@+id/btn_close_dialog"
         android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:text="DONE"
+        android:layout_height="36dp"
+        android:text="完成微调"
+        android:textSize="12sp"
         android:backgroundTint="#444466"
         android:textColor="#FFFFFF"
-        android:layout_marginTop="8dp"/>
+        style="@style/Widget.MaterialComponents.Button.UnelevatedButton"
+        android:padding="0dp"/>
 
 </LinearLayout>

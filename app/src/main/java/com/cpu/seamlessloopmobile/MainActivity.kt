@@ -19,6 +19,7 @@ import com.cpu.seamlessloopmobile.scanner.AudioScanner
 import com.cpu.seamlessloopmobile.model.Song
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.SeekBar
 
@@ -43,6 +44,11 @@ class MainActivity : AppCompatActivity() {
     // 数据库相关
     private lateinit var database: com.cpu.seamlessloopmobile.db.AppDatabase
     private val songDao by lazy { database.songDao() }
+
+    // 文件选择器喵
+    private val dbPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { importFromPcDatabase(it) }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -404,28 +410,33 @@ class MainActivity : AppCompatActivity() {
 
 
     private fun showLoopSettingsDialog(originalSong: com.cpu.seamlessloopmobile.model.Song) {
-        var song = originalSong // 使用 var 以便更新引用
+        var song = originalSong 
         
         val dialog = BottomSheetDialog(this)
         val view = layoutInflater.inflate(R.layout.dialog_loop_controls, null)
         dialog.setContentView(view)
 
-        val tvStartVal = view.findViewById<TextView>(R.id.tv_loop_start_time)
         val tvStartSamples = view.findViewById<TextView>(R.id.tv_loop_start_samples)
-        val tvEndVal = view.findViewById<TextView>(R.id.tv_loop_end_time)
+        val tvStartTime = view.findViewById<TextView>(R.id.tv_loop_start_time)
         val tvEndSamples = view.findViewById<TextView>(R.id.tv_loop_end_samples)
+        val tvEndTime = view.findViewById<TextView>(R.id.tv_loop_end_time)
 
-        // 辅助函数：更新显示
+        // 辅助：更新显示（仿电脑端）
         fun updateDisplay() {
             val sampleRate = getSampleRate().toLong()
-            tvStartVal.text = formatTimeMs(song.loopStart, sampleRate)
-            tvStartSamples.text = "Samples: ${song.loopStart}"
+            val safeSampleRate = if (sampleRate > 0) sampleRate else 44100L
             
-            tvEndVal.text = formatTimeMs(song.loopEnd, sampleRate)
-            tvEndSamples.text = "Samples: ${song.loopEnd}"
+            // 采样数
+            tvStartSamples.text = song.loopStart.toString()
+            tvEndSamples.text = song.loopEnd.toString()
+            
+            // 秒数（带3位小数）
+            val startSec = song.loopStart.toDouble() / safeSampleRate
+            val endSec = song.loopEnd.toDouble() / safeSampleRate
+            tvStartTime.text = String.format("%.3f", startSec)
+            tvEndTime.text = String.format("%.3f", endSec)
         }
         
-        // 辅助函数：更新数据
         fun applyUpdate(start: Long, end: Long) {
             val updatedSong = updateLoopPoints(song, start, end)
             if (updatedSong != null) {
@@ -434,131 +445,81 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
-        // 初始显示
         updateDisplay()
 
-        // --- 手动输入功能喵 ---
-        fun showManualInputDialog(isStart: Boolean) {
-            val input = android.widget.EditText(this)
-            input.inputType = android.view.inputmethod.EditorInfo.TYPE_CLASS_NUMBER
-            input.setText(if (isStart) song.loopStart.toString() else song.loopEnd.toString())
-            input.setSelection(input.text.length)
-
-            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-                .setTitle(if (isStart) "Set Start Sample" else "Set End Sample")
-                .setView(input)
-                .setPositiveButton("OK") { _, _ ->
-                    val newVal = input.text.toString().toLongOrNull() ?: 0L
-                    if (isStart) {
-                        if (newVal < song.loopEnd || song.loopEnd == 0L) {
-                            applyUpdate(newVal, song.loopEnd)
-                        } else {
-                            Toast.makeText(this, "起点不能在终点之后喵", Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        if (newVal > song.loopStart) {
-                            applyUpdate(song.loopStart, newVal)
-                        } else {
-                            Toast.makeText(this, "终点必须在起点之后喵", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-        }
-
-        tvStartSamples.setOnClickListener { showManualInputDialog(true) }
-        tvEndSamples.setOnClickListener { showManualInputDialog(false) }
-
-        // --- A 点控制 ---
-        view.findViewById<Button>(R.id.btn_set_start_current).setOnClickListener {
-            val current = getCurrentPosition()
-            if (current < song.loopEnd || song.loopEnd == 0L) {
-                applyUpdate(current, song.loopEnd)
-            } else {
-                Toast.makeText(this, "起点不能晚于终点哦", Toast.LENGTH_SHORT).show()
-            }
-        }
-        
-        // 微调 A
-        val adjustStart = { deltaMs: Int ->
+        // --- A 点 (Start) 逻辑 ---
+        val adjustA = { deltaMs: Double ->
             val sampleRate = getSampleRate()
-            val deltaSamples = (sampleRate * deltaMs / 1000).toLong()
-            val newStart = (song.loopStart + deltaSamples).coerceAtLeast(0)
-            if (newStart < song.loopEnd || song.loopEnd == 0L) {
-                applyUpdate(newStart, song.loopEnd)
-            }
-        }
-        view.findViewById<Button>(R.id.btn_dec_start_50ms).setOnClickListener { adjustStart(-50) }
-        view.findViewById<Button>(R.id.btn_dec_start_10ms).setOnClickListener { adjustStart(-10) }
-        view.findViewById<Button>(R.id.btn_inc_start_10ms).setOnClickListener { adjustStart(10) }
-        view.findViewById<Button>(R.id.btn_inc_start_50ms).setOnClickListener { adjustStart(50) }
-
-        // --- B 点控制 ---
-        view.findViewById<Button>(R.id.btn_set_end_current).setOnClickListener {
-            val current = getCurrentPosition()
-            if (current > song.loopStart) {
-                applyUpdate(song.loopStart, current)
-            } else {
-                Toast.makeText(this, "终点必须晚于起点哦", Toast.LENGTH_SHORT).show()
-            }
+            val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
+            val newStart = (song.loopStart + deltaSamples).coerceIn(0, song.loopEnd.takeIf { it > 0 } ?: getDuration())
+            applyUpdate(newStart, song.loopEnd)
         }
 
-        // 微调 B
-        val adjustEnd = { deltaMs: Int ->
-            val sampleRate = getSampleRate()
-            val deltaSamples = (sampleRate * deltaMs / 1000).toLong()
-            val newEnd = (song.loopEnd + deltaSamples).coerceAtMost(getDuration())
-            if (newEnd > song.loopStart) {
-                applyUpdate(song.loopStart, newEnd)
-            }
+        view.findViewById<Button>(R.id.btn_a_min).setOnClickListener { applyUpdate(0, song.loopEnd) }
+        view.findViewById<Button>(R.id.btn_a_max).setOnClickListener { applyUpdate(song.loopEnd.coerceAtLeast(0), song.loopEnd) } // A 追上 B
+        view.findViewById<Button>(R.id.btn_a_set_current).setOnClickListener { 
+            val curr = getCurrentPosition()
+            if (curr < song.loopEnd || song.loopEnd == 0L) applyUpdate(curr, song.loopEnd)
         }
+
+        view.findViewById<Button>(R.id.btn_a_dec_5s).setOnClickListener { adjustA(-5000.0) }
+        view.findViewById<Button>(R.id.btn_a_dec_1s).setOnClickListener { adjustA(-1000.0) }
+        view.findViewById<Button>(R.id.btn_a_inc_1s).setOnClickListener { adjustA(1000.0) }
+        view.findViewById<Button>(R.id.btn_a_inc_5s).setOnClickListener { adjustA(5000.0) }
         
-        view.findViewById<Button>(R.id.btn_dec_end_50ms).setOnClickListener { adjustEnd(-50) }
-        view.findViewById<Button>(R.id.btn_dec_end_10ms).setOnClickListener { adjustEnd(-10) }
-        view.findViewById<Button>(R.id.btn_inc_end_10ms).setOnClickListener { adjustEnd(10) }
-        view.findViewById<Button>(R.id.btn_inc_end_50ms).setOnClickListener { adjustEnd(50) }
+        view.findViewById<Button>(R.id.btn_a_dec_01s).setOnClickListener { adjustA(-100.0) }
+        view.findViewById<Button>(R.id.btn_a_dec_001s).setOnClickListener { adjustA(-10.0) }
+        view.findViewById<Button>(R.id.btn_a_inc_001s).setOnClickListener { adjustA(10.0) }
+        view.findViewById<Button>(R.id.btn_a_inc_01s).setOnClickListener { adjustA(100.0) }
 
-        // 新增：初始化控制按钮
-        val btnPlayPause = view.findViewById<android.widget.ImageButton>(R.id.btn_dialog_play_pause)
-        val btnPrev = view.findViewById<android.widget.ImageButton>(R.id.btn_dialog_prev)
-        val btnNext = view.findViewById<android.widget.ImageButton>(R.id.btn_dialog_next)
+        // --- B 点 (End) 逻辑 ---
+        val adjustB = { deltaMs: Double ->
+            val sampleRate = getSampleRate()
+            val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
+            val dur = getDuration()
+            val newEnd = (song.loopEnd + deltaSamples).coerceIn(song.loopStart, dur)
+            applyUpdate(song.loopStart, newEnd)
+        }
 
-        // 统一更新播放暂停图标
+        view.findViewById<Button>(R.id.btn_b_min).setOnClickListener { applyUpdate(song.loopStart, song.loopStart) } // B 追回 A
+        view.findViewById<Button>(R.id.btn_b_max).setOnClickListener { applyUpdate(song.loopStart, getDuration()) }
+        view.findViewById<Button>(R.id.btn_b_set_current).setOnClickListener { 
+            val curr = getCurrentPosition()
+            if (curr > song.loopStart) applyUpdate(song.loopStart, curr)
+        }
+
+        view.findViewById<Button>(R.id.btn_b_dec_5s).setOnClickListener { adjustB(-5000.0) }
+        view.findViewById<Button>(R.id.btn_b_dec_1s).setOnClickListener { adjustB(-1000.0) }
+        view.findViewById<Button>(R.id.btn_b_inc_1s).setOnClickListener { adjustB(1000.0) }
+        view.findViewById<Button>(R.id.btn_b_inc_5s).setOnClickListener { adjustB(5000.0) }
+        
+        view.findViewById<Button>(R.id.btn_b_dec_01s).setOnClickListener { adjustB(-100.0) }
+        view.findViewById<Button>(R.id.btn_b_dec_001s).setOnClickListener { adjustB(-10.0) }
+        view.findViewById<Button>(R.id.btn_b_inc_001s).setOnClickListener { adjustB(10.0) }
+        view.findViewById<Button>(R.id.btn_b_inc_01s).setOnClickListener { adjustB(100.0) }
+
+        // --- 播放控制逻辑 ---
+        val btnPlayPause = view.findViewById<ImageButton>(R.id.btn_dialog_play_pause)
+        val btnPrev = view.findViewById<ImageButton>(R.id.btn_dialog_prev)
+        val btnNext = view.findViewById<ImageButton>(R.id.btn_dialog_next)
+
         fun updatePlayPauseIcon() {
-            if (isPlaying) {
-                btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-            } else {
-                btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
-            }
+            btnPlayPause.setImageResource(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play)
         }
         updatePlayPauseIcon()
 
-        btnPlayPause.setOnClickListener {
-            // 直接触发主界面的播放/暂停按钮逻辑
-            binding.btnPlayPause.performClick()
-            updatePlayPauseIcon()
-        }
+        btnPlayPause.setOnClickListener { binding.btnPlayPause.performClick(); updatePlayPauseIcon() }
+        btnPrev.setOnClickListener { binding.btnPrevious.performClick() }
+        btnNext.setOnClickListener { binding.btnNext.performClick() }
 
-        btnPrev.setOnClickListener {
-            binding.btnPrevious.performClick()
-            // 切歌后，对话框里显示的对象也需要更新（但这块逻辑比较复杂，暂时先保证按钮能点）
-        }
-
-        btnNext.setOnClickListener {
-            binding.btnNext.performClick()
-        }
-
-        // 新增：初始化进度条
+        // --- 进度条逻辑 ---
         val sbProgress = view.findViewById<SeekBar>(R.id.sb_dialog_progress)
         val tvCurrentTimeView = view.findViewById<TextView>(R.id.tv_dialog_current_time)
         val tvTotalTimeView = view.findViewById<TextView>(R.id.tv_dialog_total_time)
         
-        // 进度更新 Job
         var dialogUpdateJob: kotlinx.coroutines.Job? = null
         var isDialogSeeking = false
         
-        // 启动进度更新协程
         dialogUpdateJob = lifecycleScope.launch(Dispatchers.Main) {
             while (true) {
                 if (!isDialogSeeking) {
@@ -567,16 +528,10 @@ class MainActivity : AppCompatActivity() {
                     val sampleRate = getSampleRate().toLong()
                     
                     if (totalFrames > 0) {
-                        val maxValue = totalFrames.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                        val progressValue = currentFrame.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                        
-                        sbProgress.max = maxValue
-                        sbProgress.progress = progressValue
-                        
+                        sbProgress.max = totalFrames.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                        sbProgress.progress = currentFrame.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                         tvCurrentTimeView.text = formatTime(currentFrame, sampleRate)
                         tvTotalTimeView.text = formatTime(totalFrames, sampleRate)
-                        
-                        // 同时同步更新播放暂停图标（防止后台状态变化）
                         updatePlayPauseIcon()
                     }
                 }
@@ -584,34 +539,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
-        // 设置拖动监听
         sbProgress.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    val sampleRate = getSampleRate().toLong()
-                    tvCurrentTimeView.text = formatTime(progress.toLong(), sampleRate)
-                }
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                isDialogSeeking = true
-            }
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                seekBar?.let {
-                    seekTo(it.progress.toLong())
-                    isDialogSeeking = false
-                }
-            }
+            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) { if(f) tvCurrentTimeView.text = formatTime(p.toLong(), getSampleRate().toLong()) }
+            override fun onStartTrackingTouch(s: SeekBar?) { isDialogSeeking = true }
+            override fun onStopTrackingTouch(s: SeekBar?) { s?.let { seekTo(it.progress.toLong()); isDialogSeeking = false } }
         })
         
-        // 弹窗关闭时取消协程
-        dialog.setOnDismissListener {
-            dialogUpdateJob?.cancel()
-        }
-
-        view.findViewById<Button>(R.id.btn_close_dialog).setOnClickListener {
-            dialog.dismiss()
-        }
-
+        dialog.setOnDismissListener { dialogUpdateJob?.cancel() }
+        view.findViewById<Button>(R.id.btn_close_dialog).setOnClickListener { dialog.dismiss() }
         dialog.show()
     }
 
@@ -657,6 +592,112 @@ class MainActivity : AppCompatActivity() {
         val millis = totalMillis % 1000
         return String.format("%02d:%02d.%03d", minutes, seconds, millis)
     }
+    override fun onCreateOptionsMenu(menu: android.view.Menu?): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_sync_pc -> {
+                dbPickerLauncher.launch("application/octet-stream")
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    private fun importFromPcDatabase(uri: android.net.Uri) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                // 1. 拷贝到临时文件，因为 SQLite 不直接支持 ContentUri 喵
+                val tempFile = java.io.File(cacheDir, "temp_pc_data.db")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                // 2. 暴力开启外部数据库
+                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    tempFile.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+                )
+
+                val cursor = db.rawQuery("SELECT FileName, TotalSamples, LoopStart, LoopEnd, DisplayName FROM LoopPoints", null)
+                var syncCount = 0
+
+                val pcData = mutableListOf<Triple<String, Long, com.cpu.seamlessloopmobile.model.Song>>()
+
+                if (cursor.moveToFirst()) {
+                    do {
+                        val fileName = cursor.getString(0) ?: ""
+                        val total = cursor.getLong(1)
+                        val start = cursor.getLong(2)
+                        val end = cursor.getLong(3)
+                        val name = cursor.getString(4)
+
+                        // 构造一个临时的 Song 对象用于存储数据喵
+                        val dummySong = com.cpu.seamlessloopmobile.model.Song(
+                            fileName = fileName,
+                            filePath = "", // 稍后匹配
+                            displayName = name,
+                            loopStart = start,
+                            loopEnd = end,
+                            totalSamples = total,
+                            mediaId = 0
+                        )
+                        pcData.add(Triple(fileName, total, dummySong))
+                    } while (cursor.moveToNext())
+                }
+                cursor.close()
+                db.close()
+                tempFile.delete()
+
+                // 3. 开始对碰！
+                // 莱芙用文件名和总采样数双重匹配最稳健
+                val currentSongs = allSongs 
+                var matchLog = StringBuilder()
+
+                for (pcRecord in pcData) {
+                    val pcFileName = pcRecord.first
+                    val pcTotal = pcRecord.second
+                    val pcSong = pcRecord.third
+
+                    // 在本地找找看
+                    val localMatch = currentSongs.find { 
+                        val localFileName = java.io.File(it.filePath).name
+                        localFileName == pcFileName && (it.totalSamples == pcTotal || it.totalSamples == 0L)
+                    }
+
+                    if (localMatch != null) {
+                        val updated = localMatch.copy(
+                            loopStart = pcSong.loopStart,
+                            loopEnd = pcSong.loopEnd,
+                            displayName = pcSong.displayName ?: localMatch.displayName,
+                            totalSamples = if (localMatch.totalSamples == 0L) pcTotal else localMatch.totalSamples
+                        )
+                        songDao.insertOrUpdateSong(updated)
+                        syncCount++
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "同步完成喵！成功找回 $syncCount 条循环数据", Toast.LENGTH_LONG).show()
+                    // 重新扫描以刷新 UI
+                    scanSongs()
+                }
+
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Sync failed", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "同步失败了(>_<): ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
     // --- JNI 接口 ---
     external fun stringFromJNI(): String
     external fun startAudioEngine(fd: Int, offset: Long, length: Long)
