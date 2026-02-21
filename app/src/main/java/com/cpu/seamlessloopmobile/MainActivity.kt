@@ -416,25 +416,25 @@ class MainActivity : AppCompatActivity() {
         val view = layoutInflater.inflate(R.layout.dialog_loop_controls, null)
         dialog.setContentView(view)
 
-        val tvStartSamples = view.findViewById<TextView>(R.id.tv_loop_start_samples)
-        val tvStartTime = view.findViewById<TextView>(R.id.tv_loop_start_time)
-        val tvEndSamples = view.findViewById<TextView>(R.id.tv_loop_end_samples)
-        val tvEndTime = view.findViewById<TextView>(R.id.tv_loop_end_time)
+        val etStartSamples = view.findViewById<android.widget.EditText>(R.id.et_loop_start_samples)
+        val etStartTime = view.findViewById<android.widget.EditText>(R.id.et_loop_start_time)
+        val etEndSamples = view.findViewById<android.widget.EditText>(R.id.et_loop_end_samples)
+        val etEndTime = view.findViewById<android.widget.EditText>(R.id.et_loop_end_time)
 
         // 辅助：更新显示（仿电脑端）
         fun updateDisplay() {
             val sampleRate = getSampleRate().toLong()
             val safeSampleRate = if (sampleRate > 0) sampleRate else 44100L
             
-            // 采样数
-            tvStartSamples.text = song.loopStart.toString()
-            tvEndSamples.text = song.loopEnd.toString()
+            // 采样数 (只有在没焦点时才更新，防止干扰大人输入喵)
+            if (!etStartSamples.hasFocus()) etStartSamples.setText(song.loopStart.toString())
+            if (!etEndSamples.hasFocus()) etEndSamples.setText(song.loopEnd.toString())
             
             // 秒数（带3位小数）
             val startSec = song.loopStart.toDouble() / safeSampleRate
             val endSec = song.loopEnd.toDouble() / safeSampleRate
-            tvStartTime.text = String.format("%.3f", startSec)
-            tvEndTime.text = String.format("%.3f", endSec)
+            if (!etStartTime.hasFocus()) etStartTime.setText(String.format("%.3f", startSec))
+            if (!etEndTime.hasFocus()) etEndTime.setText(String.format("%.3f", endSec))
         }
         
         fun applyUpdate(start: Long, end: Long) {
@@ -447,11 +447,64 @@ class MainActivity : AppCompatActivity() {
         
         updateDisplay()
 
+        // --- 手动输入监听逻辑喵 ---
+        val onSamplesChanged = { isStart: Boolean, text: String ->
+            val value = text.toLongOrNull() ?: 0L
+            if (isStart) applyUpdate(value, song.loopEnd)
+            else applyUpdate(song.loopStart, value)
+        }
+        
+        val onTimeChanged = { isStart: Boolean, text: String ->
+            val sec = text.toDoubleOrNull() ?: 0.0
+            val sampleRate = getSampleRate()
+            val value = (sec * sampleRate).toLong()
+            if (isStart) applyUpdate(value, song.loopEnd)
+            else applyUpdate(song.loopStart, value)
+        }
+
+        // 莱芙加上“离焦保存”魔法，只要大人点别的地方，我们就存一下喵！
+        val focusListener = android.view.View.OnFocusChangeListener { v, hasFocus ->
+            if (!hasFocus && v is android.widget.EditText) {
+                when (v.id) {
+                    R.id.et_loop_start_samples -> onSamplesChanged(true, v.text.toString())
+                    R.id.et_loop_end_samples -> onSamplesChanged(false, v.text.toString())
+                    R.id.et_loop_start_time -> onTimeChanged(true, v.text.toString())
+                    R.id.et_loop_end_time -> onTimeChanged(false, v.text.toString())
+                }
+            }
+        }
+        etStartSamples.onFocusChangeListener = focusListener
+        etEndSamples.onFocusChangeListener = focusListener
+        etStartTime.onFocusChangeListener = focusListener
+        etEndTime.onFocusChangeListener = focusListener
+
+        etStartSamples.setOnEditorActionListener { v, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                onSamplesChanged(true, v.text.toString()); v.clearFocus(); true
+            } else false
+        }
+        etEndSamples.setOnEditorActionListener { v, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                onSamplesChanged(false, v.text.toString()); v.clearFocus(); true
+            } else false
+        }
+        etStartTime.setOnEditorActionListener { v, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                onTimeChanged(true, v.text.toString()); v.clearFocus(); true
+            } else false
+        }
+        etEndTime.setOnEditorActionListener { v, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                onTimeChanged(false, v.text.toString()); v.clearFocus(); true
+            } else false
+        }
+
         // --- A 点 (Start) 逻辑 ---
         val adjustA = { deltaMs: Double ->
             val sampleRate = getSampleRate()
             val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
-            val newStart = (song.loopStart + deltaSamples).coerceIn(0, song.loopEnd.takeIf { it > 0 } ?: getDuration())
+            val dur = getDuration()
+            val newStart = (song.loopStart + deltaSamples).coerceIn(0, if (song.loopEnd > 0) song.loopEnd else dur)
             applyUpdate(newStart, song.loopEnd)
         }
 
@@ -545,8 +598,26 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(s: SeekBar?) { s?.let { seekTo(it.progress.toLong()); isDialogSeeking = false } }
         })
         
-        dialog.setOnDismissListener { dialogUpdateJob?.cancel() }
-        view.findViewById<Button>(R.id.btn_close_dialog).setOnClickListener { dialog.dismiss() }
+        // 莱芙的“临终遗愿”魔法，谁有焦点就救谁喵！
+        fun forceSyncAll() {
+            // A点
+            if (etStartTime.hasFocus()) onTimeChanged(true, etStartTime.text.toString())
+            else onSamplesChanged(true, etStartSamples.text.toString())
+            
+            // B点
+            if (etEndTime.hasFocus()) onTimeChanged(false, etEndTime.text.toString())
+            else onSamplesChanged(false, etEndSamples.text.toString())
+        }
+
+        dialog.setOnDismissListener { 
+            dialogUpdateJob?.cancel() 
+        }
+        
+        view.findViewById<Button>(R.id.btn_close_dialog).setOnClickListener { 
+            // 按钮按下的瞬间，不管大人有没有点回车，莱芙抢先一步全拿走！
+            forceSyncAll()
+            dialog.dismiss() 
+        }
         dialog.show()
     }
 

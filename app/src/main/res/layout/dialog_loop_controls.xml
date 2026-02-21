@@ -75,17 +75,21 @@
                     android:textColor="#8FBBD9"
                     android:textSize="12sp"
                     android:textStyle="bold" />
-                <TextView
-                    android:id="@+id/tv_loop_start_time"
+                <EditText
+                    android:id="@+id/et_loop_start_time"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="20.647"
                     android:textColor="#E0E0E0"
-                    android:textSize="12sp"/>
+                    android:textSize="12sp"
+                    android:background="@null"
+                    android:gravity="end"
+                    android:inputType="numberDecimal"
+                    android:imeOptions="actionDone"/>
             </LinearLayout>
 
-            <TextView
-                android:id="@+id/tv_loop_start_samples"
+            <EditText
+                android:id="@+id/et_loop_start_samples"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="991043"
@@ -93,7 +97,10 @@
                 android:textSize="22sp"
                 android:textStyle="bold"
                 android:gravity="center"
-                android:layout_marginVertical="2dp"/>
+                android:layout_marginVertical="2dp"
+                android:background="@null"
+                android:inputType="number"
+                android:imeOptions="actionDone"/>
 
             <!-- 按钮组 A -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="2dp">
@@ -139,17 +146,21 @@
                     android:textColor="#F398AF"
                     android:textSize="12sp"
                     android:textStyle="bold" />
-                <TextView
-                    android:id="@+id/tv_loop_end_time"
+                <EditText
+                    android:id="@+id/et_loop_end_time"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="84.651"
                     android:textColor="#E0E0E0"
-                    android:textSize="12sp"/>
+                    android:textSize="12sp"
+                    android:background="@null"
+                    android:gravity="end"
+                    android:inputType="numberDecimal"
+                    android:imeOptions="actionDone"/>
             </LinearLayout>
 
-            <TextView
-                android:id="@+id/tv_loop_end_samples"
+            <EditText
+                android:id="@+id/et_loop_end_samples"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="4063248"
@@ -157,7 +168,10 @@
                 android:textSize="22sp"
                 android:textStyle="bold"
                 android:gravity="center"
-                android:layout_marginVertical="2dp"/>
+                android:layout_marginVertical="2dp"
+                android:background="@null"
+                android:inputType="number"
+                android:imeOptions="actionDone"/>
 
             <!-- 按钮组 B -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="2dp">
