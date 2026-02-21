@@ -42,8 +42,11 @@ private:
     int32_t mChannelCount = 0;
     int64_t mTotalFrames = 0;
     int64_t mDurationUs = 0;
-    int64_t mCurrentPosition = 0; 
-    int64_t mSeekTargetFrame = -1; // 新增：记录我们到底想跳到哪喵！
+    int64_t mCurrentPosition = 0; // PC空间时间，不包含 delay 喵！
+    int64_t mSeekTargetAndroidFrame = -1; // 真正的物理帧位置喵！
+
+    int32_t mEncoderDelay = 0;
+    int32_t mEncoderPadding = 0;
 
     int mDupFd = -1;
     int32_t mPcmEncoding = 2; // 默认 PCM_16BIT 喵！

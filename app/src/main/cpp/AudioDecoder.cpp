@@ -48,11 +48,20 @@ bool AudioDecoder::open(int fd, int64_t offset, int64_t length) {
                 mPcmEncoding = 2; // 默认 2 = 16-bit PCM
             }
             
+            if (!AMediaFormat_getInt32(format, "encoder-delay", &mEncoderDelay)) mEncoderDelay = 0;
+            if (!AMediaFormat_getInt32(format, "encoder-padding", &mEncoderPadding)) mEncoderPadding = 0;
+            
             // 使用 round 保证总帧数万无一失喵！
             mTotalFrames = static_cast<int64_t>(std::round((static_cast<double>(mDurationUs) * mSampleRate) / 1000000.0));
+            // 扣除前后多余样本！这非常重要喵！
+            mTotalFrames = mTotalFrames - mEncoderDelay - mEncoderPadding;
+            if (mTotalFrames < 0) mTotalFrames = 0;
+
             mFormat = format;
             mCurrentPosition = 0;
-            LOGD("Stream opened: %d Hz, %d channels, %lld frames, encoding: %d", mSampleRate, mChannelCount, (long long)mTotalFrames, mPcmEncoding);
+            // 第一次播放也等于从 0 寻轨，这样会自动扔掉 mEncoderDelay 个前置无用样本喵！
+            mSeekTargetAndroidFrame = mEncoderDelay; 
+            LOGD("Stream opened: %d Hz, %d channels, %lld frames, delay: %d, padding: %d", mSampleRate, mChannelCount, (long long)mTotalFrames, mEncoderDelay, mEncoderPadding);
             return true;
         }
         AMediaFormat_delete(format);
@@ -144,17 +153,17 @@ bool AudioDecoder::decodeNextBlock() {
         int64_t skipFrames = 0;
 
         // 精准寻找目标点喵！
-        if (mSeekTargetFrame >= 0) {
-            if (bufferStartFrame + (int64_t)numFrames <= mSeekTargetFrame) {
+        if (mSeekTargetAndroidFrame >= 0) {
+            if (bufferStartFrame + (int64_t)numFrames <= mSeekTargetAndroidFrame) {
                 // 这一整块都在目标点之前
                 AMediaCodec_releaseOutputBuffer(mCodec, outputBufIdx, false);
                 return decodeNextBlock(); 
-            } else if (bufferStartFrame < mSeekTargetFrame) {
+            } else if (bufferStartFrame < mSeekTargetAndroidFrame) {
                 // 目标点就在这一块里
-                skipFrames = mSeekTargetFrame - bufferStartFrame;
-                mSeekTargetFrame = -1;
+                skipFrames = mSeekTargetAndroidFrame - bufferStartFrame;
+                mSeekTargetAndroidFrame = -1;
             } else {
-                mSeekTargetFrame = -1;
+                mSeekTargetAndroidFrame = -1;
             }
         }
 
@@ -205,16 +214,24 @@ bool AudioDecoder::decodeNextBlock() {
         
         AMediaFormat_delete(format);
         return decodeNextBlock(); 
+    } else if (outputBufIdx == AMEDIACODEC_INFO_TRY_AGAIN_LATER) {
+        return false;
     }
 
     return false;
 }
 
 bool AudioDecoder::seekToFrame(int64_t frameIndex) {
-    mSeekTargetFrame = frameIndex;
     mCurrentPosition = frameIndex;
+    
+    // Android 原生解码器会输出前置空白（encoder delay），
+    // 我们的 frameIndex 是 PC 端剪裁后的“纯净”位置。
+    // 所以物理跳转目标要加上 encoder delay 喵！
+    int64_t physicalTarget = frameIndex + mEncoderDelay;
+    mSeekTargetAndroidFrame = physicalTarget;
+    
     // 跳转时间也要用 double 算，精准到极致喵！
-    int64_t seekTimeUs = static_cast<int64_t>(std::round((static_cast<double>(frameIndex) * 1000000.0) / mSampleRate));
+    int64_t seekTimeUs = static_cast<int64_t>(std::round((static_cast<double>(physicalTarget) * 1000000.0) / mSampleRate));
     
     // 使用 PREVIOUS_SYNC，我们要确保跳到目标点之前，然后靠解析丢弃多余帧来达到精准位置喵！
     AMediaExtractor_seekTo(mExtractor, seekTimeUs, AMEDIAEXTRACTOR_SEEK_PREVIOUS_SYNC);
