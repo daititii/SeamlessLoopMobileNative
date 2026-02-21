@@ -613,6 +613,25 @@ class MainActivity : AppCompatActivity() {
             dialogUpdateJob?.cancel() 
         }
         
+        view.findViewById<Button>(R.id.btn_audition).setOnClickListener {
+            // 先同步一下大人可能刚输入完还没回车的 B 点
+            forceSyncAll()
+            
+            val sampleRate = getSampleRate().toLong()
+            val safeSampleRate = if (sampleRate > 0) sampleRate else 44100L
+            
+            // 计算终点前 3 秒的位置，确保不小于 0 也不大于终点喵
+            val seekPos = (song.loopEnd - (safeSampleRate * 3)).coerceIn(0, song.loopEnd)
+            
+            seekTo(seekPos)
+            
+            // 如果大人现在没在听，莱芙帮您点下播放！
+            if (!isPlaying) {
+                binding.btnPlayPause.performClick()
+                updatePlayPauseIcon()
+            }
+        }
+        
         view.findViewById<Button>(R.id.btn_close_dialog).setOnClickListener { 
             // 按钮按下的瞬间，不管大人有没有点回车，莱芙抢先一步全拿走！
             forceSyncAll()
