@@ -46,6 +46,7 @@ private:
     int64_t mSeekTargetFrame = -1; // 新增：记录我们到底想跳到哪喵！
 
     int mDupFd = -1;
+    int32_t mPcmEncoding = 2; // 默认 PCM_16BIT 喵！
 
     // 内部缓冲区，暂存从 Codec 吐出来但还没被领走的数据
     std::vector<float> mInternalBuffer;

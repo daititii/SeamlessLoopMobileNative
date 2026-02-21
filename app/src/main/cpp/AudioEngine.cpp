@@ -132,11 +132,11 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream *oboeStream
 
     // 安全检查：防止声道数为 0 导致除零崩溃喵！
     if (channels <= 0) {
-        memset(floatData, 0, numFrames * sizeof(float)); // 既然不知道声道，就填 0 静音吧
+        memset(floatData, 0, numFrames * mChannelCount.load() * sizeof(float)); 
         return oboe::DataCallbackResult::Continue;
     }
 
-    // 更新当前播放时间（近似值，因为 FIFO 是平滑的）
+    // 更新当前播放时间（进度条）
     int32_t framesRead = read / channels;
     mCurrentReadFrame.fetch_add(static_cast<int64_t>(framesRead));
     
@@ -161,71 +161,104 @@ void AudioEngine::decodingLoop() {
     while (mIsDecoding) {
         {
             std::unique_lock<std::mutex> lock(mFifoMutex);
-            // 如果 FIFO 满了或者没有加载曲子，就睡一会儿喵
+            // 如果 FIFO 满了或者没有加载曲子，就睡一会儿喵。这里用原子的 mSampleRate 避免死锁
             mFifoCond.wait(lock, [this]() {
-                return !mIsDecoding || (mDecoder->getSampleRate() > 0 && mFifoFullCount < kFifoSize - 4096) || mShouldSeek;
+                return !mIsDecoding || (mSampleRate.load() > 0 && mFifoFullCount < kFifoSize - 4096) || mShouldSeek;
             });
         }
 
         if (!mIsDecoding) break;
 
-        std::lock_guard<std::mutex> decoderLock(mDecoderMutex);
-        
-        // 处理外部跳转请求
-        if (mShouldSeek) {
-            mDecoder->seekToFrame(mSeekTarget);
-            mShouldSeek = false;
-        }
-
+        // 1. 安全预检喵
         int32_t channels = mChannelCount.load();
+        bool isLooping = mIsLooping.load();
+        int64_t loopStart = mLoopStartFrame.load();
+        int64_t loopEnd = mLoopEndFrame.load();
+
+        if (isLooping && loopEnd <= loopStart) isLooping = false;
+
         decodeBuffer.resize(kBlockFrames * channels);
+        int32_t samplesReadTotal = 0; // 改叫 samplesReadTotal，明确它是样本数！
 
-        // 核心：处理循环逻辑喵！
-        int64_t currentFrame = mDecoder->getCurrentPosition(); 
-        int32_t framesToDecode = kBlockFrames;
-        
-        if (mIsLooping.load() && currentFrame >= mLoopEndFrame.load()) {
-            mDecoder->seekToFrame(mLoopStartFrame.load());
-            currentFrame = mLoopStartFrame.load();
-        }
-
-        if (mIsLooping) {
-            auto remainingFrames = mLoopEndFrame.load() - currentFrame;
-            // 如果剩余帧是负数（比如 End 突然变到了 Current 之前），直接设为 0，让下一行的大循环里的 <= 0 逻辑去处理 Seek
-            if (remainingFrames < 0) remainingFrames = 0;
+        {
+            // 在这里获取锁，保护所有解码器操作！
+            std::lock_guard<std::mutex> decoderLock(mDecoderMutex);
             
-            framesToDecode = static_cast<int32_t>(std::min(static_cast<int64_t>(kBlockFrames), remainingFrames));
-        }
-
-        if (framesToDecode <= 0 && mIsLooping.load()) {
-            mDecoder->seekToFrame(mLoopStartFrame.load());
-            continue;
-        }
-
-        int32_t read = mDecoder->readSamples(decodeBuffer.data(), std::max(0, framesToDecode) * channels);
-        
-        if (read > 0) {
-            writeToFifo(decodeBuffer.data(), read);
-        } else {
-            if (mIsLooping.load() && mDecoder->isFinished()) {
-                mDecoder->seekToFrame(mLoopStartFrame.load());
-            } else {
-                // 真的没数据了，休息一下防死循环
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            if (!mDecoder || mDecoder->getSampleRate() <= 0) {
+                // 如果恰好还没真正就绪，直接跳过等一下再试
+                continue;
             }
+
+            // 处理外部跳转请求
+            if (mShouldSeek) {
+                mDecoder->seekToFrame(mSeekTarget.load());
+                mShouldSeek = false;
+            }
+
+            int64_t currentFrame = mDecoder->getCurrentPosition();
+
+            // 跳转逻辑：如果到了终点就飞回去喵
+            if (isLooping && currentFrame >= loopEnd) {
+                mDecoder->seekToFrame(loopStart);
+                currentFrame = loopStart;
+            }
+
+            // 计算本轮解码上限制 (以帧为单位计算)
+            int32_t framesRequested = kBlockFrames;
+            if (isLooping) {
+                int64_t remainingFrames = loopEnd - currentFrame;
+                framesRequested = (remainingFrames > 0) ? std::min(static_cast<int32_t>(remainingFrames), kBlockFrames) : 0;
+            }
+
+            if (framesRequested > 0) {
+                // readSamples 返回的是真正的样本数量 (samples)！
+                samplesReadTotal = mDecoder->readSamples(decodeBuffer.data(), framesRequested * channels);
+            }
+
+            // 无缝接龙逻辑喵
+            int32_t targetSamples = kBlockFrames * channels;
+            if (isLooping && samplesReadTotal < targetSamples) {
+                mDecoder->seekToFrame(loopStart);
+                int32_t samplesStillNeeded = targetSamples - samplesReadTotal;
+                // 这次算对了指针偏移，之前竟然又乘了一次 channels！
+                int32_t secondRead = mDecoder->readSamples(decodeBuffer.data() + samplesReadTotal, samplesStillNeeded);
+                if (secondRead > 0) samplesReadTotal += secondRead;
+            }
+        }
+
+        // 2. 只有拿到肉了才去投喂 FIFO 喵
+        if (samplesReadTotal > 0) {
+            // 这里绝对不能再乘以 channels 了，samplesReadTotal 本身就是我们要塞入的浮点数量！
+            writeToFifo(decodeBuffer.data(), samplesReadTotal);
+        } else {
+            // 到达非循环的文件末尾，或者恰巧没读出数据，稍微歇会儿防空转
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
     }
 }
 
 bool AudioEngine::writeToFifo(const float* data, int32_t numSamples) {
+    if (numSamples <= 0) return true;
+    
     std::lock_guard<std::mutex> lock(mFifoMutex);
-    for (int32_t i = 0; i < numSamples; i++) {
-        if (mFifoFullCount >= kFifoSize) return false; 
-        mFifo[mFifoWritePos] = data[i];
-        mFifoWritePos = (mFifoWritePos + 1) % kFifoSize;
-        mFifoFullCount++;
+    
+    // 莱芙这次加上最硬的防溢出外壳
+    int32_t actualToWrite = numSamples;
+    if (mFifoFullCount + numSamples > kFifoSize) {
+        // 如果实在是塞不下了，只能丢弃掉这组样本了，但这通常说明后台线程跑太快了
+        // 理想情况下通过 condition 保证这里不会溢出喵
+        actualToWrite = static_cast<int32_t>(kFifoSize - mFifoFullCount);
     }
-    return true;
+    
+    if (actualToWrite > 0) {
+        for (int32_t i = 0; i < actualToWrite; i++) {
+            mFifo[mFifoWritePos] = data[i];
+            mFifoWritePos = (mFifoWritePos + 1) % kFifoSize;
+            mFifoFullCount++;
+        }
+    }
+    
+    return actualToWrite == numSamples;
 }
 
 int32_t AudioEngine::readFromFifo(float* data, int32_t numSamples) {

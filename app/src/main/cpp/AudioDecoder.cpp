@@ -31,6 +31,10 @@ bool AudioDecoder::open(int fd, int64_t offset, int64_t length) {
         if (strncmp(mime, "audio/", 6) == 0) {
             AMediaExtractor_selectTrack(mExtractor, i);
             mCodec = AMediaCodec_createDecoderByType(mime);
+            
+            // 明确要求输出 16-bit PCM，防止有些设备默认输出 Float 导致杂音喵！
+            AMediaFormat_setInt32(format, "pcm-encoding", 2); // 2 = kAudioFormatPcm16Bit
+            
             AMediaCodec_configure(mCodec, format, nullptr, nullptr, 0);
             AMediaCodec_start(mCodec);
 
@@ -38,10 +42,14 @@ bool AudioDecoder::open(int fd, int64_t offset, int64_t length) {
             AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &mChannelCount);
             AMediaFormat_getInt64(format, AMEDIAFORMAT_KEY_DURATION, &mDurationUs);
             
+            if (!AMediaFormat_getInt32(format, "pcm-encoding", &mPcmEncoding)) {
+                mPcmEncoding = 2; // 默认 2 = 16-bit PCM
+            }
+            
             mTotalFrames = static_cast<int64_t>((static_cast<double>(mDurationUs) / 1000000.0) * mSampleRate);
             mFormat = format;
             mCurrentPosition = 0;
-            LOGD("Stream opened: %d Hz, %d channels, %lld frames", mSampleRate, mChannelCount, (long long)mTotalFrames);
+            LOGD("Stream opened: %d Hz, %d channels, %lld frames, encoding: %d", mSampleRate, mChannelCount, (long long)mTotalFrames, mPcmEncoding);
             return true;
         }
         AMediaFormat_delete(format);
@@ -121,27 +129,27 @@ bool AudioDecoder::decodeNextBlock() {
         size_t outputBufSize;
         uint8_t* outputBuf = AMediaCodec_getOutputBuffer(mCodec, outputBufIdx, &outputBufSize);
         
-        // 把 16-bit PCM 转换成 float
-        int16_t* pcmData = reinterpret_cast<int16_t*>(outputBuf + info.offset);
-        size_t numPoints = info.size / sizeof(int16_t);
+        // 兼容处理 16-bit PCM 跟 32-bit Float 喵！
+        bool isFloat = (mPcmEncoding == 4); // 4 = ENCODING_PCM_FLOAT
+        size_t bytesPerPoint = isFloat ? 4 : 2;
+        size_t numPoints = info.size / bytesPerPoint;
         size_t numFrames = numPoints / mChannelCount;
         
         // 计算这个 buffer 的起始帧位置喵
         auto bufferStartFrame = static_cast<int64_t>((info.presentationTimeUs * static_cast<int64_t>(mSampleRate)) / 1000000LL);
         int64_t skipFrames = 0;
 
-        // 如果我们正在寻找精准跳转点喵！
+        // 精准寻找目标点喵！
         if (mSeekTargetFrame >= 0) {
             if (bufferStartFrame + (int64_t)numFrames <= mSeekTargetFrame) {
-                // 这一整块都在目标点之前，直接扔掉！
+                // 这一整块都在目标点之前
                 AMediaCodec_releaseOutputBuffer(mCodec, outputBufIdx, false);
                 return decodeNextBlock(); 
             } else if (bufferStartFrame < mSeekTargetFrame) {
-                // 目标点就在这一块里，切掉前面的部分！
+                // 目标点就在这一块里
                 skipFrames = mSeekTargetFrame - bufferStartFrame;
-                mSeekTargetFrame = -1; // 找到了喵！
+                mSeekTargetFrame = -1;
             } else {
-                // 已经跳过了？说明之前的同步点找得有误差
                 mSeekTargetFrame = -1;
             }
         }
@@ -150,9 +158,24 @@ bool AudioDecoder::decodeNextBlock() {
         if (startPoint < numPoints) {
             size_t validPoints = numPoints - startPoint;
             mInternalBuffer.resize(validPoints);
-            for (size_t i = 0; i < validPoints; i++) {
-                mInternalBuffer[i] = static_cast<float>(pcmData[startPoint + i]) / 32768.0f;
+            
+            if (isFloat) {
+                // 如果是 Float 格式，直接按 4 字节读喵！
+                float* pcmData = reinterpret_cast<float*>(outputBuf + info.offset);
+                for (size_t i = 0; i < validPoints; i++) {
+                    mInternalBuffer[i] = pcmData[startPoint + i];
+                }
+            } else {
+                // 如果是 16 位整数，手动组装字节防爆音喵！
+                for (size_t i = 0; i < validPoints; i++) {
+                    size_t byteOffset = info.offset + (startPoint + i) * 2;
+                    uint8_t b1 = outputBuf[byteOffset];
+                    uint8_t b2 = outputBuf[byteOffset + 1];
+                    int16_t s = static_cast<int16_t>(b1 | (b2 << 8));
+                    mInternalBuffer[i] = static_cast<float>(s) / 32768.0f;
+                }
             }
+            
             AMediaCodec_releaseOutputBuffer(mCodec, outputBufIdx, false);
             return true;
         } else {
@@ -161,10 +184,23 @@ bool AudioDecoder::decodeNextBlock() {
         }
     } else if (outputBufIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
         auto format = AMediaCodec_getOutputFormat(mCodec);
-        AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, &mSampleRate);
-        AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &mChannelCount);
+        int32_t sampleRate = 44100, channels = 2, encoding = 2;
+        AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, &sampleRate);
+        AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &channels);
+        
+        if (AMediaFormat_getInt32(format, "pcm-encoding", &encoding)) {
+             mPcmEncoding = encoding;
+        } else {
+             mPcmEncoding = 2;
+        }
+        
+        LOGD("Decoder format changed: %d Hz, %d channels, encoding: %d", sampleRate, channels, mPcmEncoding);
+        
+        mSampleRate = sampleRate;
+        mChannelCount = channels;
+        
         AMediaFormat_delete(format);
-        return decodeNextBlock(); // 递归解下一块
+        return decodeNextBlock(); 
     }
 
     return false;
