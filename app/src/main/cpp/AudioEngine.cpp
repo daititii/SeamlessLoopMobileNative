@@ -2,7 +2,10 @@
 #include <cstring>
 
 AudioEngine::AudioEngine() {
-    mDecoder = std::make_unique<AudioDecoder>();
+    mDecoderA = std::make_unique<AudioDecoder>();
+    mDecoderB = std::make_unique<AudioDecoder>();
+    mActiveDecoder = mDecoderA.get();
+    mNextDecoder = mDecoderB.get();
     mFifo.resize(kFifoSize);
     mIsDecoding = true;
     mDecodingThread = std::thread(&AudioEngine::decodingLoop, this);
@@ -67,28 +70,37 @@ void AudioEngine::resume() {
 
 void AudioEngine::loadAudioSource(int fd, int64_t offset, int64_t length) {
     std::lock_guard<std::mutex> lock(mDecoderMutex);
-    if (mDecoder->open(fd, offset, length)) {
-        mSampleRate = mDecoder->getSampleRate();
-        mChannelCount = mDecoder->getChannelCount();
+    bool okA = mDecoderA->open(fd, offset, length);
+    bool okB = mDecoderB->open(fd, offset, length);
+    
+    if (okA && okB) {
+        mActiveDecoder = mDecoderA.get();
+        mNextDecoder = mDecoderB.get();
+        mIsNextDecoderReady = false;
+
+        mSampleRate = mActiveDecoder->getSampleRate();
+        mChannelCount = mActiveDecoder->getChannelCount();
         mCurrentReadFrame = 0;
         mLoopStartFrame = 0;
-        mLoopEndFrame = mDecoder->getTotalFrames();
+        mLoopEndFrame = mActiveDecoder->getTotalFrames();
         mIsLooping = true;
         
         resetFifo();
         mFifoCond.notify_all();
-        LOGD("loadAudioSource: Async decoder ready.");
+        LOGD("loadAudioSource: Dual Async decoders ready.");
     }
 }
 
 void AudioEngine::setLoopPoints(int64_t startFrame, int64_t endFrame) {
+    std::lock_guard<std::mutex> lock(mDecoderMutex);
     mLoopStartFrame = startFrame;
     mLoopEndFrame = endFrame;
     mIsLooping = (endFrame > startFrame);
     
-    // 不再这里强制重置 FIFO 喵！
-    // 这样微调循环点时就不会导致播放位置突然跳跃了。
-    // 后台解码线程在下一次填充时会自动应用新的循环点。
+    // 我们改变了循环点，必须强制下一个解码器重新寻轨到新的起点喵！
+    mIsNextDecoderReady = false;
+    
+    // 发出通知唤醒后台线程喵！
     mFifoCond.notify_all();
 }
 
@@ -105,9 +117,9 @@ int64_t AudioEngine::getCurrentPosition() {
 }
 
 int64_t AudioEngine::getDuration() {
-    // 确保 mDecoder 存在且已经加载
-    if (mDecoder) {
-        return mDecoder->getTotalFrames();
+    // 确保 mActiveDecoder 存在且已经加载
+    if (mActiveDecoder) {
+        return mActiveDecoder->getTotalFrames();
     }
     return 0;
 }
@@ -184,45 +196,76 @@ void AudioEngine::decodingLoop() {
             // 在这里获取锁，保护所有解码器操作！
             std::lock_guard<std::mutex> decoderLock(mDecoderMutex);
             
-            if (!mDecoder || mDecoder->getSampleRate() <= 0) {
+            if (!mActiveDecoder || mActiveDecoder->getSampleRate() <= 0) {
                 // 如果恰好还没真正就绪，直接跳过等一下再试
                 continue;
             }
 
             // 处理外部跳转请求
             if (mShouldSeek) {
-                mDecoder->seekToFrame(mSeekTarget.load());
+                mActiveDecoder->seekToFrame(mSeekTarget.load());
+                mIsNextDecoderReady = false; // 用户跳转了，替补队员必须重新准备喵！
                 mShouldSeek = false;
             }
 
-            int64_t currentFrame = mDecoder->getCurrentPosition();
+            int64_t currentFrame = mActiveDecoder->getCurrentPosition();
 
-            // 跳转逻辑：如果到了终点就飞回去喵
-            if (isLooping && currentFrame >= loopEnd) {
-                mDecoder->seekToFrame(loopStart);
-                currentFrame = loopStart;
+            // 如果处于循环模式，且接近了终点，替补解码器开始提前跳转到起点待命喵！
+            // 这里我们只要不在执行交接任务，就让替补队员去预先 seek 到起点
+            if (isLooping && !mIsNextDecoderReady) {
+                mNextDecoder->seekToFrame(loopStart);
+                mIsNextDecoderReady = true;
+                LOGD("DualDecoder: Pre-seeked next decoder to %lld", (long long)loopStart);
             }
 
-            // 计算本轮解码上限制 (以帧为单位计算)
+            // 计算本轮解码主力能提供多少帧喵
             int32_t framesRequested = kBlockFrames;
+            bool hitLoopEnd = false;
+            
             if (isLooping) {
                 int64_t remainingFrames = loopEnd - currentFrame;
-                framesRequested = (remainingFrames > 0) ? std::min(static_cast<int32_t>(remainingFrames), kBlockFrames) : 0;
+                if (remainingFrames <= kBlockFrames) {
+                    framesRequested = std::max(0, static_cast<int32_t>(remainingFrames));
+                    hitLoopEnd = true;
+                }
             }
 
+            // 先从主力那儿拿数据
             if (framesRequested > 0) {
-                // readSamples 返回的是真正的样本数量 (samples)！
-                samplesReadTotal = mDecoder->readSamples(decodeBuffer.data(), framesRequested * channels);
+                samplesReadTotal = mActiveDecoder->readSamples(decodeBuffer.data(), framesRequested * channels);
+            }
+            
+            // 物理 EOF 检查喵！如果循环点设在了歌曲很末尾，
+            // 可能会因为没有 encoder padding 导致没达到 loopEnd 就彻底读完了（isFinished）。
+            // 此时必须强制换棒，否则会卡死在结尾不循环喵！
+            if (isLooping && !hitLoopEnd && samplesReadTotal < framesRequested * channels && mActiveDecoder->isFinished()) {
+                hitLoopEnd = true;
+                LOGD("DualDecoder: Triggered early handover due to physical EOF.");
             }
 
-            // 无缝接龙逻辑喵
+            // 【无缝交跑换棒逻辑喵】
             int32_t targetSamples = kBlockFrames * channels;
-            if (isLooping && samplesReadTotal < targetSamples) {
-                mDecoder->seekToFrame(loopStart);
+            if (isLooping && hitLoopEnd) {
+                // 主力跑到终点了！直接瞬发换人！
+                AudioDecoder* temp = mActiveDecoder;
+                mActiveDecoder = mNextDecoder;
+                mNextDecoder = temp;
+
+                // 检查有没有突发情况（比如替补还没来得及准备就被强迫换上了）
+                if (!mIsNextDecoderReady) {
+                    LOGD("DualDecoder: Next decoder was NOT ready, forcing emergency seek!");
+                    mActiveDecoder->seekToFrame(loopStart);
+                }
+                
+                mIsNextDecoderReady = false; // 刚换下来的那个人需要重新准备喵
+
                 int32_t samplesStillNeeded = targetSamples - samplesReadTotal;
-                // 这次算对了指针偏移，之前竟然又乘了一次 channels！
-                int32_t secondRead = mDecoder->readSamples(decodeBuffer.data() + samplesReadTotal, samplesStillNeeded);
-                if (secondRead > 0) samplesReadTotal += secondRead;
+                if (samplesStillNeeded > 0) {
+                    // 这个新的主力已经在循环起点准备好数据了，直接拿！这中间因为没有寻轨延迟，是 100% 0 毫秒接缝！
+                    int32_t secondRead = mActiveDecoder->readSamples(decodeBuffer.data() + samplesReadTotal, samplesStillNeeded);
+                    if (secondRead > 0) samplesReadTotal += secondRead;
+                }
+                LOGD("DualDecoder: Handover successful at frame %lld", (long long)loopEnd);
             }
         }
 

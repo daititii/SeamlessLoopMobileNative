@@ -38,8 +38,12 @@ public:
 
 private:
     std::shared_ptr<oboe::AudioStream> mStream;
-    std::unique_ptr<AudioDecoder> mDecoder;
+    std::unique_ptr<AudioDecoder> mDecoderA;
+    std::unique_ptr<AudioDecoder> mDecoderB;
+    AudioDecoder* mActiveDecoder = nullptr;
+    AudioDecoder* mNextDecoder = nullptr;
     std::mutex mDecoderMutex; // 用于保护解码器操作喵
+    std::atomic<bool> mIsNextDecoderReady {false};
     
     std::atomic<int64_t> mLoopStartFrame {0};
     std::atomic<int64_t> mLoopEndFrame {0};
