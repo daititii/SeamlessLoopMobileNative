@@ -620,8 +620,12 @@ class MainActivity : AppCompatActivity() {
             val sampleRate = getSampleRate().toLong()
             val safeSampleRate = if (sampleRate > 0) sampleRate else 44100L
             
-            // 计算终点前 3 秒的位置，确保不小于 0 也不大于终点喵
-            val seekPos = (song.loopEnd - (safeSampleRate * 3)).coerceIn(0, song.loopEnd)
+            // 同步完数据后拿到底层最新的总长
+            val totalDur = getDuration()
+            val actualEnd = if (song.loopEnd > 0) song.loopEnd else totalDur
+            
+            // 计算终点前 3 秒的位置，确保不小于 0 也不大于实际终点喵
+            val seekPos = (actualEnd - (safeSampleRate * 3)).coerceIn(0, actualEnd)
             
             seekTo(seekPos)
             
