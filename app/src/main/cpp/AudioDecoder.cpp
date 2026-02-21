@@ -1,6 +1,8 @@
 #include "AudioDecoder.h"
 #include <android/log.h>
 #include <unistd.h>
+#include <cmath>
+#include <algorithm>
 
 #define LOG_TAG "AudioDecoder"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -46,7 +48,8 @@ bool AudioDecoder::open(int fd, int64_t offset, int64_t length) {
                 mPcmEncoding = 2; // 默认 2 = 16-bit PCM
             }
             
-            mTotalFrames = static_cast<int64_t>((static_cast<double>(mDurationUs) / 1000000.0) * mSampleRate);
+            // 使用 round 保证总帧数万无一失喵！
+            mTotalFrames = static_cast<int64_t>(std::round((static_cast<double>(mDurationUs) * mSampleRate) / 1000000.0));
             mFormat = format;
             mCurrentPosition = 0;
             LOGD("Stream opened: %d Hz, %d channels, %lld frames, encoding: %d", mSampleRate, mChannelCount, (long long)mTotalFrames, mPcmEncoding);
@@ -78,8 +81,9 @@ int32_t AudioDecoder::readSamples(float* targetBuffer, int32_t numSamples) {
             if (isFinished()) break; 
             
             // 为了解决 Loop 时的 Gap，我们在 buffer 为空时尝试多次解码（预热）喵！
+            // 提高到 50 次，应对某些“懒惰”的解码器
             bool gotData = false;
-            for (int retry = 0; retry < 10; retry++) {
+            for (int retry = 0; retry < 50; retry++) {
                 if (decodeNextBlock()) {
                     gotData = true;
                     break;
@@ -135,8 +139,8 @@ bool AudioDecoder::decodeNextBlock() {
         size_t numPoints = info.size / bytesPerPoint;
         size_t numFrames = numPoints / mChannelCount;
         
-        // 计算这个 buffer 的起始帧位置喵
-        auto bufferStartFrame = static_cast<int64_t>((info.presentationTimeUs * static_cast<int64_t>(mSampleRate)) / 1000000LL);
+        // 使用 round 消除转换抖动，这是接缝完美的关键喵！
+        auto bufferStartFrame = static_cast<int64_t>(std::round((static_cast<double>(info.presentationTimeUs) * mSampleRate) / 1000000.0));
         int64_t skipFrames = 0;
 
         // 精准寻找目标点喵！
@@ -209,7 +213,8 @@ bool AudioDecoder::decodeNextBlock() {
 bool AudioDecoder::seekToFrame(int64_t frameIndex) {
     mSeekTargetFrame = frameIndex;
     mCurrentPosition = frameIndex;
-    int64_t seekTimeUs = (frameIndex * 1000000LL) / mSampleRate;
+    // 跳转时间也要用 double 算，精准到极致喵！
+    int64_t seekTimeUs = static_cast<int64_t>(std::round((static_cast<double>(frameIndex) * 1000000.0) / mSampleRate));
     
     // 使用 PREVIOUS_SYNC，我们要确保跳到目标点之前，然后靠解析丢弃多余帧来达到精准位置喵！
     AMediaExtractor_seekTo(mExtractor, seekTimeUs, AMEDIAEXTRACTOR_SEEK_PREVIOUS_SYNC);
