@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var songAdapter: SongAdapter
     private lateinit var libraryAdapter: com.cpu.seamlessloopmobile.adapter.LibraryAdapter
     
+    private var rawScannedSongs: List<com.cpu.seamlessloopmobile.model.Song> = emptyList()
     private var allSongs: List<com.cpu.seamlessloopmobile.model.Song> = emptyList()
     private var folders: List<com.cpu.seamlessloopmobile.model.Folder> = emptyList()
     private var isShowingFolders = true
@@ -293,7 +294,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun playSong(song: com.cpu.seamlessloopmobile.model.Song) {
         // --- 莱芙的“自动合体”魔法 (仿电脑端) ---
-        val abPair = findAbPair(song)
+        val abPair = findAbPair(song, rawScannedSongs) // 必须在这个藏有 B 的原始列表里找喵！
         if (abPair != null) {
             playAbSong(abPair.first, abPair.second)
             return
@@ -407,7 +408,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun findAbPair(song: com.cpu.seamlessloopmobile.model.Song): Pair<com.cpu.seamlessloopmobile.model.Song, com.cpu.seamlessloopmobile.model.Song>? {
+    private fun findAbPair(song: com.cpu.seamlessloopmobile.model.Song, songList: List<com.cpu.seamlessloopmobile.model.Song> = allSongs): Pair<com.cpu.seamlessloopmobile.model.Song, com.cpu.seamlessloopmobile.model.Song>? {
         val fileName = song.fileName.substringBeforeLast(".")
         val aSuffixes = arrayOf("_A", "_a", "_intro", "_Intro")
         val bSuffixes = arrayOf("_B", "_b", "_loop", "_Loop")
@@ -417,8 +418,8 @@ class MainActivity : AppCompatActivity() {
                 val baseName = fileName.substring(0, fileName.length - aSuffixes[i].length)
                 val targetBName = baseName + bSuffixes[i]
                 
-                // 在所有已扫描歌曲中寻找对应的 B 段喵
-                val partB = allSongs.find { 
+                // 在传入的列表中寻找它命定的 B 段喵
+                val partB = songList.find { 
                     it.fileName.substringBeforeLast(".") == targetBName &&
                     java.io.File(it.filePath).parent == java.io.File(song.filePath).parent
                 }
@@ -446,9 +447,38 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             // 1. 获取系统媒体库的原始列表
             val scannedSongs = AudioScanner.scan(this@MainActivity)
+            rawScannedSongs = scannedSongs // 存一份原汁原味的，供底层调用
+            
+            // 找出所有的 B 段文件，如果是 B 段，且同目录下存在对应的 A 段，就不要它喵
+            val pathsToIgnore = mutableSetOf<String>()
+            val bSuffixes = arrayOf("_B", "_b", "_loop", "_Loop")
+            val aSuffixes = arrayOf("_A", "_a", "_intro", "_Intro")
+            
+            for (song in scannedSongs) {
+                val fileName = song.fileName.substringBeforeLast(".")
+                for (i in bSuffixes.indices) {
+                    if (fileName.endsWith(bSuffixes[i])) {
+                        val baseName = fileName.substring(0, fileName.length - bSuffixes[i].length)
+                        val aName = baseName + aSuffixes[i]
+                        // 看看有没有 A 段存在
+                        if (scannedSongs.any { it.fileName.substringBeforeLast(".") == aName && java.io.File(it.filePath).parent == java.io.File(song.filePath).parent }) {
+                            pathsToIgnore.add(song.filePath)
+                            break
+                        }
+                    }
+                }
+            }
+            
+            val validSongs = scannedSongs.filter { it.filePath !in pathsToIgnore }
 
-            // 2. 从数据库找回循环点
-            val updatedSongs = scannedSongs.map { song ->
+            // 2. 从数据库找回循环点，如果有 B 还要加上 B 的时长喵
+            val updatedSongs = validSongs.map { song ->
+                var totalDuration = song.duration
+                val abPair = findAbPair(song, scannedSongs) // 在全量列表找 B 喵！
+                if (abPair != null) {
+                    totalDuration += abPair.second.duration
+                }
+
                 val dbSong = songDao.getSongByPath(song.filePath)
                 if (dbSong != null) {
                     song.copy(
@@ -456,10 +486,11 @@ class MainActivity : AppCompatActivity() {
                         loopStart = dbSong.loopStart,
                         loopEnd = dbSong.loopEnd,
                         totalSamples = dbSong.totalSamples,
-                        displayName = dbSong.displayName ?: song.displayName
+                        displayName = dbSong.displayName ?: song.displayName,
+                        duration = totalDuration
                     )
                 } else {
-                    song
+                    song.copy(duration = totalDuration)
                 }
             }
 

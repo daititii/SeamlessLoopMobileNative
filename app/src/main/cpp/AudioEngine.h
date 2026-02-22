@@ -53,6 +53,9 @@ private:
     std::atomic<bool> mIsAbMode {false};
     std::atomic<bool> mAbTransitionDone {false};
     
+    std::atomic<int64_t> mTotalAbFrames {0};
+    std::atomic<int64_t> mAbIntroFrames {0};
+    
     // --- 异步解码核心组件喵 ---
     std::thread mDecodingThread;
     std::atomic<bool> mIsDecoding {false};

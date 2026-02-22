@@ -86,6 +86,8 @@ void AudioEngine::loadAudioSource(int fd, int64_t offset, int64_t length) {
         mIsLooping = true;
         mIsAbMode = false;
         mAbTransitionDone = false;
+        mTotalAbFrames = 0;
+        mAbIntroFrames = 0;
         
         resetFifo();
         mFifoCond.notify_all();
@@ -113,7 +115,12 @@ void AudioEngine::loadAbAudioSource(int fdA, int64_t offsetA, int64_t lengthA, i
         mAbTransitionDone = false;
         mIsLooping = true;
         
-        // 第一轮：终点是 Part A 的结尾
+        int64_t lenA = mDecoderA->getTotalFrames();
+        int64_t lenB = mDecoderB->getTotalFrames();
+        mAbIntroFrames = lenA;
+        mTotalAbFrames = lenA + lenB;
+        
+        // 第一轮：内部解码器追踪走到 A 结束即可，界面时间轴则横跨全长喵
         mLoopStartFrame = 0; 
         mLoopEndFrame = mActiveDecoder->getTotalFrames();
         
@@ -122,7 +129,7 @@ void AudioEngine::loadAbAudioSource(int fdA, int64_t offsetA, int64_t lengthA, i
         
         resetFifo();
         mFifoCond.notify_all();
-        LOGD("loadAbAudioSource: Intro(A) and Loop(B) sources ready.");
+        LOGD("loadAbAudioSource: Intro(A) and Loop(B) sources ready. Total merged frames: %lld", (long long)mTotalAbFrames.load());
     }
 }
 
@@ -140,7 +147,11 @@ void AudioEngine::setLoopPoints(int64_t startFrame, int64_t endFrame) {
 }
 
 void AudioEngine::seekTo(int64_t frame) {
-    mCurrentReadFrame = frame; 
+    // AB 模式下如果要手动跳跃时间，暂不完美支持（需兼顾 AB 切换），只跳跃 UI
+    if (mIsAbMode.load()) {
+        mCurrentReadFrame.store(frame);
+        return;
+    }
     mSeekTarget = frame;
     mShouldSeek = true;
     resetFifo();
@@ -152,6 +163,9 @@ int64_t AudioEngine::getCurrentPosition() {
 }
 
 int64_t AudioEngine::getDuration() {
+    if (mIsAbMode.load()) {
+        return mTotalAbFrames.load();
+    }
     // 确保 mActiveDecoder 存在且已经加载
     if (mActiveDecoder) {
         return mActiveDecoder->getTotalFrames();
@@ -188,12 +202,20 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream *oboeStream
     mCurrentReadFrame.fetch_add(static_cast<int64_t>(framesRead));
     
     // 如果播放超过了循环点，就在 UI 进度上做个模拟回跳（真正的跳转由后台完成）
-    if (mIsLooping.load() && mCurrentReadFrame.load() >= mLoopEndFrame.load()) {
-        auto start = mLoopStartFrame.load();
-        auto end = mLoopEndFrame.load();
-        // 只有当 end 大于 start 时才调整，防止逻辑死循环
-        if (end > start) {
-             mCurrentReadFrame.store(start + (mCurrentReadFrame.load() - end));
+    if (mIsLooping.load()) {
+        int64_t uiLoopStart = mLoopStartFrame.load();
+        int64_t uiLoopEnd = mLoopEndFrame.load();
+
+        if (mIsAbMode.load()) {
+            // 在合体模式下，进度的终点实际上是两首曲子的最后尾巴！
+            uiLoopStart = mAbIntroFrames.load();
+            uiLoopEnd = mTotalAbFrames.load();
+        }
+
+        if (mCurrentReadFrame.load() >= uiLoopEnd) {
+             if (uiLoopEnd > uiLoopStart) {
+                  mCurrentReadFrame.store(uiLoopStart + (mCurrentReadFrame.load() - uiLoopEnd));
+             }
         }
     }
 
