@@ -14,10 +14,15 @@ class SongAdapter(
     private val onItemClick: (Song) -> Unit
 ) : RecyclerView.Adapter<SongAdapter.SongViewHolder>() {
 
+    private var isSelectionMode = false
+    private val selectedSongIds = mutableSetOf<Long>()
+    private var onSongLongClick: ((Song) -> Unit)? = null
+
     class SongViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val title: TextView = view.findViewById(R.id.txt_song_title)
         val artist: TextView = view.findViewById(R.id.txt_song_artist)
         val loopIcon: TextView = view.findViewById(R.id.txt_loop_status)
+        val checkBox: android.widget.CheckBox = view.findViewById(R.id.checkbox_select)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SongViewHolder {
@@ -30,11 +35,51 @@ class SongAdapter(
         holder.title.text = song.displayName ?: song.fileName
         holder.artist.text = song.artist
         
+        // 勾选框逻辑
+        holder.checkBox.visibility = if (isSelectionMode) View.VISIBLE else View.GONE
+        holder.checkBox.isChecked = selectedSongIds.contains(song.id)
+        
         // 如果有循环点，就显示无限大符号
         holder.loopIcon.visibility = if (song.loopEnd > 0) View.VISIBLE else View.GONE
         
-        holder.itemView.setOnClickListener { onItemClick(song) }
+        holder.itemView.setOnClickListener {
+            if (isSelectionMode) {
+                toggleSelection(song.id)
+            } else {
+                onItemClick(song)
+            }
+        }
+
+        holder.itemView.setOnLongClickListener {
+            onSongLongClick?.invoke(song)
+            true
+        }
     }
+
+    fun setOnLongClickListener(listener: (Song) -> Unit) {
+        this.onSongLongClick = listener
+    }
+
+    fun setSelectionMode(enabled: Boolean) {
+        if (this.isSelectionMode != enabled) {
+            this.isSelectionMode = enabled
+            if (!enabled) selectedSongIds.clear()
+            notifyDataSetChanged()
+        }
+    }
+
+    fun toggleSelection(songId: Long) {
+        if (selectedSongIds.contains(songId)) {
+            selectedSongIds.remove(songId)
+        } else {
+            selectedSongIds.add(songId)
+        }
+        notifyDataSetChanged()
+    }
+
+    fun getSelectedSongIds(): List<Long> = selectedSongIds.toList()
+
+    fun getSelectedSongs(): List<Song> = songs.filter { selectedSongIds.contains(it.id) }
 
     override fun getItemCount(): Int = songs.size
 

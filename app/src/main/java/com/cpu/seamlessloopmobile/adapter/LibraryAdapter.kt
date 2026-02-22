@@ -1,0 +1,91 @@
+package com.cpu.seamlessloopmobile.adapter
+
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.recyclerview.widget.RecyclerView
+import com.cpu.seamlessloopmobile.R
+import com.cpu.seamlessloopmobile.model.Folder
+import com.cpu.seamlessloopmobile.model.LibraryItem
+import com.cpu.seamlessloopmobile.model.Playlist
+
+class LibraryAdapter(
+    private var items: List<LibraryItem>,
+    private val onPlaylistClick: (Playlist) -> Unit,
+    private val onFolderClick: (Folder) -> Unit
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+    companion object {
+        private const val TYPE_HEADER = 0
+        private const val TYPE_PLAYLIST = 1
+        private const val TYPE_FOLDER = 2
+    }
+
+    override fun getItemViewType(position: Int): Int {
+        return when (items[position]) {
+            is LibraryItem.Header -> TYPE_HEADER
+            is LibraryItem.PlaylistWrapper -> TYPE_PLAYLIST
+            is LibraryItem.FolderWrapper -> TYPE_FOLDER
+        }
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        val inflater = LayoutInflater.from(parent.context)
+        return when (viewType) {
+            TYPE_HEADER -> {
+                HeaderViewHolder(inflater.inflate(R.layout.item_header, parent, false))
+            }
+            else -> {
+                ItemViewHolder(inflater.inflate(R.layout.item_folder, parent, false))
+            }
+        }
+    }
+
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        when (val item = items[position]) {
+            is LibraryItem.Header -> {
+                (holder as HeaderViewHolder).bind(item.title)
+            }
+            is LibraryItem.PlaylistWrapper -> {
+                (holder as ItemViewHolder).bindPlaylist(item.playlist, item.songCount)
+                holder.itemView.setOnClickListener { onPlaylistClick(item.playlist) }
+            }
+            is LibraryItem.FolderWrapper -> {
+                (holder as ItemViewHolder).bindFolder(item.folder)
+                holder.itemView.setOnClickListener { onFolderClick(item.folder) }
+            }
+        }
+    }
+
+    override fun getItemCount() = items.size
+
+    fun updateItems(newItems: List<LibraryItem>) {
+        items = newItems
+        notifyDataSetChanged()
+    }
+
+    class HeaderViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        private val txtTitle: TextView = view.findViewById(R.id.txt_header_title)
+        fun bind(title: String) { txtTitle.text = title }
+    }
+
+    class ItemViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        private val txtName: TextView = view.findViewById(R.id.txt_folder_name)
+        private val txtCount: TextView = view.findViewById(R.id.txt_song_count)
+        private val imgIcon: ImageView = view.findViewById(R.id.img_folder)
+
+        fun bindPlaylist(playlist: Playlist, count: Int) {
+            txtName.text = playlist.name
+            txtCount.text = "$count 首歌曲"
+            imgIcon.setImageResource(android.R.drawable.ic_menu_agenda) // 歌单用记事本图标喵
+        }
+
+        fun bindFolder(folder: Folder) {
+            txtName.text = folder.name
+            txtCount.text = "${folder.songCount} 首歌曲"
+            imgIcon.setImageResource(android.R.drawable.ic_menu_save) // 文件夹用原本的图标喵
+        }
+    }
+}

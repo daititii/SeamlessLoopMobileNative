@@ -17,6 +17,8 @@ import com.cpu.seamlessloopmobile.adapter.SongAdapter
 import com.cpu.seamlessloopmobile.databinding.ActivityMainBinding
 import com.cpu.seamlessloopmobile.scanner.AudioScanner
 import com.cpu.seamlessloopmobile.model.Song
+import com.cpu.seamlessloopmobile.model.Playlist
+import com.cpu.seamlessloopmobile.model.LibraryItem
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import android.widget.Button
 import android.widget.ImageButton
@@ -27,7 +29,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var songAdapter: SongAdapter
-    private lateinit var folderAdapter: com.cpu.seamlessloopmobile.adapter.FolderAdapter
+    private lateinit var libraryAdapter: com.cpu.seamlessloopmobile.adapter.LibraryAdapter
     
     private var allSongs: List<com.cpu.seamlessloopmobile.model.Song> = emptyList()
     private var folders: List<com.cpu.seamlessloopmobile.model.Folder> = emptyList()
@@ -44,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     // 数据库相关
     private lateinit var database: com.cpu.seamlessloopmobile.db.AppDatabase
     private val songDao by lazy { database.songDao() }
+    private val playlistDao by lazy { database.playlistDao() }
 
     // 文件选择器喵
     private val dbPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
@@ -201,14 +204,35 @@ class MainActivity : AppCompatActivity() {
             playSong(song)
         }
         
-        // 初始化文件夹列表适配器
-        folderAdapter = com.cpu.seamlessloopmobile.adapter.FolderAdapter(emptyList()) { folder ->
-            openFolder(folder)
+        songAdapter.setOnLongClickListener { song ->
+            enterSelectionMode()
+            songAdapter.toggleSelection(song.id) // 顺便把长按这首也选上喵
         }
+        
+        // 初始化主库列表适配器 (包含歌单和文件夹)
+        libraryAdapter = com.cpu.seamlessloopmobile.adapter.LibraryAdapter(
+            emptyList(),
+            onPlaylistClick = { playlist -> openPlaylist(playlist) },
+            onFolderClick = { folder -> openFolder(folder) }
+        )
 
         binding.rvSongs.layoutManager = LinearLayoutManager(this)
-        // 默认显示文件夹
-        binding.rvSongs.adapter = folderAdapter
+        // 默认显示主库（歌单+文件夹）
+        binding.rvSongs.adapter = libraryAdapter
+    }
+
+    private fun openPlaylist(playlist: com.cpu.seamlessloopmobile.model.Playlist) {
+        lifecycleScope.launch(Dispatchers.Main) {
+            val songs = withContext(Dispatchers.IO) { playlistDao.getSongsInPlaylist(playlist.id) }
+            isShowingFolders = false
+            currentPlaylist = songs
+            songAdapter.updateSongs(songs)
+            binding.rvSongs.adapter = songAdapter
+            
+            binding.toolbar.title = "歌单: ${playlist.name}"
+            binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
+            binding.toolbar.setNavigationOnClickListener { showFolderList() }
+        }
     }
 
     private fun openFolder(folder: com.cpu.seamlessloopmobile.model.Folder) {
@@ -228,9 +252,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun showFolderList() {
         isShowingFolders = true
-        binding.rvSongs.adapter = folderAdapter
+        binding.rvSongs.adapter = libraryAdapter
         binding.toolbar.title = "Seamless Loop"
         binding.toolbar.navigationIcon = null
+        
+        // 如果是从多选模式回来的，要恢复普通菜单喵
+        invalidateOptionsMenu()
     }
 
     private fun playSong(song: com.cpu.seamlessloopmobile.model.Song) {
@@ -281,8 +308,7 @@ class MainActivity : AppCompatActivity() {
                 if (durationFrames > 0) {
                     val updatedWithSamples = song.copy(totalSamples = durationFrames)
                     lifecycleScope.launch(Dispatchers.IO) {
-                        val dbSong = songDao.getSongByPath(updatedWithSamples.filePath)
-                        songDao.insertOrUpdateSong(if (dbSong != null) updatedWithSamples.copy(id = dbSong.id) else updatedWithSamples)
+                        songDao.insertOrUpdateSong(updatedWithSamples)
                     }
                     withContext(Dispatchers.Main) {
                         // 同步更新内存，防止 UI 显示滞后
@@ -325,20 +351,16 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             // 1. 获取系统媒体库的原始列表
             val scannedSongs = AudioScanner.scan(this@MainActivity)
-            
 
-            // 2. 从咱们的数据库里找回大人的“回忆”
+            // 2. 从数据库找回循环点
             val updatedSongs = scannedSongs.map { song ->
                 val dbSong = songDao.getSongByPath(song.filePath)
                 if (dbSong != null) {
-                    // 如果大人的数据库里有这首歌，就用数据库里的数据喵！
-                    // 尤其是 loopStart 和 loopEnd，绝对不能丢！
                     song.copy(
                         id = dbSong.id,
                         loopStart = dbSong.loopStart,
                         loopEnd = dbSong.loopEnd,
                         totalSamples = dbSong.totalSamples,
-                        // 如果数据库里有显示名就用数据库的，否则用原来的
                         displayName = dbSong.displayName ?: song.displayName
                     )
                 } else {
@@ -346,55 +368,172 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            // 3. 同时把大人的虚拟歌单也请出来喵
+            val dbPlaylists = playlistDao.getAllPlaylists()
+
             withContext(Dispatchers.Main) {
-                // 3. 再次确保这些数据是经过数据库“洗礼”的
                 allSongs = updatedSongs
 
-                
-                // 按文件夹分组逻辑
+                // 4. 按文件夹分组 (保持原样)
                 val folderMap = mutableMapOf<String, MutableList<com.cpu.seamlessloopmobile.model.Song>>()
-                
                 for (song in allSongs) {
-                    try {
-                        val file = java.io.File(song.filePath)
-                        val parentPath = file.parent ?: "Unknown"
-                        
-                        if (!folderMap.containsKey(parentPath)) {
-                            folderMap[parentPath] = mutableListOf()
-                        }
-                        folderMap[parentPath]?.add(song)
-                    } catch (e: Exception) {
-                        if (!folderMap.containsKey("Unknown")) {
-                            folderMap["Unknown"] = mutableListOf()
-                        }
-                        folderMap["Unknown"]?.add(song)
+                    val parentPath = java.io.File(song.filePath).parent ?: "Unknown"
+                    folderMap.getOrPut(parentPath) { mutableListOf() }.add(song)
+                }
+                
+                folders = folderMap.map { (path, songs) ->
+                    val name = try { java.io.File(path).name } catch (e: Exception) { path }
+                    com.cpu.seamlessloopmobile.model.Folder(name, path, songs.size, songs)
+                }.sortedBy { it.name }
+
+                // 5. 构建全新的混合列表 LibraryItems 喵！
+                val libraryItems = mutableListOf<com.cpu.seamlessloopmobile.model.LibraryItem>()
+                
+                // 歌单放在最高位！
+                if (dbPlaylists.isNotEmpty()) {
+                    libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header("我的歌单"))
+                    dbPlaylists.forEach { playlist ->
+                        val count = withContext(Dispatchers.IO) { playlistDao.getSongCountInPlaylist(playlist.id) }
+                        libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.PlaylistWrapper(playlist, count))
                     }
                 }
                 
-                // 转换为 Folder 对象列表
-                folders = folderMap.map { (path, songs) ->
-                    val folderName = try {
-                        val file = java.io.File(path)
-                        file.name 
-                    } catch (e: Exception) {
-                        path
-                    }
-                    com.cpu.seamlessloopmobile.model.Folder(folderName, path, songs.size, songs)
-                }.sortedBy { it.name }
-                
-                folderAdapter.updateFolders(folders)
-                showFolderList() // 默认显示文件夹列表
+                // 接着是文件夹
+                libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header("本地目录"))
+                folders.forEach { folder ->
+                    libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.FolderWrapper(folder))
+                }
+
+                libraryAdapter.updateItems(libraryItems)
+                showFolderList()
             }
         }
     }
 
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        if (!isShowingFolders) {
-            // 如果在看歌，就退回文件夹列表
+    private var isSelectionMode = false
+
+    private fun enterSelectionMode() {
+        if (isSelectionMode) return
+        isSelectionMode = true
+        songAdapter.setSelectionMode(true)
+        
+        // 变换 Toolbar
+        binding.toolbar.title = "已选择: 0"
+        binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_close_clear_cancel)
+        binding.toolbar.setNavigationOnClickListener {
+            exitSelectionMode()
+        }
+        
+        // 动态添加“添加到歌单”按钮到菜单
+        binding.toolbar.menu.clear()
+        binding.toolbar.menu.add("添加到歌单").setIcon(android.R.drawable.ic_menu_add).setShowAsActionFlags(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM).setOnMenuItemClickListener {
+            showAddToPlaylistDialog()
+            true
+        }
+    }
+
+    private fun exitSelectionMode() {
+        isSelectionMode = false
+        songAdapter.setSelectionMode(false)
+        
+        if (isShowingFolders) {
             showFolderList()
         } else {
-            // 如果已经在文件夹列表，执行系统默认操作（退出）
+            // 恢复当前文件夹的标题
+            val currentFolder = folders.find { it.songs.any { s -> s.id == currentPlaylist.firstOrNull()?.id } }
+            binding.toolbar.title = currentFolder?.name ?: "Seamless Loop"
+            binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
+            binding.toolbar.setNavigationOnClickListener { showFolderList() }
+        }
+        
+        // 恢复原有菜单
+        invalidateOptionsMenu()
+    }
+
+    private fun showAddToPlaylistDialog() {
+        val selectedSongs = songAdapter.getSelectedSongs()
+        if (selectedSongs.isEmpty()) {
+            Toast.makeText(this, "请先选择歌曲喵", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        lifecycleScope.launch(Dispatchers.Main) {
+            val playlists = withContext(Dispatchers.IO) { playlistDao.getAllPlaylists() }
+            
+            val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this@MainActivity)
+                .setTitle("添加到歌单")
+            
+            val items = playlists.map { it.name }.toMutableList()
+            items.add("+ 新建歌单")
+            
+            dialog.setItems(items.toTypedArray()) { _, which ->
+                if (which == items.size - 1) {
+                    showCreatePlaylistDialog(selectedSongs)
+                } else {
+                    val targetPlaylist = playlists[which]
+                    addSongsToExistingPlaylist(targetPlaylist, selectedSongs)
+                }
+            }
+            dialog.show()
+        }
+    }
+
+    private fun showCreatePlaylistDialog(songs: List<Song>) {
+        val editText = android.widget.EditText(this)
+        editText.hint = "歌单名称"
+        
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("新建歌单")
+            .setView(editText)
+            .setPositiveButton("确定") { _, _ ->
+                val name = editText.text.toString()
+                if (name.isNotEmpty()) {
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        // 1. 先确保所有选择的歌曲都已经在数据库里“挂号”了喵，拿到真正的 ID
+                        val persistentSongIds = songs.map { song ->
+                            songDao.insertOrUpdateSong(song)
+                        }
+                        
+                        // 2. 创建歌单并关联
+                        val newId = playlistDao.insertPlaylist(com.cpu.seamlessloopmobile.model.Playlist(name = name))
+                        playlistDao.addSongsToPlaylist(newId.toInt(), persistentSongIds)
+                        
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity, "成功创建歌单: $name 喵!", Toast.LENGTH_SHORT).show()
+                            exitSelectionMode()
+                            scanSongs() // 莱芙立刻重新加载列表，让歌单露脸喵！
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun addSongsToExistingPlaylist(playlist: Playlist, songs: List<Song>) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            // 1. 同样要先入库拿到真 ID 喵
+            val persistentSongIds = songs.map { song ->
+                songDao.insertOrUpdateSong(song)
+            }
+            
+            // 2. 关联到现有歌单
+            playlistDao.addSongsToPlaylist(playlist.id, persistentSongIds)
+            
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "已添加到 ${playlist.name} 喵!", Toast.LENGTH_SHORT).show()
+                exitSelectionMode()
+                scanSongs() // 同步刷新喵！
+            }
+        }
+    }
+
+    override fun onBackPressed() {
+        if (isSelectionMode) {
+            exitSelectionMode()
+        } else if (!isShowingFolders) {
+            showFolderList()
+        } else {
             super.onBackPressed()
         }
     }

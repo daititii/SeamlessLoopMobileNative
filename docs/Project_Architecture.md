@@ -21,11 +21,18 @@
 | 目录/文件 | 说明 |
 | :--- | :--- |
 | `MainActivity.kt` | 程序主入口。负责 UI 逻辑集成、JNI 接口调用和 BottomSheet 弹窗控制。 |
-| `model/Song.kt` | 核心数据模型，定义了循环点字段及元数据。 |
-| `model/Folder.kt` | 文件夹模型，用于扁平化列表展示。 |
-| `adapter/SongAdapter.kt` | 歌曲列表适配器，支持 DiffUtil 增量刷新。 |
-| `adapter/FolderAdapter.kt` | 文件夹列表适配器。 |
-| `scanner/AudioScanner.kt` | 使用 ContentResolver 扫描系统中符合要求的音频文件。 |
+| `db/` | 数据库层。包含 `AppDatabase` (Room) 和 `DateConverter`。 |
+| `model/` | 数据模型与 DAO 层。 |
+| ├─ `Song.kt` | 歌曲模型，包含循环点字段。 |
+| ├─ `SongDao.kt` | 歌曲数据访问对象。 |
+| ├─ `Playlist.kt` | 歌单实体。 |
+| ├─ `PlaylistItem.kt` | 歌单内的歌曲关联实体。 |
+| ├─ `PlaylistFolder.kt` | 歌单文件夹分类模型。 |
+| ├─ `PlaylistDao.kt` | 歌单相关操作 DAO。 |
+| ├─ `LibraryItem.kt` | 媒体库列表通用项接口。 |
+| ├─ `Folder.kt` | 文件夹模型。 |
+| `adapter/` | 界面适配器。包含 `SongAdapter` 和 `FolderAdapter`。 |
+| `scanner/` | `AudioScanner` 负责媒体库扫描。 |
 
 ### 2.3 界面资源层 (app/src/main/res/layout/)
 | 文件 | 说明 |
@@ -36,17 +43,23 @@
 
 ## 3. 核心流程
 
-### 3.1 无缝播放流程
-1. `AudioScanner` 扫描媒体库 -> 转换成 `Song` 列表。
-2. 用户点击播放 -> `MainActivity` 开启音频 FD 传给 JNI。
+### 3.1 数据持久化流程
+1. `AudioScanner` 扫描媒体库。
+2. 将解析出的 `Song` 对象通过 `SongDao` 存储至 `AppDatabase`。
+3. 歌单由 `PlaylistDao` 管理，支持创建文件夹及添加歌曲。
+
+### 3.2 无缝播放流程
+1. 用户点击播放 -> 从数据库获取歌曲信息。
+2. `MainActivity` 开启音频 FD 传给 JNI。
 3. `AudioEngine` 启动后台解码线程 -> 持续填充环形缓冲区。
 4. Oboe 回调请求数据 -> 从缓冲区读取 PCM -> 如果当前帧越界则立即回跳。
 
-### 3.2 循环点调整流程
+### 3.3 循环点调整流程
 1. 用户打开 `Loop Control` 弹窗。
 2. 拖动弹窗内的进度条或点击 Set Current。
 3. 调用 `setLoopPoints` (JNI) -> 底层立即清空缓冲区并重新从跳转点开始解码。
+4. 同步更新数据库中的循环参数。
 
 ---
 **记录人**：莱芙・泽诺 (Lev Zenith)
-**版本**：v1.2 (2026-02-19)
+**版本**：v1.3 (2026-02-22)
