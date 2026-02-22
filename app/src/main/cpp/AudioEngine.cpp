@@ -120,29 +120,43 @@ void AudioEngine::loadAbAudioSource(int fdA, int64_t offsetA, int64_t lengthA, i
         mAbIntroFrames = lenA;
         mTotalAbFrames = lenA + lenB;
         
-        // 第一轮：内部解码器追踪走到 A 结束即可，界面时间轴则横跨全长喵
+        // 初始用户期望：循环整个 Part B 喵
+        mUserLoopStart = lenA;
+        mUserLoopEnd = mTotalAbFrames.load();
+
+        // 第一轮：内部解码器正在跑 A，所以只需跑到 A 的物理末尾即可触发换棒
         mLoopStartFrame = 0; 
         mLoopEndFrame = mActiveDecoder->getTotalFrames();
         
-        // 存储 Part B 的信息以便后续重载（或者我们可以利用 decoderB 的 fd 信息）
-        // 简单起见，我们假设 B 会被一直使用
-        
         resetFifo();
         mFifoCond.notify_all();
-        LOGD("loadAbAudioSource: Intro(A) and Loop(B) sources ready. Total merged frames: %lld", (long long)mTotalAbFrames.load());
+        LOGD("loadAbAudioSource: Intro(A) and Loop(B) sources ready. User loop: [%lld, %lld]", (long long)mUserLoopStart.load(), (long long)mUserLoopEnd.load());
     }
 }
 
 void AudioEngine::setLoopPoints(int64_t startFrame, int64_t endFrame) {
     std::lock_guard<std::mutex> lock(mDecoderMutex);
-    mLoopStartFrame = startFrame;
-    mLoopEndFrame = endFrame;
+    mUserLoopStart = startFrame;
+    mUserLoopEnd = endFrame;
+
+    if (mIsAbMode.load()) {
+        if (mAbTransitionDone.load()) {
+            // 如果已经在 B 段里了，立刻应用到内部循环点上
+            int64_t intro = mAbIntroFrames.load();
+            mLoopStartFrame = std::max((int64_t)0, startFrame - intro);
+            mLoopEndFrame = std::max(mLoopStartFrame.load(), endFrame - intro);
+        } else {
+            // 如果还在 A 段（前奏），内部循环点必须保持为 [0, TotalA]，等进去 B 段后再应用
+            mLoopStartFrame = 0;
+            mLoopEndFrame = mAbIntroFrames.load();
+        }
+    } else {
+        mLoopStartFrame = startFrame;
+        mLoopEndFrame = endFrame;
+    }
+
     mIsLooping = (endFrame > startFrame);
-    
-    // 我们改变了循环点，必须强制下一个解码器重新寻轨到新的起点喵！
     mIsNextDecoderReady = false;
-    
-    // 发出通知唤醒后台线程喵！
     mFifoCond.notify_all();
 }
 
@@ -212,9 +226,9 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream *oboeStream
         int64_t uiLoopEnd = mLoopEndFrame.load();
 
         if (mIsAbMode.load()) {
-            // 在合体模式下，进度的终点实际上是两首曲子的最后尾巴！
-            uiLoopStart = mAbIntroFrames.load();
-            uiLoopEnd = mTotalAbFrames.load();
+            // 在合体模式下，进度的终点实际上是用户期望的绝对位置喵！
+            uiLoopStart = mUserLoopStart.load();
+            uiLoopEnd = mUserLoopEnd.load();
         }
 
         if (mCurrentReadFrame.load() >= uiLoopEnd) {
@@ -279,6 +293,8 @@ void AudioEngine::decodingLoop() {
                             // （此版本暂时没有重载 A 的逻辑，如果用户频繁这样跳可能会异常。
                             // 电脑端实际上通常是把AB看作一体了，或者禁止向A退回。我们尽力一跳）
                             mAbTransitionDone = false;
+                            mLoopStartFrame = 0;
+                            mLoopEndFrame = introLength;
                         }
                         mActiveDecoder->seekToFrame(target);
                         mCurrentReadFrame.store(target);
@@ -293,13 +309,23 @@ void AudioEngine::decodingLoop() {
                             mAbTransitionDone = true;
                         }
                         // 需要把目标映射到 B 段内部的时间点
-                        int64_t bLength = mNextDecoder->getTotalFrames();
-                        int64_t offsetInB = (target - introLength) % (bLength > 0 ? bLength : 1);
-                        mActiveDecoder->seekToFrame(offsetInB);
-                        mCurrentReadFrame.store(target);
+                        int64_t bTotal = mActiveDecoder->getTotalFrames();
+                        int64_t uStart = mUserLoopStart.load() - introLength;
+                        int64_t uEnd = mUserLoopEnd.load() - introLength;
+
+                        // 映射跳转点：用户点的是全局 target，在 B 段里的位置是 target - intro
+                        int64_t offsetInB = (target - introLength);
                         
-                        mLoopStartFrame = 0; 
-                        mLoopEndFrame = mActiveDecoder->getTotalFrames();
+                        // 应用循环限制逻辑：如果用户点到了循环圈外，我们要把它圈回来喵
+                        if (uEnd > uStart && uEnd > 0) {
+                            offsetInB = uStart + (offsetInB - uStart) % (uEnd - uStart);
+                        }
+
+                        mActiveDecoder->seekToFrame(offsetInB);
+                        mCurrentReadFrame.store(introLength + offsetInB);
+                        
+                        mLoopStartFrame = std::max((int64_t)0, uStart);
+                        mLoopEndFrame = std::max(mLoopStartFrame.load(), uEnd > 0 ? uEnd : bTotal);
                     }
                 } else {
                     mActiveDecoder->seekToFrame(target);
@@ -308,6 +334,12 @@ void AudioEngine::decodingLoop() {
                 
                 mIsNextDecoderReady = false; // 用户跳转了，替补队员必须重新准备喵！
                 mShouldSeek = false;
+                
+                // 喵！这里非常重要！如果我们刚才在 AB 模式或者其他模式里修改了内部循环点，
+                // 必须要刷新一下局部变量，否则接下来的计算会用老的时间点导致立刻鬼畜换棒！
+                loopStart = mLoopStartFrame.load();
+                loopEnd = mLoopEndFrame.load();
+                if (isLooping && loopEnd <= loopStart) isLooping = false;
             }
 
             int64_t currentFrame = mActiveDecoder->getCurrentPosition();
@@ -359,10 +391,16 @@ void AudioEngine::decodingLoop() {
                     // 我们要把 mNextDecoder 也变成 Part B，这样以后才能无限循环 Part B 喵！
                     mNextDecoder->openFromDecoder(mActiveDecoder);
                     
-                    mLoopStartFrame = 0; // 从此开始，回绕目标就是 Part B 的开头
-                    mLoopEndFrame = mActiveDecoder->getTotalFrames(); // B 的总帧数
+                    int64_t intro = mAbIntroFrames.load();
+                    int64_t uStart = mUserLoopStart.load() - intro;
+                    int64_t uEnd = mUserLoopEnd.load() - intro;
+                    int64_t bTotal = mActiveDecoder->getTotalFrames();
+
+                    mLoopStartFrame = std::max((int64_t)0, uStart);
+                    mLoopEndFrame = std::max(mLoopStartFrame.load(), uEnd > 0 ? uEnd : bTotal);
+
                     mAbTransitionDone = true;
-                    LOGD("DualDecoder: AB Transition (Intro -> Loop) completed successfully.");
+                    LOGD("DualDecoder: AB Transition completed. Now looping in B: [%lld, %lld]", (long long)mLoopStartFrame.load(), (long long)mLoopEndFrame.load());
                 }
 
                 // 检查有没有突发情况（比如替补还没来得及准备就被强迫换上了）

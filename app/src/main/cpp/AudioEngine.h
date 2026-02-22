@@ -56,6 +56,10 @@ private:
     std::atomic<int64_t> mTotalAbFrames {0};
     std::atomic<int64_t> mAbIntroFrames {0};
     
+    // 用户设定的绝对循环点（基于完整的时间线，AB 合体时涵盖 A+B）
+    std::atomic<int64_t> mUserLoopStart {0};
+    std::atomic<int64_t> mUserLoopEnd {0};
+    
     // --- 异步解码核心组件喵 ---
     std::thread mDecodingThread;
     std::atomic<bool> mIsDecoding {false};

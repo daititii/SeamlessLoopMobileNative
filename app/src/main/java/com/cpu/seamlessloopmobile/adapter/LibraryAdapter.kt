@@ -15,6 +15,7 @@ class LibraryAdapter(
     private var items: List<LibraryItem>,
     private val onPlaylistClick: (Playlist) -> Unit,
     private val onFolderClick: (Folder) -> Unit,
+    private val onQuickActionClick: (String) -> Unit,
     private val onPlaylistLongClick: ((Playlist) -> Unit)? = null
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
@@ -26,6 +27,7 @@ class LibraryAdapter(
         private const val TYPE_HEADER = 0
         private const val TYPE_PLAYLIST = 1
         private const val TYPE_FOLDER = 2
+        private const val TYPE_QUICK_ACTION = 3
     }
 
     fun setSelectionMode(enabled: Boolean) {
@@ -60,6 +62,7 @@ class LibraryAdapter(
             is LibraryItem.Header -> TYPE_HEADER
             is LibraryItem.PlaylistWrapper -> TYPE_PLAYLIST
             is LibraryItem.FolderWrapper -> TYPE_FOLDER
+            is LibraryItem.QuickAction -> TYPE_QUICK_ACTION
         }
     }
 
@@ -108,6 +111,10 @@ class LibraryAdapter(
                 holder.itemView.setBackgroundColor(0)
                 holder.itemView.setOnClickListener { onFolderClick(item.folder) }
             }
+            is LibraryItem.QuickAction -> {
+                (holder as ItemViewHolder).bindQuickAction(item)
+                holder.itemView.setOnClickListener { onQuickActionClick(item.title) }
+            }
         }
     }
 
@@ -138,6 +145,12 @@ class LibraryAdapter(
             txtName.text = folder.name
             txtCount.text = "${folder.songCount} 首歌曲"
             imgIcon.setImageResource(android.R.drawable.ic_menu_save) // 文件夹用原本的图标喵
+        }
+
+        fun bindQuickAction(action: LibraryItem.QuickAction) {
+            txtName.text = action.title
+            txtCount.text = "${action.count} 首歌曲"
+            imgIcon.setImageResource(action.iconRes)
         }
     }
 }

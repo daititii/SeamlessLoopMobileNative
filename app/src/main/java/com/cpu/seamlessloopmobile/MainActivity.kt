@@ -35,7 +35,8 @@ class MainActivity : AppCompatActivity() {
     private var rawScannedSongs: List<com.cpu.seamlessloopmobile.model.Song> = emptyList()
     private var allSongs: List<com.cpu.seamlessloopmobile.model.Song> = emptyList()
     private var folders: List<com.cpu.seamlessloopmobile.model.Folder> = emptyList()
-    private var isShowingFolders = true
+    private var isShowingFolders = false // 默认不显示文件夹
+    private var isExploringLocal = false // 是否正在探索本地音乐
     
     // 播放状态管理
     private var currentPlaylist: List<com.cpu.seamlessloopmobile.model.Song> = emptyList()
@@ -46,6 +47,7 @@ class MainActivity : AppCompatActivity() {
     private var updateProgressJob: kotlinx.coroutines.Job? = null
     private var isUserSeeking = false
     private var isAbModePlaying = false
+    private var currentAbIntroSong: com.cpu.seamlessloopmobile.model.Song? = null
 
     // 数据库相关
     private lateinit var database: com.cpu.seamlessloopmobile.db.AppDatabase
@@ -76,8 +78,13 @@ class MainActivity : AppCompatActivity() {
                     exitSelectionMode()
                 } else if (isPlaylistSelectionMode) {
                     exitPlaylistSelectionMode()
-                } else if (!isShowingFolders) {
-                    showFolderList()
+                } else if (isExploringLocal) {
+                    if (!isShowingFolders) {
+                        showFolderList() // 从歌曲列表回退到文件夹列表喵
+                    } else {
+                        isExploringLocal = false
+                        loadHomeView() // 从文件夹列表回退到主页喵
+                    }
                 } else {
                     isEnabled = false // 关掉拦截，执行默认返回
                     onBackPressedDispatcher.onBackPressed()
@@ -89,7 +96,7 @@ class MainActivity : AppCompatActivity() {
         setupRecyclerView()
         setupSeekBar()
         setupPlaybackControls()
-        checkPermissionsAndScan()
+        checkPermissionsAndLoadHome()
     }
 
     override fun onDestroy() {
@@ -137,14 +144,14 @@ class MainActivity : AppCompatActivity() {
 
         // 循环设置按钮
         binding.btnLoopSettings.setOnClickListener {
-            // 使用 ID 重新确认当前歌曲索引，防止对象更新后找不到
+            if (isAbModePlaying) {
+                currentAbIntroSong?.let { 
+                    showLoopSettingsDialog(it) 
+                } ?: Toast.makeText(this, "AB 歌曲信息缺失喵", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
             if (currentPlaylist.isNotEmpty()) {
-                if (currentSongIndex < 0 || currentSongIndex >= currentPlaylist.size) {
-                    // 尝试恢复索引
-                    // 这里假设 currentPlaylist 已经被 updateLoopPoints 更新过了
-                    // 如果找不到，说明真的没在播放列表里
-                }
-                
                 if (currentSongIndex >= 0 && currentSongIndex < currentPlaylist.size) {
                     showLoopSettingsDialog(currentPlaylist[currentSongIndex])
                 } else {
@@ -214,7 +221,7 @@ class MainActivity : AppCompatActivity() {
         
         songAdapter.setOnLongClickListener { song ->
             enterSelectionMode()
-            songAdapter.toggleSelection(song.id) // 顺便把长按这首也选上喵
+            songAdapter.toggleSelection(song.filePath) // 顺便把长按这首也选上喵
         }
         
         // 初始化主库列表适配器 (包含歌单和文件夹)
@@ -222,6 +229,11 @@ class MainActivity : AppCompatActivity() {
             emptyList(),
             onPlaylistClick = { playlist -> openPlaylist(playlist) },
             onFolderClick = { folder -> openFolder(folder) },
+            onQuickActionClick = { title -> 
+                if (title == "本地音乐") {
+                    enterLocalMusic()
+                }
+            },
             onPlaylistLongClick = { playlist -> enterPlaylistSelectionMode(playlist) }
         )
         libraryAdapter.setOnSelectionChangedListener { count ->
@@ -259,13 +271,17 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.Main) {
             val songs = withContext(Dispatchers.IO) { playlistDao.getSongsInPlaylist(playlist.id) }
             isShowingFolders = false
+            isExploringLocal = true // 进入了歌单也算是在“探索”喵
             currentPlaylist = songs
             songAdapter.updateSongs(songs)
             binding.rvSongs.adapter = songAdapter
             
             binding.toolbar.title = "歌单: ${playlist.name}"
             binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
-            binding.toolbar.setNavigationOnClickListener { showFolderList() }
+            binding.toolbar.setNavigationOnClickListener { 
+                isExploringLocal = false
+                loadHomeView() 
+            }
         }
     }
 
@@ -284,12 +300,33 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun enterLocalMusic() {
+        isExploringLocal = true
+        if (folders.isEmpty()) {
+            scanSongs() // 如果还没扫过，就扫一下喵
+        } else {
+            showFolderList()
+        }
+    }
+
     private fun showFolderList() {
         isShowingFolders = true
         binding.rvSongs.adapter = libraryAdapter
-        binding.toolbar.title = "Seamless Loop"
-        binding.toolbar.navigationIcon = null
+        binding.toolbar.title = "本地音乐"
+        binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
+        binding.toolbar.setNavigationOnClickListener { 
+            isExploringLocal = false
+            loadHomeView() 
+        }
         
+        // 同步 UI
+        val libraryItems = mutableListOf<com.cpu.seamlessloopmobile.model.LibraryItem>()
+        libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header("本地目录"))
+        folders.forEach { folder ->
+            libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.FolderWrapper(folder))
+        }
+        libraryAdapter.updateItems(libraryItems)
+
         // 如果是从多选模式回来的，要恢复普通菜单喵
         invalidateOptionsMenu()
     }
@@ -396,9 +433,26 @@ class MainActivity : AppCompatActivity() {
                         )
                     }
                 }
+
+                // --- 莱芙的循环记忆回溯喵 ---
+                if (introSong.loopEnd > 0) {
+                    setLoopPoints(introSong.loopStart, introSong.loopEnd)
+                }
+
+                // 获取总帧数并同步回数据库喵
+                val durationFrames = getDuration()
+                if (durationFrames > 0) {
+                    val updatedWithSamples = introSong.copy(totalSamples = durationFrames)
+                    songDao.insertOrUpdateSong(updatedWithSamples)
+                    withContext(Dispatchers.Main) {
+                        allSongs = allSongs.map { if (it.filePath == introSong.filePath) updatedWithSamples else it }
+                        currentPlaylist = currentPlaylist.map { if (it.filePath == introSong.filePath) updatedWithSamples else it }
+                    }
+                }
                 
                 withContext(Dispatchers.Main) {
                     exitSelectionMode()
+                    currentAbIntroSong = introSong
                     isAbModePlaying = true // 这是 AB 魔法大合体！
                     isPlaying = true
                     binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
@@ -422,7 +476,7 @@ class MainActivity : AppCompatActivity() {
                 val baseName = fileName.substring(0, fileName.length - aSuffixes[i].length)
                 val targetBName = baseName + bSuffixes[i]
                 
-                // 在传入的列表中寻找它命定的 B 段喵
+                // 在传入列表中寻找它命定的 B 段喵（恢复同文件夹限制）
                 val partB = songList.find { 
                     it.fileName.substringBeforeLast(".") == targetBName &&
                     java.io.File(it.filePath).parent == java.io.File(song.filePath).parent
@@ -433,7 +487,7 @@ class MainActivity : AppCompatActivity() {
         return null
     }
 
-    private fun checkPermissionsAndScan() {
+    private fun checkPermissionsAndLoadHome() {
         val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_AUDIO
         } else {
@@ -441,31 +495,97 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
-            scanSongs()
+            loadHomeView()
+            // 偷偷在后台扫一下，不打扰大人喵
+            lifecycleScope.launch(Dispatchers.IO) {
+                scanSongsInBackground()
+            }
         } else {
             ActivityCompat.requestPermissions(this, arrayOf(permission), REQUEST_CODE_PERMISSION)
         }
     }
 
-    private fun scanSongs() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            // 1. 获取系统媒体库的原始列表
-            val scannedSongs = AudioScanner.scan(this@MainActivity)
-            rawScannedSongs = scannedSongs // 存一份原汁原味的，供底层调用
+    private fun loadHomeView() {
+        lifecycleScope.launch(Dispatchers.Main) {
+            isShowingFolders = false
+            isExploringLocal = false
+            binding.rvSongs.adapter = libraryAdapter
+            binding.toolbar.title = "Seamless Loop"
+            binding.toolbar.navigationIcon = null
             
-            // 找出所有的 B 段文件，如果是 B 段，且同目录下存在对应的 A 段，就不要它喵
+            // 1. 从数据库读取歌单喵
+            val dbPlaylists = withContext(Dispatchers.IO) { playlistDao.getAllPlaylists() }
+            val playlistWithCounts = withContext(Dispatchers.IO) {
+                dbPlaylists.map { playlist ->
+                    Pair(playlist, playlistDao.getSongCountInPlaylist(playlist.id))
+                }
+            }
+            
+            // 2. 这里的本地音乐数量先从数据库里拿个大概，或者直接显示“去探索”喵
+            val localCount = withContext(Dispatchers.IO) { songDao.getAllSongs().size }
+
+            // 3. 构建主页混合列表
+            val libraryItems = mutableListOf<com.cpu.seamlessloopmobile.model.LibraryItem>()
+            
+            // 核心功能键
+            libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.QuickAction(
+                "本地音乐", 
+                android.R.drawable.ic_menu_save, 
+                localCount
+            ))
+            
+            if (playlistWithCounts.isNotEmpty()) {
+                libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header("我的歌单"))
+                playlistWithCounts.forEach { (playlist, count) ->
+                    libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.PlaylistWrapper(playlist, count))
+                }
+            } else {
+                libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header("暂无歌单"))
+            }
+
+            libraryAdapter.updateItems(libraryItems)
+        }
+    }
+
+    private suspend fun scanSongsInBackground() {
+        // 这一部分逻辑和 scanSongs 几乎一样，但是它只负责静悄悄地更新数据，不强制刷新 UI
+        // 为了代码简洁，我们稍后重构 scanSongs 让它支持 silent 模式
+        scanSongs(silent = true)
+    }
+
+    private fun scanSongs(silent: Boolean = false) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            if (!silent) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "正在为您深度发掘本地音频...", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            // 1. 获取系统媒体库的原始列表喵
+            val scannedSongs = AudioScanner.scan(this@MainActivity)
+            rawScannedSongs = scannedSongs 
+            
+            val scannedMap = scannedSongs.associateBy { it.filePath }
             val pathsToIgnore = mutableSetOf<String>()
             val bSuffixes = arrayOf("_B", "_b", "_loop", "_Loop")
             val aSuffixes = arrayOf("_A", "_a", "_intro", "_Intro")
             
             for (song in scannedSongs) {
-                val fileName = song.fileName.substringBeforeLast(".")
+                val fileNameNormal = song.fileName.substringBeforeLast(".")
+                val fileObj = java.io.File(song.filePath)
+                val parent = fileObj.parent
+                val extension = song.fileName.substringAfterLast(".", "")
+                
                 for (i in bSuffixes.indices) {
-                    if (fileName.endsWith(bSuffixes[i])) {
-                        val baseName = fileName.substring(0, fileName.length - bSuffixes[i].length)
-                        val aName = baseName + aSuffixes[i]
-                        // 看看有没有 A 段存在
-                        if (scannedSongs.any { it.fileName.substringBeforeLast(".") == aName && java.io.File(it.filePath).parent == java.io.File(song.filePath).parent }) {
+                    if (fileNameNormal.endsWith(bSuffixes[i])) {
+                        val baseName = fileNameNormal.substring(0, fileNameNormal.length - bSuffixes[i].length)
+                        val hasA = aSuffixes.any { s ->
+                            val targetAName = baseName + s
+                            val fullNameA = if (extension.isNotEmpty()) "$targetAName.$extension" else targetAName
+                            val targetAPath = if (parent != null) "$parent" + java.io.File.separator + fullNameA else fullNameA
+                            scannedMap.containsKey(targetAPath)
+                        }
+                        if (hasA) {
                             pathsToIgnore.add(song.filePath)
                             break
                         }
@@ -475,21 +595,44 @@ class MainActivity : AppCompatActivity() {
             
             val validSongs = scannedSongs.filter { it.filePath !in pathsToIgnore }
 
-            // 2. 从数据库找回循环点，如果有 B 还要加上 B 的时长喵
+            // 一次性把数据库里的循环记忆都加载进来喵
+            val allDbSongs = songDao.getAllSongs()
+            val dbFingerprintMap = allDbSongs.associateBy { it.fileName + "_" + it.totalSamples }
+            val dbNameMap = allDbSongs.groupBy { it.fileName }
+
             val updatedSongs = validSongs.map { song ->
                 var totalDuration = song.duration
-                val abPair = findAbPair(song, scannedSongs) // 在全量列表找 B 喵！
-                if (abPair != null) {
-                    totalDuration += abPair.second.duration
+                val fileNameNormal = song.fileName.substringBeforeLast(".")
+                val extension = song.fileName.substringAfterLast(".", "")
+                val fileObj = java.io.File(song.filePath)
+                val parent = fileObj.parent
+                
+                var foundB: com.cpu.seamlessloopmobile.model.Song? = null
+                for (i in aSuffixes.indices) {
+                    if (fileNameNormal.endsWith(aSuffixes[i])) {
+                        val baseName = fileNameNormal.substring(0, fileNameNormal.length - aSuffixes[i].length)
+                        val targetBName = baseName + bSuffixes[i]
+                        val fullNameB = if (extension.isNotEmpty()) "$targetBName.$extension" else targetBName
+                        val targetBPath = if (parent != null) "$parent" + java.io.File.separator + fullNameB else fullNameB
+                        foundB = scannedMap[targetBPath]
+                        if (foundB != null) break
+                    }
+                }
+                if (foundB != null) totalDuration += foundB.duration
+
+                var dbSong = dbFingerprintMap[song.fileName + "_" + song.totalSamples]
+                if (dbSong == null && song.totalSamples == 0L) {
+                    val candidates = dbNameMap[song.fileName] ?: emptyList()
+                    if (candidates.size == 1) dbSong = candidates[0]
+                    else if (candidates.size > 1) dbSong = candidates.minByOrNull { Math.abs(it.duration - song.duration) }
                 }
 
-                val dbSong = songDao.getSongByPath(song.filePath)
                 if (dbSong != null) {
                     song.copy(
                         id = dbSong.id,
                         loopStart = dbSong.loopStart,
                         loopEnd = dbSong.loopEnd,
-                        totalSamples = dbSong.totalSamples,
+                        totalSamples = if (song.totalSamples > 0) song.totalSamples else dbSong.totalSamples,
                         displayName = dbSong.displayName ?: song.displayName,
                         duration = totalDuration
                     )
@@ -498,13 +641,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // 3. 同时把大人的虚拟歌单也请出来喵
-            val dbPlaylists = playlistDao.getAllPlaylists()
-
             withContext(Dispatchers.Main) {
                 allSongs = updatedSongs
-
-                // 4. 按文件夹分组 (保持原样)
                 val folderMap = mutableMapOf<String, MutableList<com.cpu.seamlessloopmobile.model.Song>>()
                 for (song in allSongs) {
                     val parentPath = java.io.File(song.filePath).parent ?: "Unknown"
@@ -516,26 +654,11 @@ class MainActivity : AppCompatActivity() {
                     com.cpu.seamlessloopmobile.model.Folder(name, path, songs.size, songs)
                 }.sortedBy { it.name }
 
-                // 5. 构建全新的混合列表 LibraryItems 喵！
-                val libraryItems = mutableListOf<com.cpu.seamlessloopmobile.model.LibraryItem>()
-                
-                // 歌单放在最高位！
-                if (dbPlaylists.isNotEmpty()) {
-                    libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header("我的歌单"))
-                    dbPlaylists.forEach { playlist ->
-                        val count = withContext(Dispatchers.IO) { playlistDao.getSongCountInPlaylist(playlist.id) }
-                        libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.PlaylistWrapper(playlist, count))
-                    }
+                if (!silent && isExploringLocal) {
+                    showFolderList()
+                } else if (!silent) {
+                    loadHomeView()
                 }
-                
-                // 接着是文件夹
-                libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header("本地目录"))
-                folders.forEach { folder ->
-                    libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.FolderWrapper(folder))
-                }
-
-                libraryAdapter.updateItems(libraryItems)
-                showFolderList()
             }
         }
     }
@@ -546,30 +669,27 @@ class MainActivity : AppCompatActivity() {
         if (isSelectionMode) return
         isSelectionMode = true
         songAdapter.setSelectionMode(true)
-        
-        // 变换 Toolbar
-        updateSelectionMenu(songAdapter.getSelectedSongIds().size)
+        updateSelectionMenu(songAdapter.getSelectedSongPaths().size)
         binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_close_clear_cancel)
-        binding.toolbar.setNavigationOnClickListener {
-            exitSelectionMode()
-        }
+        binding.toolbar.setNavigationOnClickListener { exitSelectionMode() }
     }
 
     private fun exitSelectionMode() {
         isSelectionMode = false
         songAdapter.setSelectionMode(false)
-        
-        if (isShowingFolders) {
-            showFolderList()
+        if (isShowingFolders || isExploringLocal) {
+            if (!isShowingFolders) {
+                 // 在歌曲列表层级喵
+                 val currentFolder = folders.find { it.songs.any { s -> s.id == currentPlaylist.firstOrNull()?.id } }
+                 binding.toolbar.title = currentFolder?.name ?: "本地音乐"
+                 binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
+                 binding.toolbar.setNavigationOnClickListener { showFolderList() }
+            } else {
+                 showFolderList()
+            }
         } else {
-            // 恢复当前文件夹的标题
-            val currentFolder = folders.find { it.songs.any { s -> s.id == currentPlaylist.firstOrNull()?.id } }
-            binding.toolbar.title = currentFolder?.name ?: "Seamless Loop"
-            binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
-            binding.toolbar.setNavigationOnClickListener { showFolderList() }
+            loadHomeView()
         }
-        
-        // 恢复原有菜单
         invalidateOptionsMenu()
     }
 
@@ -605,7 +725,7 @@ class MainActivity : AppCompatActivity() {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(this@MainActivity, "成功删除这 ${selected.size} 个歌单喵!", Toast.LENGTH_SHORT).show()
                             exitPlaylistSelectionMode()
-                            scanSongs()
+                            loadHomeView() // 刷新主页数量喵
                         }
                     }
                 }
@@ -618,7 +738,7 @@ class MainActivity : AppCompatActivity() {
     private fun exitPlaylistSelectionMode() {
         isPlaylistSelectionMode = false
         libraryAdapter.setSelectionMode(false)
-        showFolderList() // 还原顶部菜单栏喵
+        if (isExploringLocal) showFolderList() else loadHomeView()
     }
 
     private fun showAddToPlaylistDialog() {
@@ -672,7 +792,7 @@ class MainActivity : AppCompatActivity() {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(this@MainActivity, "成功创建歌单: $name 喵!", Toast.LENGTH_SHORT).show()
                             exitSelectionMode()
-                            scanSongs() // 莱芙立刻重新加载列表，让歌单露脸喵！
+                            loadHomeView() // 刷新主页喵！
                         }
                     }
                 }
@@ -694,27 +814,15 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 Toast.makeText(this@MainActivity, "已添加到 ${playlist.name} 喵!", Toast.LENGTH_SHORT).show()
                 exitSelectionMode()
-                scanSongs() // 同步刷新喵！
+                loadHomeView() // 刷新主页喵！
             }
-        }
-    }
-
-    override fun onBackPressed() {
-        if (isSelectionMode) {
-            exitSelectionMode()
-        } else if (isPlaylistSelectionMode) {
-            exitPlaylistSelectionMode()
-        } else if (!isShowingFolders) {
-            showFolderList()
-        } else {
-            super.onBackPressed()
         }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_CODE_PERMISSION && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            scanSongs()
+            checkPermissionsAndLoadHome()
         } else {
             Toast.makeText(this, "需要权限才能扫描音乐哦", Toast.LENGTH_SHORT).show()
         }
@@ -1067,26 +1175,14 @@ class MainActivity : AppCompatActivity() {
                 var matchLog = StringBuilder()
 
                 for (pcRecord in pcData) {
-                    val pcFileName = pcRecord.first
-                    val pcTotal = pcRecord.second
                     val pcSong = pcRecord.third
-
-                    // 在本地找找看
-                    val localMatch = currentSongs.find { 
-                        val localFileName = java.io.File(it.filePath).name
-                        localFileName == pcFileName && (it.totalSamples == pcTotal || it.totalSamples == 0L)
-                    }
-
-                    if (localMatch != null) {
-                        val updated = localMatch.copy(
-                            loopStart = pcSong.loopStart,
-                            loopEnd = pcSong.loopEnd,
-                            displayName = pcSong.displayName ?: localMatch.displayName,
-                            totalSamples = if (localMatch.totalSamples == 0L) pcTotal else localMatch.totalSamples
-                        )
-                        songDao.insertOrUpdateSong(updated)
-                        syncCount++
-                    }
+                    
+                    // --- 灵魂锚点理论喵！ ---
+                    // 不管手机里现在有没有这首歌的文件，
+                    // 莱芙都先把这份来自 PC 的“循环记忆”存在数据库里。
+                    // 等以后大人把文件拷进来，scanSongs 就会通过指纹自动认亲喵！
+                    songDao.insertOrUpdateSong(pcSong)
+                    syncCount++
                 }
 
                 withContext(Dispatchers.Main) {

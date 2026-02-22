@@ -15,7 +15,7 @@ class SongAdapter(
 ) : RecyclerView.Adapter<SongAdapter.SongViewHolder>() {
 
     private var isSelectionMode = false
-    private val selectedSongIds = mutableSetOf<Long>()
+    private val selectedSongPaths = mutableSetOf<String>()
     private var onSongLongClick: ((Song) -> Unit)? = null
     private var onSelectionChanged: ((Int) -> Unit)? = null
 
@@ -38,14 +38,14 @@ class SongAdapter(
         
         // 勾选框逻辑
         holder.checkBox.visibility = if (isSelectionMode) View.VISIBLE else View.GONE
-        holder.checkBox.isChecked = selectedSongIds.contains(song.id)
+        holder.checkBox.isChecked = selectedSongPaths.contains(song.filePath)
         
         // 如果有循环点，就显示无限大符号
         holder.loopIcon.visibility = if (song.loopEnd > 0) View.VISIBLE else View.GONE
         
         holder.itemView.setOnClickListener {
             if (isSelectionMode) {
-                toggleSelection(song.id)
+                toggleSelection(song.filePath)
             } else {
                 onItemClick(song)
             }
@@ -64,18 +64,18 @@ class SongAdapter(
     fun setSelectionMode(enabled: Boolean) {
         if (this.isSelectionMode != enabled) {
             this.isSelectionMode = enabled
-            if (!enabled) selectedSongIds.clear()
+            if (!enabled) selectedSongPaths.clear()
             notifyDataSetChanged()
         }
     }
 
-    fun toggleSelection(songId: Long) {
-        if (selectedSongIds.contains(songId)) {
-            selectedSongIds.remove(songId)
+    fun toggleSelection(filePath: String) {
+        if (selectedSongPaths.contains(filePath)) {
+            selectedSongPaths.remove(filePath)
         } else {
-            selectedSongIds.add(songId)
+            selectedSongPaths.add(filePath)
         }
-        onSelectionChanged?.invoke(selectedSongIds.size)
+        onSelectionChanged?.invoke(selectedSongPaths.size)
         notifyDataSetChanged()
     }
 
@@ -83,9 +83,9 @@ class SongAdapter(
         this.onSelectionChanged = listener
     }
 
-    fun getSelectedSongIds(): List<Long> = selectedSongIds.toList()
+    fun getSelectedSongPaths(): List<String> = selectedSongPaths.toList()
 
-    fun getSelectedSongs(): List<Song> = songs.filter { selectedSongIds.contains(it.id) }
+    fun getSelectedSongs(): List<Song> = songs.filter { selectedSongPaths.contains(it.filePath) }
 
     override fun getItemCount(): Int = songs.size
 
