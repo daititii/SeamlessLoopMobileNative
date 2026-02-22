@@ -147,13 +147,18 @@ void AudioEngine::setLoopPoints(int64_t startFrame, int64_t endFrame) {
 }
 
 void AudioEngine::seekTo(int64_t frame) {
-    // AB 模式下如果要手动跳跃时间，暂不完美支持（需兼顾 AB 切换），只跳跃 UI
     if (mIsAbMode.load()) {
-        mCurrentReadFrame.store(frame);
+        // AB 模式下的真·魔法跳转！
+        mSeekTarget = frame;
+        mShouldSeek = true;
+        mCurrentReadFrame.store(frame); // <--- 提前预载防闪烁
+        resetFifo();
+        mFifoCond.notify_all();
         return;
     }
     mSeekTarget = frame;
     mShouldSeek = true;
+    mCurrentReadFrame.store(frame); // <--- 提前预载防闪烁
     resetFifo();
     mFifoCond.notify_all();
 }
@@ -258,9 +263,49 @@ void AudioEngine::decodingLoop() {
                 continue;
             }
 
-            // 处理外部跳转请求
+            // 处理外部跳转请求喵！
             if (mShouldSeek) {
-                mActiveDecoder->seekToFrame(mSeekTarget.load());
+                int64_t target = mSeekTarget.load();
+                if (mIsAbMode.load()) {
+                    // 这是超复杂的 AB 模式时间穿梭喵...
+                    int64_t introLength = mAbIntroFrames.load();
+                    if (target < introLength) {
+                        // 回到过去了，还在前奏区
+                        if (mAbTransitionDone.load()) {
+                            // 哎呀，已经进入循环区了？现在我们要退回到引子 A！
+                            AudioDecoder* temp = mActiveDecoder;
+                            mActiveDecoder = mNextDecoder;
+                            mNextDecoder = temp; // 换回来！
+                            // （此版本暂时没有重载 A 的逻辑，如果用户频繁这样跳可能会异常。
+                            // 电脑端实际上通常是把AB看作一体了，或者禁止向A退回。我们尽力一跳）
+                            mAbTransitionDone = false;
+                        }
+                        mActiveDecoder->seekToFrame(target);
+                        mCurrentReadFrame.store(target);
+                    } else {
+                        // 在循环 B 段之内
+                        if (!mAbTransitionDone.load()) {
+                            // 假装已经经历了前奏
+                            AudioDecoder* temp = mActiveDecoder;
+                            mActiveDecoder = mNextDecoder;
+                            mNextDecoder = temp;
+                            mNextDecoder->openFromDecoder(mActiveDecoder); 
+                            mAbTransitionDone = true;
+                        }
+                        // 需要把目标映射到 B 段内部的时间点
+                        int64_t bLength = mNextDecoder->getTotalFrames();
+                        int64_t offsetInB = (target - introLength) % (bLength > 0 ? bLength : 1);
+                        mActiveDecoder->seekToFrame(offsetInB);
+                        mCurrentReadFrame.store(target);
+                        
+                        mLoopStartFrame = 0; 
+                        mLoopEndFrame = mActiveDecoder->getTotalFrames();
+                    }
+                } else {
+                    mActiveDecoder->seekToFrame(target);
+                    mCurrentReadFrame.store(target);
+                }
+                
                 mIsNextDecoderReady = false; // 用户跳转了，替补队员必须重新准备喵！
                 mShouldSeek = false;
             }

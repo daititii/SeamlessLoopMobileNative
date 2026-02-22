@@ -42,8 +42,10 @@ class MainActivity : AppCompatActivity() {
     private var currentSongIndex: Int = -1
     private var isPlaying = false
     
+    
     private var updateProgressJob: kotlinx.coroutines.Job? = null
     private var isUserSeeking = false
+    private var isAbModePlaying = false
 
     // 数据库相关
     private lateinit var database: com.cpu.seamlessloopmobile.db.AppDatabase
@@ -309,6 +311,7 @@ class MainActivity : AppCompatActivity() {
              android.util.Log.w("MainActivity", "Song not found in currentPlaylist!")
         }
         
+        isAbModePlaying = false // 常规播放
         // 弹出提示
         Toast.makeText(this, "正在为您疯狂解码: ${song.displayName}...", Toast.LENGTH_SHORT).show()
 
@@ -396,6 +399,7 @@ class MainActivity : AppCompatActivity() {
                 
                 withContext(Dispatchers.Main) {
                     exitSelectionMode()
+                    isAbModePlaying = true // 这是 AB 魔法大合体！
                     isPlaying = true
                     binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
                     startProgressUpdater()
