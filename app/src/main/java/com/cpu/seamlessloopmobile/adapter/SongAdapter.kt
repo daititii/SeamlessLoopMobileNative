@@ -17,6 +17,7 @@ class SongAdapter(
     private var isSelectionMode = false
     private val selectedSongIds = mutableSetOf<Long>()
     private var onSongLongClick: ((Song) -> Unit)? = null
+    private var onSelectionChanged: ((Int) -> Unit)? = null
 
     class SongViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val title: TextView = view.findViewById(R.id.txt_song_title)
@@ -74,7 +75,12 @@ class SongAdapter(
         } else {
             selectedSongIds.add(songId)
         }
+        onSelectionChanged?.invoke(selectedSongIds.size)
         notifyDataSetChanged()
+    }
+
+    fun setOnSelectionChangedListener(listener: (Int) -> Unit) {
+        this.onSelectionChanged = listener
     }
 
     fun getSelectedSongIds(): List<Long> = selectedSongIds.toList()

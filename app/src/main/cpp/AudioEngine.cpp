@@ -84,10 +84,45 @@ void AudioEngine::loadAudioSource(int fd, int64_t offset, int64_t length) {
         mLoopStartFrame = 0;
         mLoopEndFrame = mActiveDecoder->getTotalFrames();
         mIsLooping = true;
+        mIsAbMode = false;
+        mAbTransitionDone = false;
         
         resetFifo();
         mFifoCond.notify_all();
         LOGD("loadAudioSource: Dual Async decoders ready.");
+    }
+}
+
+void AudioEngine::loadAbAudioSource(int fdA, int64_t offsetA, int64_t lengthA, int fdB, int64_t offsetB, int64_t lengthB) {
+    std::lock_guard<std::mutex> lock(mDecoderMutex);
+    LOGD("loadAbAudioSource: Loading Intro and Loop files...");
+    
+    bool okA = mDecoderA->open(fdA, offsetA, lengthA);
+    bool okB = mDecoderB->open(fdB, offsetB, lengthB);
+    
+    if (okA && okB) {
+        mActiveDecoder = mDecoderA.get();
+        mNextDecoder = mDecoderB.get();
+        mIsNextDecoderReady = false;
+
+        mSampleRate = mActiveDecoder->getSampleRate();
+        mChannelCount = mActiveDecoder->getChannelCount();
+        
+        mCurrentReadFrame = 0;
+        mIsAbMode = true;
+        mAbTransitionDone = false;
+        mIsLooping = true;
+        
+        // 第一轮：终点是 Part A 的结尾
+        mLoopStartFrame = 0; 
+        mLoopEndFrame = mActiveDecoder->getTotalFrames();
+        
+        // 存储 Part B 的信息以便后续重载（或者我们可以利用 decoderB 的 fd 信息）
+        // 简单起见，我们假设 B 会被一直使用
+        
+        resetFifo();
+        mFifoCond.notify_all();
+        LOGD("loadAbAudioSource: Intro(A) and Loop(B) sources ready.");
     }
 }
 
@@ -250,6 +285,18 @@ void AudioEngine::decodingLoop() {
                 AudioDecoder* temp = mActiveDecoder;
                 mActiveDecoder = mNextDecoder;
                 mNextDecoder = temp;
+
+                // 特殊处理 AB 模式第一次由 Intro 切到 Loop 的情况喵！
+                if (mIsAbMode.load() && !mAbTransitionDone.load()) {
+                    // 现在的 mActiveDecoder 是 Part B 的头，mNextDecoder 是 Part A 的尾。
+                    // 我们要把 mNextDecoder 也变成 Part B，这样以后才能无限循环 Part B 喵！
+                    mNextDecoder->openFromDecoder(mActiveDecoder);
+                    
+                    mLoopStartFrame = 0; // 从此开始，回绕目标就是 Part B 的开头
+                    mLoopEndFrame = mActiveDecoder->getTotalFrames(); // B 的总帧数
+                    mAbTransitionDone = true;
+                    LOGD("DualDecoder: AB Transition (Intro -> Loop) completed successfully.");
+                }
 
                 // 检查有没有突发情况（比如替补还没来得及准备就被强迫换上了）
                 if (!mIsNextDecoderReady) {

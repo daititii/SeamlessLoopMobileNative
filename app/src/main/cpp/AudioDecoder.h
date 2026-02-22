@@ -14,6 +14,7 @@ public:
 
     // 准备解码（打开文件，初始化 Codec）
     bool open(int fd, int64_t offset, int64_t length);
+    bool openFromDecoder(const AudioDecoder* other);
 
     // 从当前位置读取采样数据（流式读取喵！）
     // 返回实际读取到的采样数
@@ -52,6 +53,8 @@ private:
     int32_t mEncoderPadding = 0;
 
     int mDupFd = -1;
+    int64_t mOffset = 0;
+    int64_t mLength = 0;
     int32_t mPcmEncoding = 2; // 默认 PCM_16BIT 喵！
 
     // 内部缓冲区，暂存从 Codec 吐出来但还没被领走的数据

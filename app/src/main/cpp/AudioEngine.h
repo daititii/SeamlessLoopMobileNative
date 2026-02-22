@@ -27,6 +27,7 @@ public:
     void pause();
     void resume();
     void loadAudioSource(int fd, int64_t offset, int64_t length);
+    void loadAbAudioSource(int fdA, int64_t offsetA, int64_t lengthA, int fdB, int64_t offsetB, int64_t lengthB);
     void setLoopPoints(int64_t startFrame, int64_t endFrame);
     void seekTo(int64_t frame);
     int64_t getCurrentPosition();
@@ -49,6 +50,8 @@ private:
     std::atomic<int64_t> mLoopEndFrame {0};
     std::atomic<int64_t> mCurrentReadFrame {0};
     std::atomic<bool> mIsLooping {false};
+    std::atomic<bool> mIsAbMode {false};
+    std::atomic<bool> mAbTransitionDone {false};
     
     // --- 异步解码核心组件喵 ---
     std::thread mDecodingThread;

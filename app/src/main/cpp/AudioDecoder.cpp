@@ -54,6 +54,8 @@ bool AudioDecoder::open(int fd, int64_t offset, int64_t length) {
     close();
 
     mDupFd = dup(fd);
+    mOffset = offset;
+    mLength = length;
     mExtractor = AMediaExtractor_new();
     media_status_t status = AMediaExtractor_setDataSourceFd(mExtractor, mDupFd, offset, length);
     if (status != AMEDIA_OK) {
@@ -150,6 +152,11 @@ bool AudioDecoder::open(int fd, int64_t offset, int64_t length) {
     }
 
     return false;
+}
+
+bool AudioDecoder::openFromDecoder(const AudioDecoder* other) {
+    if (!other || other->mDupFd == -1) return false;
+    return open(other->mDupFd, other->mOffset, other->mLength);
 }
 
 int32_t AudioDecoder::readSamples(float* targetBuffer, int32_t numSamples) {

@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.view.MenuItem
 import com.cpu.seamlessloopmobile.adapter.SongAdapter
 import com.cpu.seamlessloopmobile.databinding.ActivityMainBinding
 import com.cpu.seamlessloopmobile.scanner.AudioScanner
@@ -68,7 +69,11 @@ class MainActivity : AppCompatActivity() {
         // 设置返回键逻辑喵 (现代安卓做法)
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (!isShowingFolders) {
+                if (isSelectionMode) {
+                    exitSelectionMode()
+                } else if (isPlaylistSelectionMode) {
+                    exitPlaylistSelectionMode()
+                } else if (!isShowingFolders) {
                     showFolderList()
                 } else {
                     isEnabled = false // 关掉拦截，执行默认返回
@@ -213,12 +218,38 @@ class MainActivity : AppCompatActivity() {
         libraryAdapter = com.cpu.seamlessloopmobile.adapter.LibraryAdapter(
             emptyList(),
             onPlaylistClick = { playlist -> openPlaylist(playlist) },
-            onFolderClick = { folder -> openFolder(folder) }
+            onFolderClick = { folder -> openFolder(folder) },
+            onPlaylistLongClick = { playlist -> enterPlaylistSelectionMode(playlist) }
         )
+        libraryAdapter.setOnSelectionChangedListener { count ->
+            if (isPlaylistSelectionMode) {
+                binding.toolbar.title = "已选择歌单: $count"
+            }
+        }
 
         binding.rvSongs.layoutManager = LinearLayoutManager(this)
         // 默认显示主库（歌单+文件夹）
         binding.rvSongs.adapter = libraryAdapter
+
+        songAdapter.setOnSelectionChangedListener { count ->
+            if (isSelectionMode) {
+                updateSelectionMenu(count)
+            }
+        }
+    }
+
+    private fun updateSelectionMenu(count: Int) {
+        binding.toolbar.title = "已选择: $count"
+        binding.toolbar.menu.clear()
+                
+        binding.toolbar.menu.add("添加到歌单").apply {
+            setIcon(android.R.drawable.ic_menu_add)
+            setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
+            setOnMenuItemClickListener {
+                showAddToPlaylistDialog()
+                true
+            }
+        }
     }
 
     private fun openPlaylist(playlist: com.cpu.seamlessloopmobile.model.Playlist) {
@@ -261,6 +292,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun playSong(song: com.cpu.seamlessloopmobile.model.Song) {
+        // --- 莱芙的“自动合体”魔法 (仿电脑端) ---
+        val abPair = findAbPair(song)
+        if (abPair != null) {
+            playAbSong(abPair.first, abPair.second)
+            return
+        }
+
         // 更新当前播放索引 (使用 ID 查找更稳健)
         val newIndex = currentPlaylist.indexOfFirst { it.id == song.id }
         if (newIndex != -1) {
@@ -302,21 +340,19 @@ class MainActivity : AppCompatActivity() {
                 if (song.loopEnd > 0) {
                     setLoopPoints(song.loopStart, song.loopEnd)
                 }
-                
+
                 // 获取总帧数并同步回数据库喵（指纹采集）
                 val durationFrames = getDuration()
                 if (durationFrames > 0) {
                     val updatedWithSamples = song.copy(totalSamples = durationFrames)
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        songDao.insertOrUpdateSong(updatedWithSamples)
-                    }
+                    songDao.insertOrUpdateSong(updatedWithSamples)
                     withContext(Dispatchers.Main) {
                         // 同步更新内存，防止 UI 显示滞后
                         allSongs = allSongs.map { if (it.filePath == song.filePath) updatedWithSamples else it }
                         currentPlaylist = currentPlaylist.map { if (it.filePath == song.filePath) updatedWithSamples else it }
                     }
                 }
-                
+
                 // 启动 UI 更新
                 withContext(Dispatchers.Main) {
                     isPlaying = true
@@ -327,10 +363,69 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 android.util.Log.e("MainActivity", "Failed to open audio FD", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "文件解析失败喵 (T_T)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "无法打开音频文件喵...", Toast.LENGTH_SHORT).show()
                 }
             }
         }
+    }
+
+    private fun playAbSong(introSong: com.cpu.seamlessloopmobile.model.Song, loopSong: com.cpu.seamlessloopmobile.model.Song) {
+        // 弹出提示
+        Toast.makeText(this, "正在为您合成 AB 循环: ${introSong.displayName} + ${loopSong.displayName}", Toast.LENGTH_LONG).show()
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            updateProgressJob?.cancel()
+            stopAudioEngine()
+            
+            try {
+                val uriA = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, introSong.mediaId)
+                val uriB = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, loopSong.mediaId)
+                
+                contentResolver.openAssetFileDescriptor(uriA, "r")?.use { afdA ->
+                    contentResolver.openAssetFileDescriptor(uriB, "r")?.use { afdB ->
+                        val lenA = if (afdA.declaredLength < 0) afdA.length else afdA.declaredLength
+                        val lenB = if (afdB.declaredLength < 0) afdB.length else afdB.declaredLength
+                        
+                        startAbAudioEngine(
+                            afdA.parcelFileDescriptor.fd, afdA.startOffset, lenA,
+                            afdB.parcelFileDescriptor.fd, afdB.startOffset, lenB
+                        )
+                    }
+                }
+                
+                withContext(Dispatchers.Main) {
+                    exitSelectionMode()
+                    isPlaying = true
+                    binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                    startProgressUpdater()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "AB 播放失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun findAbPair(song: com.cpu.seamlessloopmobile.model.Song): Pair<com.cpu.seamlessloopmobile.model.Song, com.cpu.seamlessloopmobile.model.Song>? {
+        val fileName = song.fileName.substringBeforeLast(".")
+        val aSuffixes = arrayOf("_A", "_a", "_intro", "_Intro")
+        val bSuffixes = arrayOf("_B", "_b", "_loop", "_Loop")
+
+        for (i in aSuffixes.indices) {
+            if (fileName.endsWith(aSuffixes[i])) {
+                val baseName = fileName.substring(0, fileName.length - aSuffixes[i].length)
+                val targetBName = baseName + bSuffixes[i]
+                
+                // 在所有已扫描歌曲中寻找对应的 B 段喵
+                val partB = allSongs.find { 
+                    it.fileName.substringBeforeLast(".") == targetBName &&
+                    java.io.File(it.filePath).parent == java.io.File(song.filePath).parent
+                }
+                if (partB != null) return Pair(song, partB)
+            }
+        }
+        return null
     }
 
     private fun checkPermissionsAndScan() {
@@ -418,17 +513,10 @@ class MainActivity : AppCompatActivity() {
         songAdapter.setSelectionMode(true)
         
         // 变换 Toolbar
-        binding.toolbar.title = "已选择: 0"
+        updateSelectionMenu(songAdapter.getSelectedSongIds().size)
         binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_close_clear_cancel)
         binding.toolbar.setNavigationOnClickListener {
             exitSelectionMode()
-        }
-        
-        // 动态添加“添加到歌单”按钮到菜单
-        binding.toolbar.menu.clear()
-        binding.toolbar.menu.add("添加到歌单").setIcon(android.R.drawable.ic_menu_add).setShowAsActionFlags(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM).setOnMenuItemClickListener {
-            showAddToPlaylistDialog()
-            true
         }
     }
 
@@ -448,6 +536,54 @@ class MainActivity : AppCompatActivity() {
         
         // 恢复原有菜单
         invalidateOptionsMenu()
+    }
+
+    private var isPlaylistSelectionMode = false
+
+    private fun enterPlaylistSelectionMode(initialPlaylist: com.cpu.seamlessloopmobile.model.Playlist?) {
+        if (isPlaylistSelectionMode) return
+        isPlaylistSelectionMode = true
+        libraryAdapter.setSelectionMode(true)
+        if (initialPlaylist != null) {
+            libraryAdapter.toggleSelection(initialPlaylist.id)
+        }
+        
+        binding.toolbar.title = "已选择歌单: ${libraryAdapter.getSelectedPlaylists().size}"
+        binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_close_clear_cancel)
+        binding.toolbar.setNavigationOnClickListener {
+            exitPlaylistSelectionMode()
+        }
+        
+        binding.toolbar.menu.clear()
+        binding.toolbar.menu.add("删除已选").setIcon(android.R.drawable.ic_menu_delete).setShowAsActionFlags(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM).setOnMenuItemClickListener {
+            val selected = libraryAdapter.getSelectedPlaylists()
+            if (selected.isEmpty()) {
+                Toast.makeText(this@MainActivity, "请先选择歌单喵", Toast.LENGTH_SHORT).show()
+                return@setOnMenuItemClickListener true
+            }
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this@MainActivity)
+                .setTitle("批量删除歌单")
+                .setMessage("cpu 大人，真的要心碎地删除这 ${selected.size} 个歌单吗？")
+                .setPositiveButton("删除") { _, _ ->
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        selected.forEach { playlistDao.deletePlaylist(it) }
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity, "成功删除这 ${selected.size} 个歌单喵!", Toast.LENGTH_SHORT).show()
+                            exitPlaylistSelectionMode()
+                            scanSongs()
+                        }
+                    }
+                }
+                .setNegativeButton("取消", null)
+                .show()
+            true
+        }
+    }
+
+    private fun exitPlaylistSelectionMode() {
+        isPlaylistSelectionMode = false
+        libraryAdapter.setSelectionMode(false)
+        showFolderList() // 还原顶部菜单栏喵
     }
 
     private fun showAddToPlaylistDialog() {
@@ -531,6 +667,8 @@ class MainActivity : AppCompatActivity() {
     override fun onBackPressed() {
         if (isSelectionMode) {
             exitSelectionMode()
+        } else if (isPlaylistSelectionMode) {
+            exitPlaylistSelectionMode()
         } else if (!isShowingFolders) {
             showFolderList()
         } else {
@@ -934,6 +1072,7 @@ class MainActivity : AppCompatActivity() {
     // --- JNI 接口 ---
     external fun stringFromJNI(): String
     external fun startAudioEngine(fd: Int, offset: Long, length: Long)
+    external fun startAbAudioEngine(fdA: Int, offsetA: Long, lengthA: Long, fdB: Int, offsetB: Long, lengthB: Long)
     external fun stopAudioEngine()
     external fun setLoopPoints(start: Long, end: Long)
     external fun seekTo(frame: Long)

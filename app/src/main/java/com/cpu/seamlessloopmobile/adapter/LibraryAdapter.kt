@@ -14,14 +14,46 @@ import com.cpu.seamlessloopmobile.model.Playlist
 class LibraryAdapter(
     private var items: List<LibraryItem>,
     private val onPlaylistClick: (Playlist) -> Unit,
-    private val onFolderClick: (Folder) -> Unit
+    private val onFolderClick: (Folder) -> Unit,
+    private val onPlaylistLongClick: ((Playlist) -> Unit)? = null
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+    private var isSelectionMode = false
+    private val selectedPlaylistIds = mutableSetOf<Int>()
+    private var onSelectionChanged: ((Int) -> Unit)? = null
 
     companion object {
         private const val TYPE_HEADER = 0
         private const val TYPE_PLAYLIST = 1
         private const val TYPE_FOLDER = 2
     }
+
+    fun setSelectionMode(enabled: Boolean) {
+        if (isSelectionMode != enabled) {
+            isSelectionMode = enabled
+            if (!enabled) selectedPlaylistIds.clear()
+            notifyDataSetChanged()
+        }
+    }
+
+    fun toggleSelection(playlistId: Int) {
+        if (selectedPlaylistIds.contains(playlistId)) {
+            selectedPlaylistIds.remove(playlistId)
+        } else {
+            selectedPlaylistIds.add(playlistId)
+        }
+        onSelectionChanged?.invoke(selectedPlaylistIds.size)
+        notifyDataSetChanged()
+    }
+
+    fun getSelectedPlaylists(): List<Playlist> {
+        return items.mapNotNull { if (it is LibraryItem.PlaylistWrapper && selectedPlaylistIds.contains(it.playlist.id)) it.playlist else null }
+    }
+
+    fun setOnSelectionChangedListener(listener: (Int) -> Unit) {
+        onSelectionChanged = listener
+    }
+
 
     override fun getItemViewType(position: Int): Int {
         return when (items[position]) {
@@ -50,10 +82,30 @@ class LibraryAdapter(
             }
             is LibraryItem.PlaylistWrapper -> {
                 (holder as ItemViewHolder).bindPlaylist(item.playlist, item.songCount)
-                holder.itemView.setOnClickListener { onPlaylistClick(item.playlist) }
+                val isSelected = selectedPlaylistIds.contains(item.playlist.id)
+                holder.itemView.alpha = if (isSelected) 0.5f else 1.0f
+                holder.itemView.setBackgroundColor(if (isSelected) 0x33FFFFFF else 0)
+                
+                holder.itemView.setOnClickListener { 
+                    if (isSelectionMode) {
+                        toggleSelection(item.playlist.id)
+                    } else {
+                        onPlaylistClick(item.playlist) 
+                    }
+                }
+                holder.itemView.setOnLongClickListener {
+                    if (!isSelectionMode) {
+                        onPlaylistLongClick?.invoke(item.playlist)
+                    } else {
+                        toggleSelection(item.playlist.id)
+                    }
+                    true // 拦截长按
+                }
             }
             is LibraryItem.FolderWrapper -> {
                 (holder as ItemViewHolder).bindFolder(item.folder)
+                holder.itemView.alpha = 1.0f
+                holder.itemView.setBackgroundColor(0)
                 holder.itemView.setOnClickListener { onFolderClick(item.folder) }
             }
         }

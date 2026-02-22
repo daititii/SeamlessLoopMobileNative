@@ -27,6 +27,26 @@ Java_com_cpu_seamlessloopmobile_MainActivity_startAudioEngine(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_cpu_seamlessloopmobile_MainActivity_startAbAudioEngine(
+        JNIEnv* env,
+        jobject /* this */,
+        jint fdA,
+        jlong offsetA,
+        jlong lengthA,
+        jint fdB,
+        jlong offsetB,
+        jlong lengthB) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    
+    if (audioEngine == nullptr) {
+        audioEngine = new AudioEngine();
+    }
+    
+    audioEngine->loadAbAudioSource(fdA, offsetA, lengthA, fdB, offsetB, lengthB);
+    audioEngine->start();
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_cpu_seamlessloopmobile_MainActivity_stopAudioEngine(
         JNIEnv* env,
         jobject /* this */) {
