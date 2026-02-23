@@ -18,6 +18,7 @@ class SongAdapter(
     private val selectedSongPaths = mutableSetOf<String>()
     private var onSongLongClick: ((Song) -> Unit)? = null
     private var onSelectionChanged: ((Int) -> Unit)? = null
+    private var playingSongPath: String? = null
 
     class SongViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val title: TextView = view.findViewById(R.id.txt_song_title)
@@ -42,6 +43,15 @@ class SongAdapter(
         
         // 如果有循环点，就显示无限大符号
         holder.loopIcon.visibility = if (song.loopEnd > 0) View.VISIBLE else View.GONE
+        
+        // 播放状态高亮
+        if (song.filePath == playingSongPath) {
+            holder.title.setTypeface(null, android.graphics.Typeface.BOLD)
+            holder.itemView.setBackgroundColor(0x33FF4081) // 高亮的底色喵
+        } else {
+            holder.title.setTypeface(null, android.graphics.Typeface.NORMAL)
+            holder.itemView.setBackgroundColor(0x00000000) // 透明底色喵
+        }
         
         holder.itemView.setOnClickListener {
             if (isSelectionMode) {
@@ -77,6 +87,22 @@ class SongAdapter(
         }
         onSelectionChanged?.invoke(selectedSongPaths.size)
         notifyDataSetChanged()
+    }
+
+    fun setPlayingSong(path: String?) {
+        val oldPath = playingSongPath
+        playingSongPath = path
+        
+        // 去掉旧高亮
+        oldPath?.let { p ->
+            val index = songs.indexOfFirst { it.filePath == p }
+            if (index != -1) notifyItemChanged(index)
+        }
+        // 添加新高亮
+        path?.let { p ->
+            val index = songs.indexOfFirst { it.filePath == p }
+            if (index != -1) notifyItemChanged(index)
+        }
     }
 
     fun selectAll() {

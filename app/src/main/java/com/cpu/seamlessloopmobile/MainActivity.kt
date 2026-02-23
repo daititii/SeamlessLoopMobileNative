@@ -437,6 +437,7 @@ class MainActivity : AppCompatActivity() {
                     isPlaying = true
                     binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
                     startProgressUpdater()
+                    songAdapter.setPlayingSong(song.filePath) // 告诉适配器谁在唱歌喵！
                 }
 
             } catch (e: Exception) {
@@ -495,6 +496,7 @@ class MainActivity : AppCompatActivity() {
                     isPlaying = true
                     binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
                     startProgressUpdater()
+                    songAdapter.setPlayingSong(introSong.filePath) // AB 时高亮 A 段喵！
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
