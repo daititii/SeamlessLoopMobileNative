@@ -105,7 +105,7 @@ class MainActivity : AppCompatActivity() {
         // 中间层同步：把 ViewModel 的状态同步给本地冗余变量 (过渡用喵)
         viewModel.allSongs.observe(this) { 
             allSongs = it
-            if (!isExploringLocal && !isInsidePlaylist) {
+            if (!viewModel.isExploringLocal.value!! && !viewModel.isInsidePlaylist.value!!) {
                 loadHomeView()
             }
         }
@@ -132,7 +132,7 @@ class MainActivity : AppCompatActivity() {
         viewModel.currentOpenPlaylist.observe(this) { currentOpenPlaylist = it }
         viewModel.rawScannedSongs.observe(this) { rawScannedSongs = it }
         viewModel.playlists.observe(this) {
-            if (!isExploringLocal && !isInsidePlaylist) {
+            if (!viewModel.isExploringLocal.value!! && !viewModel.isInsidePlaylist.value!!) {
                 loadHomeView()
             }
         }
@@ -421,11 +421,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun openPlaylist(playlist: com.cpu.seamlessloopmobile.model.Playlist) {
         currentOpenPlaylist = playlist
+        viewModel.setCurrentOpenPlaylist(playlist)
+        viewModel.setInsidePlaylist(true)
+        viewModel.setExploringLocal(false)
+        viewModel.setShowingFolders(false)
+        
         lifecycleScope.launch(Dispatchers.Main) {
             val songs = withContext(Dispatchers.IO) { playlistDao.getSongsInPlaylist(playlist.id) }
-            isShowingFolders = false
-            isExploringLocal = false
-            isInsidePlaylist = true // 进入了歌单喵
             displayedSongs = songs // 先让大人看到
             currentPlaylist = songs // 歌单点开时，默认听单也载入
             viewModel.updateCurrentPlaylist(songs) 
@@ -442,7 +444,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openFolder(folder: com.cpu.seamlessloopmobile.model.Folder) {
-        isShowingFolders = false
+        viewModel.setShowingFolders(false)
+        viewModel.setExploringLocal(true)
+        viewModel.setInsidePlaylist(false)
         displayedSongs = folder.songs // 记录当前看到的列表
         songAdapter.updateSongs(folder.songs)
         binding.rvSongs.adapter = songAdapter
@@ -457,8 +461,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun enterLocalMusic() {
-        isExploringLocal = true
-        isInsidePlaylist = false
+        viewModel.setExploringLocal(true)
+        viewModel.setInsidePlaylist(false)
         if (folders.isEmpty()) {
             viewModel.scanLibrary(this) // 如果还没扫过，就扫一下喵
         } else {
@@ -467,7 +471,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showFolderList() {
-        isShowingFolders = true
+        viewModel.setShowingFolders(true)
+        viewModel.setExploringLocal(true)
+        viewModel.setInsidePlaylist(false)
         binding.rvSongs.adapter = libraryAdapter
         binding.toolbar.title = "本地音乐"
         binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
@@ -534,9 +540,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadHomeView() {
+        viewModel.setShowingFolders(false)
+        viewModel.setExploringLocal(false)
+        viewModel.setInsidePlaylist(false)
+        
         lifecycleScope.launch(Dispatchers.Main) {
-            isShowingFolders = false
-            isExploringLocal = false
             binding.rvSongs.adapter = libraryAdapter
             binding.toolbar.title = "Seamless Loop"
             binding.toolbar.navigationIcon = null
