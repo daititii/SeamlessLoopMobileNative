@@ -73,7 +73,7 @@ private:
     size_t mFifoReadPos {0};
     size_t mFifoWritePos {0};
     size_t mFifoFullCount {0};
-    const size_t kFifoSize = 192000; // 约 2 秒的立体声 48kHz 缓冲区
+    const size_t kFifoSize = 48000; // 缩小到约 0.5 秒的缓冲区，提高非循环模式下的切换响应喵！
     // -------------------------
 
     void decodingLoop(); // 后台解码线程喵！

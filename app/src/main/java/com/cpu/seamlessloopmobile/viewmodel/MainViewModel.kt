@@ -16,7 +16,6 @@ import java.io.File
 import java.util.Collections
 
 enum class PlayMode {
-    SEQUENCE,   // 顺序播放
     LIST_LOOP,  // 列表循环
     SINGLE_LOOP,// 单曲循环
     SHUFFLE     // 随机播放
@@ -83,10 +82,9 @@ class MainViewModel(
 
     fun togglePlayMode() {
         val next = when (_playMode.value) {
-            PlayMode.SEQUENCE -> PlayMode.LIST_LOOP
             PlayMode.LIST_LOOP -> PlayMode.SINGLE_LOOP
             PlayMode.SINGLE_LOOP -> PlayMode.SHUFFLE
-            PlayMode.SHUFFLE -> PlayMode.SEQUENCE
+            PlayMode.SHUFFLE -> PlayMode.LIST_LOOP
             null -> PlayMode.LIST_LOOP
         }
         _playMode.value = next
@@ -270,9 +268,6 @@ class MainViewModel(
         val mode = _playMode.value ?: PlayMode.LIST_LOOP
 
         return when (mode) {
-            PlayMode.SEQUENCE -> {
-                if (currentIndex < songs.size - 1) currentIndex + 1 else -1
-            }
             PlayMode.LIST_LOOP -> {
                 (currentIndex + 1) % songs.size
             }
@@ -297,9 +292,6 @@ class MainViewModel(
         val mode = _playMode.value ?: PlayMode.LIST_LOOP
 
         return when (mode) {
-            PlayMode.SEQUENCE -> {
-                if (currentIndex > 0) currentIndex - 1 else -1
-            }
             PlayMode.LIST_LOOP -> {
                 if (currentIndex <= 0) songs.size - 1 else currentIndex - 1
             }

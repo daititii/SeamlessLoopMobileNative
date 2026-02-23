@@ -259,7 +259,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePlayModeIcon(mode: PlayMode) {
         val iconRes = when (mode) {
-            PlayMode.SEQUENCE -> android.R.drawable.ic_menu_sort_by_size // 暂代顺序
             PlayMode.LIST_LOOP -> android.R.drawable.ic_menu_rotate
             PlayMode.SINGLE_LOOP -> android.R.drawable.ic_menu_revert
             PlayMode.SHUFFLE -> android.R.drawable.ic_menu_share // 暂代随机
@@ -267,7 +266,6 @@ class MainActivity : AppCompatActivity() {
         binding.btnPlayMode.setImageResource(iconRes)
         
         val modeName = when (mode) {
-            PlayMode.SEQUENCE -> "顺序播放"
             PlayMode.LIST_LOOP -> "列表循环"
             PlayMode.SINGLE_LOOP -> "单曲循环"
             PlayMode.SHUFFLE -> "随机播放"
@@ -299,16 +297,19 @@ class MainActivity : AppCompatActivity() {
                         binding.tvTotalTime.text = TimeUtils.formatTime(totalFrames, sampleRate)
 
                         if (isPlaying) {
-                            // 物理文件末尾检测机制喵：距离结尾没多远，而且进度卡住不动了（说明物理文件真播完了）
-                            if (currentFrame == lastObservedFrame && (totalFrames - currentFrame) < sampleRate * 4) {
+                            // 物理文件末尾检测机制喵：进度卡住不动了（说明物理文件真播完了），或者接近绝对末尾了
+                            // 留出约 1/8 秒的提前量，让切歌听起来更紧凑喵！
+                            val endThreshold = (sampleRate / 8).coerceAtLeast(1024L)
+                            
+                            if (currentFrame == lastObservedFrame && (totalFrames - currentFrame) < sampleRate * 2) {
                                 frameStallCount++
                             } else {
                                 frameStallCount = 0
                             }
                             lastObservedFrame = currentFrame
 
-                            // 达到文件末尾，或者卡住了（约 800ms 没进度更新）
-                            if (currentFrame >= totalFrames - 512 || frameStallCount >= 4) {
+                            // 达到文件末尾提前量，或者卡住了（约 400ms 没进度更新）
+                            if (currentFrame >= totalFrames - endThreshold || frameStallCount >= 2) {
                                 frameStallCount = 0
                                 lastObservedFrame = -1L
                                 
@@ -382,7 +383,10 @@ class MainActivity : AppCompatActivity() {
             coroutineScope = lifecycleScope,
             uiCallback = object : com.cpu.seamlessloopmobile.ui.SelectionController.SelectionUiCallback {
                 override fun onExitSelection() {
-                    if (isShowingFolders || isExploringLocal) {
+                    if (isInsidePlaylist) {
+                        // 如果在歌单里，退回歌单视图喵
+                        currentOpenPlaylist?.let { openPlaylist(it) } ?: loadHomeView()
+                    } else if (isShowingFolders || isExploringLocal) {
                         if (!isShowingFolders) {
                              val currentFolder = folders.find { it.songs.any { s -> s.filePath == currentPlaylist.firstOrNull()?.filePath } }
                              binding.toolbar.title = currentFolder?.name ?: "本地音乐"
