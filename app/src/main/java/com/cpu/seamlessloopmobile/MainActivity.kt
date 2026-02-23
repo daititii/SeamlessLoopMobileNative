@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private var folders: List<com.cpu.seamlessloopmobile.model.Folder> = emptyList()
     private var isShowingFolders = false // 默认不显示文件夹
     private var isExploringLocal = false // 是否正在探索本地音乐
+    private var isInsidePlaylist = false // 是否正在查看某个歌单喵
     
     // 播放状态管理
     private var currentPlaylist: List<com.cpu.seamlessloopmobile.model.Song> = emptyList()
@@ -78,6 +79,9 @@ class MainActivity : AppCompatActivity() {
                     exitSelectionMode()
                 } else if (isPlaylistSelectionMode) {
                     exitPlaylistSelectionMode()
+                } else if (isInsidePlaylist) {
+                    isInsidePlaylist = false
+                    loadHomeView()
                 } else if (isExploringLocal) {
                     if (!isShowingFolders) {
                         showFolderList() // 从歌曲列表回退到文件夹列表喵
@@ -271,7 +275,8 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.Main) {
             val songs = withContext(Dispatchers.IO) { playlistDao.getSongsInPlaylist(playlist.id) }
             isShowingFolders = false
-            isExploringLocal = true // 进入了歌单也算是在“探索”喵
+            isExploringLocal = false
+            isInsidePlaylist = true // 进入了歌单喵
             currentPlaylist = songs
             songAdapter.updateSongs(songs)
             binding.rvSongs.adapter = songAdapter
@@ -279,7 +284,7 @@ class MainActivity : AppCompatActivity() {
             binding.toolbar.title = "歌单: ${playlist.name}"
             binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
             binding.toolbar.setNavigationOnClickListener { 
-                isExploringLocal = false
+                isInsidePlaylist = false
                 loadHomeView() 
             }
         }
@@ -302,6 +307,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun enterLocalMusic() {
         isExploringLocal = true
+        isInsidePlaylist = false
         if (folders.isEmpty()) {
             scanSongs() // 如果还没扫过，就扫一下喵
         } else {
