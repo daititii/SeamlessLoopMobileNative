@@ -51,6 +51,8 @@ class MainActivity : AppCompatActivity() {
     private var currentOpenPlaylist: Playlist? = null
     private var updateProgressJob: kotlinx.coroutines.Job? = null
     private var isUserSeeking: Boolean = false
+    private lateinit var playbackManager: com.cpu.seamlessloopmobile.audio.PlaybackManager
+    private lateinit var selectionController: com.cpu.seamlessloopmobile.ui.SelectionController
 
     // 文件选择器喵
     private val dbPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
@@ -66,6 +68,30 @@ class MainActivity : AppCompatActivity() {
         // 逻辑大脑初始化喵！
         val factory = MainViewModelFactory(songDao, playlistDao)
         viewModel = ViewModelProvider(this, factory)[MainViewModel::class.java]
+
+        playbackManager = com.cpu.seamlessloopmobile.audio.PlaybackManager(
+            context = this,
+            coroutineScope = lifecycleScope,
+            songDao = songDao,
+            viewModel = viewModel,
+            uiCallback = object : com.cpu.seamlessloopmobile.audio.PlaybackManager.PlaybackUiCallback {
+                override fun onPrePlayback(message: String) {
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
+                    updateProgressJob?.cancel()
+                }
+
+                override fun onPlaybackStarted(song: com.cpu.seamlessloopmobile.model.Song, isAbMode: Boolean) {
+                    if (isAbMode) selectionController.exitSelectionMode()
+                    binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                    startProgressUpdater()
+                    songAdapter.setPlayingSong(song.filePath)
+                }
+
+                override fun onPlaybackError(message: String) {
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -110,10 +136,10 @@ class MainActivity : AppCompatActivity() {
         // 设置返回键逻辑喵 (现代安卓做法)
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (isSelectionMode) {
-                    exitSelectionMode()
-                } else if (isPlaylistSelectionMode) {
-                    exitPlaylistSelectionMode()
+                if (selectionController.isSelectionMode) {
+                    selectionController.exitSelectionMode()
+                } else if (selectionController.isPlaylistSelectionMode) {
+                    selectionController.exitPlaylistSelectionMode()
                 } else if (isInsidePlaylist) {
                     isInsidePlaylist = false
                     loadHomeView()
@@ -253,7 +279,7 @@ class MainActivity : AppCompatActivity() {
         }
         
         songAdapter.setOnLongClickListener { song ->
-            enterSelectionMode()
+            selectionController.enterSelectionMode()
             songAdapter.toggleSelection(song.filePath) // 顺便把长按这首也选上喵
         }
         
@@ -267,68 +293,72 @@ class MainActivity : AppCompatActivity() {
                     enterLocalMusic()
                 }
             },
-            onPlaylistLongClick = { playlist -> enterPlaylistSelectionMode(playlist) }
+            onPlaylistLongClick = { playlist -> selectionController.enterPlaylistSelectionMode(playlist) }
         )
         libraryAdapter.setOnSelectionChangedListener { count ->
-            if (isPlaylistSelectionMode) {
+            if (selectionController.isPlaylistSelectionMode) {
                 binding.toolbar.title = "已选择歌单: $count"
-                updatePlaylistSelectionMenu()
+                selectionController.updatePlaylistSelectionMenu()
             }
         }
 
-        binding.rvSongs.layoutManager = LinearLayoutManager(this)
+        binding.rvSongs.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
         // 默认显示主库（歌单+文件夹）
         binding.rvSongs.adapter = libraryAdapter
 
         songAdapter.setOnSelectionChangedListener { count ->
-            if (isSelectionMode) {
-                updateSelectionMenu(count)
-            }
-        }
-    }
-
-    private fun updateSelectionMenu(count: Int) {
-        binding.toolbar.title = "已选择: $count"
-        binding.toolbar.menu.clear()
-
-        binding.toolbar.menu.add(if (songAdapter.isAllSelected()) "全不选" else "全选").apply {
-            setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
-            setOnMenuItemClickListener {
-                songAdapter.selectAll()
-                true
-            }
-        }
-                
-        binding.toolbar.menu.add("添加到歌单").apply {
-            setIcon(android.R.drawable.ic_menu_add)
-            setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
-            setOnMenuItemClickListener {
-                showAddToPlaylistDialog()
-                true
+            if (selectionController.isSelectionMode) {
+                selectionController.updateSelectionMenu(count)
             }
         }
 
-        if (isInsidePlaylist) {
-            binding.toolbar.menu.add("从歌单移除").apply {
-                setIcon(android.R.drawable.ic_menu_delete)
-                setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
-                setOnMenuItemClickListener {
-                    val selectedSongs = songAdapter.getSelectedSongs()
-                    currentOpenPlaylist?.let { playlist ->
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            playlistDao.removeSongsFromPlaylist(playlist.id, selectedSongs.map { it.id })
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(this@MainActivity, "已从歌单移除 ${selectedSongs.size} 首歌曲喵", Toast.LENGTH_SHORT).show()
-                                exitSelectionMode()
-                                openPlaylist(playlist) // 重新刷新歌单内容喵
-                            }
+        // --- 初始化 SelectionController 喵 ---
+        selectionController = com.cpu.seamlessloopmobile.ui.SelectionController(
+            context = this,
+            toolbar = binding.toolbar,
+            songAdapter = songAdapter,
+            libraryAdapter = libraryAdapter,
+            songDao = songDao,
+            playlistDao = playlistDao,
+            coroutineScope = lifecycleScope,
+            uiCallback = object : com.cpu.seamlessloopmobile.ui.SelectionController.SelectionUiCallback {
+                override fun onExitSelection() {
+                    if (isShowingFolders || isExploringLocal) {
+                        if (!isShowingFolders) {
+                             val currentFolder = folders.find { it.songs.any { s -> s.id == currentPlaylist.firstOrNull()?.id } }
+                             binding.toolbar.title = currentFolder?.name ?: "本地音乐"
+                             binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
+                             binding.toolbar.setNavigationOnClickListener { showFolderList() }
+                        } else {
+                             showFolderList()
                         }
+                    } else {
+                        loadHomeView()
                     }
-                    true
+                    invalidateOptionsMenu()
                 }
+
+                override fun onExitPlaylistSelection() {
+                    if (isExploringLocal) showFolderList() else loadHomeView()
+                }
+
+                override fun onReloadHomeView() {
+                    loadHomeView()
+                }
+
+                override fun onRefreshPlaylist(playlist: com.cpu.seamlessloopmobile.model.Playlist) {
+                    openPlaylist(playlist)
+                }
+
+                override val isInsidePlaylist: Boolean
+                    get() = this@MainActivity.isInsidePlaylist
+
+                override val currentOpenPlaylist: com.cpu.seamlessloopmobile.model.Playlist?
+                    get() = this@MainActivity.currentOpenPlaylist
             }
-        }
+        )
     }
+
 
     private fun openPlaylist(playlist: com.cpu.seamlessloopmobile.model.Playlist) {
         currentOpenPlaylist = playlist
@@ -398,140 +428,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun playSong(song: com.cpu.seamlessloopmobile.model.Song) {
-        // --- 莱芙的“自动合体”魔法 (仿电脑端) ---
-        val abPair = viewModel.findAbPair(song)
-        if (abPair != null) {
-            playAbSong(abPair.first, abPair.second)
-            return
-        }
-
         // 更新当前播放索引 (使用 ID 查找更稳健)
         val newIndex = currentPlaylist.indexOfFirst { it.id == song.id }
         if (newIndex != -1) {
             currentSongIndex = newIndex
         } else {
-             // 如果这首歌不在当前列表里（比如跨文件夹播放），暂时不处理或添加到列表
              android.util.Log.w("MainActivity", "Song not found in currentPlaylist!")
         }
         
-        isAbModePlaying = false // 常规播放
-        // 弹出提示
-        Toast.makeText(this, "正在为您疯狂解码: ${song.displayName}...", Toast.LENGTH_SHORT).show()
-
-        // 开启后台协程，避免卡死 cpu 大人的 UI
-        lifecycleScope.launch(Dispatchers.IO) {
-            // 停止之前的播放
-            updateProgressJob?.cancel()
-            NativeAudio.stopAudioEngine()
-            
-            // 使用 ContentResolver 以 FD 方式安全打开音频文件
-            try {
-                val uri = android.content.ContentUris.withAppendedId(
-                    android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                    song.mediaId
-                )
-                contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
-                    val actualLength = if (afd.declaredLength < 0) afd.length else afd.declaredLength
-                    
-                    android.util.Log.d("MainActivity", "Opening FD: ${afd.parcelFileDescriptor.fd}, length: $actualLength")
-                    
-                    // 真正的解码和启动引擎
-                    NativeAudio.startAudioEngine(
-                        afd.parcelFileDescriptor.fd,
-                        afd.startOffset,
-                        actualLength
-                    )
-                }
-
-                // 设置循环点（如果数据库里有的话）
-                if (song.loopEnd > 0) {
-                    NativeAudio.setLoopPoints(song.loopStart, song.loopEnd)
-                }
-
-                // 获取总帧数并同步回数据库喵（指纹采集）
-                val durationFrames = NativeAudio.getDuration()
-                if (durationFrames > 0) {
-                    val updatedWithSamples = song.copy(totalSamples = durationFrames)
-                    songDao.insertOrUpdateSong(updatedWithSamples)
-                    withContext(Dispatchers.Main) {
-                        // 同步更新内存，防止 UI 显示滞后
-                        allSongs = allSongs.map { if (it.filePath == song.filePath) updatedWithSamples else it }
-                        currentPlaylist = currentPlaylist.map { if (it.filePath == song.filePath) updatedWithSamples else it }
-                    }
-                }
-
-                // 启动 UI 更新
-                withContext(Dispatchers.Main) {
-                    isPlaying = true
-                    viewModel.setPlaying(true)
-                    binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-                    startProgressUpdater()
-                    songAdapter.setPlayingSong(song.filePath) // 告诉适配器谁在唱歌喵！
-                }
-
-            } catch (e: Exception) {
-                android.util.Log.e("MainActivity", "Failed to open audio FD", e)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "无法打开音频文件喵...", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    private fun playAbSong(introSong: com.cpu.seamlessloopmobile.model.Song, loopSong: com.cpu.seamlessloopmobile.model.Song) {
-        // 弹出提示
-        Toast.makeText(this, "正在为您合成 AB 循环: ${introSong.displayName} + ${loopSong.displayName}", Toast.LENGTH_LONG).show()
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            updateProgressJob?.cancel()
-            NativeAudio.stopAudioEngine()
-            
-            try {
-                val uriA = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, introSong.mediaId)
-                val uriB = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, loopSong.mediaId)
-                
-                contentResolver.openAssetFileDescriptor(uriA, "r")?.use { afdA ->
-                    contentResolver.openAssetFileDescriptor(uriB, "r")?.use { afdB ->
-                        val lenA = if (afdA.declaredLength < 0) afdA.length else afdA.declaredLength
-                        val lenB = if (afdB.declaredLength < 0) afdB.length else afdB.declaredLength
-                        
-                        NativeAudio.startAbAudioEngine(
-                            afdA.parcelFileDescriptor.fd, afdA.startOffset, lenA,
-                            afdB.parcelFileDescriptor.fd, afdB.startOffset, lenB
-                        )
-                    }
-                }
-
-                // --- 莱芙的循环记忆回溯喵 ---
-                if (introSong.loopEnd > 0) {
-                    NativeAudio.setLoopPoints(introSong.loopStart, introSong.loopEnd)
-                }
-
-                // 获取总帧数并同步回数据库喵
-                val durationFrames = NativeAudio.getDuration()
-                if (durationFrames > 0) {
-                    val updatedWithSamples = introSong.copy(totalSamples = durationFrames)
-                    songDao.insertOrUpdateSong(updatedWithSamples)
-                }
-                
-                withContext(Dispatchers.Main) {
-                    exitSelectionMode()
-                    currentAbIntroSong = introSong
-                    viewModel.setCurrentAbIntroSong(introSong)
-                    isAbModePlaying = true // 这是 AB 魔法大合体！
-                    viewModel.setAbModePlaying(true)
-                    isPlaying = true
-                    viewModel.setPlaying(true)
-                    binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-                    startProgressUpdater()
-                    songAdapter.setPlayingSong(introSong.filePath) // AB 时高亮 A 段喵！
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "AB 播放失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
+        playbackManager.playSong(song)
     }
 
     private fun checkPermissionsAndLoadHome() {
@@ -592,175 +497,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private var isSelectionMode = false
-
-    private fun enterSelectionMode() {
-        if (isSelectionMode) return
-        isSelectionMode = true
-        songAdapter.setSelectionMode(true)
-        updateSelectionMenu(songAdapter.getSelectedSongPaths().size)
-        binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_close_clear_cancel)
-        binding.toolbar.setNavigationOnClickListener { exitSelectionMode() }
-    }
-
-    private fun exitSelectionMode() {
-        isSelectionMode = false
-        songAdapter.setSelectionMode(false)
-        if (isShowingFolders || isExploringLocal) {
-            if (!isShowingFolders) {
-                 // 在歌曲列表层级喵
-                 val currentFolder = folders.find { it.songs.any { s -> s.id == currentPlaylist.firstOrNull()?.id } }
-                 binding.toolbar.title = currentFolder?.name ?: "本地音乐"
-                 binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
-                 binding.toolbar.setNavigationOnClickListener { showFolderList() }
-            } else {
-                 showFolderList()
-            }
-        } else {
-            loadHomeView()
-        }
-        invalidateOptionsMenu()
-    }
-
-    private var isPlaylistSelectionMode = false
-
-    private fun enterPlaylistSelectionMode(initialPlaylist: com.cpu.seamlessloopmobile.model.Playlist?) {
-        if (isPlaylistSelectionMode) return
-        isPlaylistSelectionMode = true
-        libraryAdapter.setSelectionMode(true)
-        if (initialPlaylist != null) {
-            libraryAdapter.toggleSelection(initialPlaylist.id)
-        }
-        
-        binding.toolbar.title = "已选择歌单: ${libraryAdapter.getSelectedPlaylists().size}"
-        binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_close_clear_cancel)
-        binding.toolbar.setNavigationOnClickListener {
-            exitPlaylistSelectionMode()
-        }
-        
-        updatePlaylistSelectionMenu()
-    }
-
-    private fun updatePlaylistSelectionMenu() {
-        binding.toolbar.menu.clear()
-        
-        binding.toolbar.menu.add(if (libraryAdapter.isAllSelected()) "全不选" else "全选").apply {
-            setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
-            setOnMenuItemClickListener {
-                libraryAdapter.selectAll()
-                true
-            }
-        }
-
-        binding.toolbar.menu.add("删除已选").setIcon(android.R.drawable.ic_menu_delete).setShowAsActionFlags(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM).setOnMenuItemClickListener {
-            val selected = libraryAdapter.getSelectedPlaylists()
-            if (selected.isEmpty()) {
-                Toast.makeText(this@MainActivity, "请先选择歌单喵", Toast.LENGTH_SHORT).show()
-                return@setOnMenuItemClickListener true
-            }
-            com.google.android.material.dialog.MaterialAlertDialogBuilder(this@MainActivity)
-                .setTitle("批量删除歌单")
-                .setMessage("cpu 大人，真的要心碎地删除这 ${selected.size} 个歌单吗？")
-                .setPositiveButton("删除") { _, _ ->
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        selected.forEach { playlistDao.deletePlaylist(it) }
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(this@MainActivity, "成功删除这 ${selected.size} 个歌单喵!", Toast.LENGTH_SHORT).show()
-                            exitPlaylistSelectionMode()
-                            loadHomeView() // 刷新主页数量喵
-                        }
-                    }
-                }
-                .setNegativeButton("取消", null)
-                .show()
-            true
-        }
-    }
-
-    private fun exitPlaylistSelectionMode() {
-        isPlaylistSelectionMode = false
-        libraryAdapter.setSelectionMode(false)
-        if (isExploringLocal) showFolderList() else loadHomeView()
-    }
-
-    private fun showAddToPlaylistDialog() {
-        val selectedSongs = songAdapter.getSelectedSongs()
-        if (selectedSongs.isEmpty()) {
-            Toast.makeText(this, "请先选择歌曲喵", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        lifecycleScope.launch(Dispatchers.Main) {
-            val playlists = withContext(Dispatchers.IO) { playlistDao.getAllPlaylists() }
-            
-            val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this@MainActivity)
-                .setTitle("添加到歌单")
-            
-            val items = playlists.map { it.name }.toMutableList()
-            items.add("+ 新建歌单")
-            
-            dialog.setItems(items.toTypedArray()) { _, which ->
-                if (which == items.size - 1) {
-                    showCreatePlaylistDialog(selectedSongs)
-                } else {
-                    val targetPlaylist = playlists[which]
-                    addSongsToExistingPlaylist(targetPlaylist, selectedSongs)
-                }
-            }
-            dialog.show()
-        }
-    }
-
-    private fun showCreatePlaylistDialog(songs: List<Song>) {
-        val editText = android.widget.EditText(this)
-        editText.hint = "歌单名称"
-        
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-            .setTitle("新建歌单")
-            .setView(editText)
-            .setPositiveButton("确定") { _, _ ->
-                val name = editText.text.toString()
-                if (name.isNotEmpty()) {
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        // 1. 先确保所有选择的歌曲都已经在数据库里“挂号”了喵，拿到真正的 ID
-                        val persistentSongIds = songs.map { song ->
-                            songDao.insertOrUpdateSong(song)
-                        }
-                        
-                        // 2. 创建歌单并关联
-                        val newId = playlistDao.insertPlaylist(com.cpu.seamlessloopmobile.model.Playlist(name = name))
-                        playlistDao.addSongsToPlaylist(newId.toInt(), persistentSongIds)
-                        
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(this@MainActivity, "成功创建歌单: $name 喵!", Toast.LENGTH_SHORT).show()
-                            exitSelectionMode()
-                            loadHomeView() // 刷新主页喵！
-                        }
-                    }
-                }
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    private fun addSongsToExistingPlaylist(playlist: Playlist, songs: List<Song>) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            // 1. 同样要先入库拿到真 ID 喵
-            val persistentSongIds = songs.map { song ->
-                songDao.insertOrUpdateSong(song)
-            }
-            
-            // 2. 关联到现有歌单
-            playlistDao.addSongsToPlaylist(playlist.id, persistentSongIds)
-            
-            withContext(Dispatchers.Main) {
-                Toast.makeText(this@MainActivity, "已添加到 ${playlist.name} 喵!", Toast.LENGTH_SHORT).show()
-                exitSelectionMode()
-                loadHomeView() // 刷新主页喵！
-            }
-        }
-    }
-
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_CODE_PERMISSION && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
@@ -801,80 +537,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun importFromPcDatabase(uri: android.net.Uri) {
         lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                // 1. 拷贝到临时文件，因为 SQLite 不直接支持 ContentUri 喵
-                val tempFile = java.io.File(cacheDir, "temp_pc_data.db")
-                contentResolver.openInputStream(uri)?.use { input ->
-                    tempFile.outputStream().use { output ->
-                        input.copyTo(output)
+            com.cpu.seamlessloopmobile.db.PcDatabaseImporter.importFromPcDatabase(
+                context = this@MainActivity,
+                uri = uri,
+                songDao = songDao,
+                callback = object : com.cpu.seamlessloopmobile.db.PcDatabaseImporter.ImportCallback {
+                    override fun onSuccess(syncCount: Int) {
+                        Toast.makeText(this@MainActivity, "同步完成喵！成功找回 $syncCount 条循环数据", Toast.LENGTH_LONG).show()
+                        // 重新扫描以刷新 UI
+                        viewModel.scanLibrary(this@MainActivity)
+                    }
+
+                    override fun onError(message: String) {
+                        Toast.makeText(this@MainActivity, "同步失败了(>_<): $message", Toast.LENGTH_LONG).show()
                     }
                 }
-
-                // 2. 暴力开启外部数据库
-                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
-                    tempFile.absolutePath,
-                    null,
-                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY
-                )
-
-                val cursor = db.rawQuery("SELECT FileName, TotalSamples, LoopStart, LoopEnd, DisplayName FROM LoopPoints", null)
-                var syncCount = 0
-
-                val pcData = mutableListOf<Triple<String, Long, com.cpu.seamlessloopmobile.model.Song>>()
-
-                if (cursor.moveToFirst()) {
-                    do {
-                        val fileName = cursor.getString(0) ?: ""
-                        val total = cursor.getLong(1)
-                        val start = cursor.getLong(2)
-                        val end = cursor.getLong(3)
-                        val name = cursor.getString(4)
-
-                        // 构造一个临时的 Song 对象用于存储数据喵
-                        val dummySong = com.cpu.seamlessloopmobile.model.Song(
-                            fileName = fileName,
-                            filePath = "", // 稍后匹配
-                            displayName = name,
-                            loopStart = start,
-                            loopEnd = end,
-                            totalSamples = total,
-                            mediaId = 0
-                        )
-                        pcData.add(Triple(fileName, total, dummySong))
-                    } while (cursor.moveToNext())
-                }
-                cursor.close()
-                db.close()
-                tempFile.delete()
-
-                // 3. 开始对碰！
-                // 莱芙用文件名和总采样数双重匹配最稳健
-                val currentSongs = allSongs 
-                var matchLog = StringBuilder()
-
-                for (pcRecord in pcData) {
-                    val pcSong = pcRecord.third
-                    
-                    // --- 灵魂锚点理论喵！ ---
-                    // 不管手机里现在有没有这首歌的文件，
-                    // 莱芙都先把这份来自 PC 的“循环记忆”存在数据库里。
-                    // 等以后大人把文件拷进来，scanSongs 就会通过指纹自动认亲喵！
-                    songDao.insertOrUpdateSong(pcSong)
-                    syncCount++
-                }
-
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "同步完成喵！成功找回 $syncCount 条循环数据", Toast.LENGTH_LONG).show()
-                    // 重新扫描以刷新 UI
-                    viewModel.scanLibrary(this@MainActivity)
-                }
-
-            } catch (e: Exception) {
-                android.util.Log.e("MainActivity", "Sync failed", e)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "同步失败了(>_<): ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
+            )
         }
     }
 

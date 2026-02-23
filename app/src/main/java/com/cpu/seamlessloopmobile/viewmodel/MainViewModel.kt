@@ -117,24 +117,27 @@ class MainViewModel(
         
         viewModelScope.launch(Dispatchers.IO) {
             songDao.insertOrUpdateSong(newSong)
-            
-            // 同步内存中的列表喵
-            val updatedAllSongs = _allSongs.value?.map {
-                if (it.filePath == song.filePath) newSong else it
-            } ?: emptyList()
-            _allSongs.postValue(updatedAllSongs)
-
-            val updatedFolders = _folders.value?.map { folder ->
-                val updatedSongs = folder.songs.map { if (it.filePath == song.filePath) newSong else it }
-                folder.copy(songs = updatedSongs)
-            } ?: emptyList()
-            _folders.postValue(updatedFolders)
-
-            val updatedCurrentPlaylist = _currentPlaylist.value?.map {
-                if (it.filePath == song.filePath) newSong else it
-            } ?: emptyList()
-            _currentPlaylist.postValue(updatedCurrentPlaylist)
+            updateSongInMemory(newSong)
         }
+    }
+
+    fun updateSongInMemory(song: Song) {
+        // 同步内存中的列表喵
+        val updatedAllSongs = _allSongs.value?.map {
+            if (it.filePath == song.filePath) song else it
+        } ?: emptyList()
+        _allSongs.postValue(updatedAllSongs)
+
+        val updatedFolders = _folders.value?.map { folder ->
+            val updatedSongs = folder.songs.map { if (it.filePath == song.filePath) song else it }
+            folder.copy(songs = updatedSongs)
+        } ?: emptyList()
+        _folders.postValue(updatedFolders)
+
+        val updatedCurrentPlaylist = _currentPlaylist.value?.map {
+            if (it.filePath == song.filePath) song else it
+        } ?: emptyList()
+        _currentPlaylist.postValue(updatedCurrentPlaylist)
     }
 
     fun scanLibrary(context: android.content.Context) {
