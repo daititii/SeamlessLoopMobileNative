@@ -215,10 +215,15 @@ class SelectionController(
                         }
                         
                         val newId = playlistDao.insertPlaylist(Playlist(name = name))
-                        playlistDao.addSongsToPlaylist(newId.toInt(), persistentSongIds)
+                        val count = playlistDao.addSongsToPlaylist(newId.toInt(), persistentSongIds)
                         
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(context, "成功创建歌单: $name 喵!", Toast.LENGTH_SHORT).show()
+                            val message = if (count > 0) {
+                                "成功创建歌单: $name, 已添加 $count 首歌曲喵!"
+                            } else {
+                                "成功创建空歌单: $name 喵!"
+                            }
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                             exitSelectionMode()
                             uiCallback.onReloadHomeView()
                         }
@@ -235,10 +240,15 @@ class SelectionController(
                 songDao.insertOrUpdateSong(song)
             }
             
-            playlistDao.addSongsToPlaylist(playlist.id, persistentSongIds)
+            val count = playlistDao.addSongsToPlaylist(playlist.id, persistentSongIds)
             
             withContext(Dispatchers.Main) {
-                Toast.makeText(context, "已添加到 ${playlist.name} 喵!", Toast.LENGTH_SHORT).show()
+                val message = when {
+                    count == persistentSongIds.size -> "已成功添加到 ${playlist.name} 喵!"
+                    count > 0 -> "成功添加 $count 首，跳过 ${persistentSongIds.size - count} 首重复歌曲喵！"
+                    else -> "这些歌曲已经在歌单里了喵！"
+                }
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 exitSelectionMode()
                 uiCallback.onReloadHomeView()
             }

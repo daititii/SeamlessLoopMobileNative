@@ -29,17 +29,25 @@ interface PlaylistDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertPlaylistItem(item: PlaylistItem): Long
 
+    @Query("SELECT SongId FROM PlaylistItems WHERE PlaylistId = :playlistId")
+    suspend fun getSongIdsInPlaylist(playlistId: Int): List<Long>
+
     @Transaction
     suspend fun addSongsToPlaylist(playlistId: Int, songIds: List<Long>): Int {
+        val existingIds = getSongIdsInPlaylist(playlistId).toSet()
+        val newSongIds = songIds.distinct().filter { it !in existingIds }
+        
+        if (newSongIds.isEmpty()) return 0
+
         val currentMaxOrder = getMaxSortOrder(playlistId) ?: 0
-        songIds.forEachIndexed { index, songId ->
+        newSongIds.forEachIndexed { index, songId ->
             insertPlaylistItem(PlaylistItem(
                 playlistId = playlistId,
                 songId = songId,
                 sortOrder = currentMaxOrder + index + 1
             ))
         }
-        return songIds.size
+        return newSongIds.size
     }
 
     @Query("SELECT MAX(SortOrder) FROM PlaylistItems WHERE PlaylistId = :playlistId")
