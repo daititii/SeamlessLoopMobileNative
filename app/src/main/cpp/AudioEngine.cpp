@@ -160,6 +160,16 @@ void AudioEngine::setLoopPoints(int64_t startFrame, int64_t endFrame) {
     mFifoCond.notify_all();
 }
 
+void AudioEngine::setLooping(bool isLooping) {
+    std::lock_guard<std::mutex> lock(mDecoderMutex);
+    if (isLooping) {
+        mIsLooping = (mUserLoopEnd.load() > mUserLoopStart.load());
+    } else {
+        mIsLooping = false;
+    }
+    mFifoCond.notify_all();
+}
+
 void AudioEngine::seekTo(int64_t frame) {
     if (mIsAbMode.load()) {
         // AB 模式下的真·魔法跳转！
@@ -260,6 +270,13 @@ void AudioEngine::decodingLoop() {
         // 1. 安全预检喵
         int32_t channels = mChannelCount.load();
         bool isLooping = mIsLooping.load();
+        
+        // 关键修复喵！对于 AB 合体模式，从 Intro 切换到 Loop 这一神圣的跨越是必须进行的！
+        // 哪怕目前不是大循环模式，这第一次物理切换也绝对不能断掉喵！
+        if (mIsAbMode.load() && !mAbTransitionDone.load()) {
+            isLooping = true; 
+        }
+
         int64_t loopStart = mLoopStartFrame.load();
         int64_t loopEnd = mLoopEndFrame.load();
 

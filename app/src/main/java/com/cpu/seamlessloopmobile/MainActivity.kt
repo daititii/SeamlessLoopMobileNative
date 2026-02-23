@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.lifecycle.ViewModelProvider
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModelFactory
+import com.cpu.seamlessloopmobile.viewmodel.PlayMode
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.utils.TimeUtils
 import com.cpu.seamlessloopmobile.dialogs.LoopSettingsDialog
@@ -135,6 +136,10 @@ class MainActivity : AppCompatActivity() {
                 loadHomeView()
             }
         }
+        viewModel.playMode.observe(this) { mode ->
+            updatePlayModeIcon(mode)
+            NativeAudio.setLooping(mode == PlayMode.SINGLE_LOOP)
+        }
 
         // 设置返回键逻辑喵 (现代安卓做法)
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
@@ -232,24 +237,50 @@ class MainActivity : AppCompatActivity() {
 
         // 上一首
         binding.btnPrevious.setOnClickListener {
-            if (currentPlaylist.isNotEmpty() && currentSongIndex > 0) {
-                currentSongIndex--
-                playSong(currentPlaylist[currentSongIndex])
+            val prevIndex = viewModel.getPrevIndex()
+            if (prevIndex != -1) {
+                playSong(currentPlaylist[prevIndex])
             }
         }
 
         // 下一首
         binding.btnNext.setOnClickListener {
-            if (currentPlaylist.isNotEmpty() && currentSongIndex < currentPlaylist.size - 1) {
-                currentSongIndex++
-                playSong(currentPlaylist[currentSongIndex])
+            val nextIndex = viewModel.getNextIndex()
+            if (nextIndex != -1) {
+                playSong(currentPlaylist[nextIndex])
             }
         }
+
+        // 播放模式切换
+        binding.btnPlayMode.setOnClickListener {
+            viewModel.togglePlayMode()
+        }
+    }
+
+    private fun updatePlayModeIcon(mode: PlayMode) {
+        val iconRes = when (mode) {
+            PlayMode.SEQUENCE -> android.R.drawable.ic_menu_sort_by_size // 暂代顺序
+            PlayMode.LIST_LOOP -> android.R.drawable.ic_menu_rotate
+            PlayMode.SINGLE_LOOP -> android.R.drawable.ic_menu_revert
+            PlayMode.SHUFFLE -> android.R.drawable.ic_menu_share // 暂代随机
+        }
+        binding.btnPlayMode.setImageResource(iconRes)
+        
+        val modeName = when (mode) {
+            PlayMode.SEQUENCE -> "顺序播放"
+            PlayMode.LIST_LOOP -> "列表循环"
+            PlayMode.SINGLE_LOOP -> "单曲循环"
+            PlayMode.SHUFFLE -> "随机播放"
+        }
+        Toast.makeText(this, "模式已切换为: $modeName 喵!", Toast.LENGTH_SHORT).show()
     }
 
     private fun startProgressUpdater() {
         updateProgressJob?.cancel()
         updateProgressJob = lifecycleScope.launch(Dispatchers.Main) {
+            var lastObservedFrame = -1L
+            var frameStallCount = 0
+            
             while (true) {
                 if (!isUserSeeking) {
                     val currentFrame = NativeAudio.getCurrentPosition()
@@ -266,9 +297,34 @@ class MainActivity : AppCompatActivity() {
                         
                         binding.tvCurrentTime.text = TimeUtils.formatTime(currentFrame, sampleRate)
                         binding.tvTotalTime.text = TimeUtils.formatTime(totalFrames, sampleRate)
+
+                        if (isPlaying) {
+                            // 物理文件末尾检测机制喵：距离结尾没多远，而且进度卡住不动了（说明物理文件真播完了）
+                            if (currentFrame == lastObservedFrame && (totalFrames - currentFrame) < sampleRate * 4) {
+                                frameStallCount++
+                            } else {
+                                frameStallCount = 0
+                            }
+                            lastObservedFrame = currentFrame
+
+                            // 达到文件末尾，或者卡住了（约 800ms 没进度更新）
+                            if (currentFrame >= totalFrames - 512 || frameStallCount >= 4) {
+                                frameStallCount = 0
+                                lastObservedFrame = -1L
+                                
+                                val nextIndex = viewModel.getNextIndex()
+                                if (nextIndex != -1) {
+                                    playSong(currentPlaylist[nextIndex])
+                                } else {
+                                    NativeAudio.stopAudioEngine()
+                                    viewModel.setPlaying(false)
+                                    binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                                }
+                            }
+                        }
                     }
                 }
-                kotlinx.coroutines.delay(50) // 20 FPS refresh rate
+                kotlinx.coroutines.delay(200) // 轮询频率稍微降低一点喵，省电！
             }
         }
     }

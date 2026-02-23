@@ -13,6 +13,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Collections
+
+enum class PlayMode {
+    SEQUENCE,   // 顺序播放
+    LIST_LOOP,  // 列表循环
+    SINGLE_LOOP,// 单曲循环
+    SHUFFLE     // 随机播放
+}
 
 class MainViewModel(
     private val songDao: SongDao,
@@ -61,6 +69,9 @@ class MainViewModel(
     private val _currentAbIntroSong = MutableLiveData<Song?>(null)
     val currentAbIntroSong: LiveData<Song?> = _currentAbIntroSong
 
+    private val _playMode = MutableLiveData(PlayMode.LIST_LOOP)
+    val playMode: LiveData<PlayMode> = _playMode
+
     fun setExploringLocal(value: Boolean) { _isExploringLocal.value = value }
     fun setShowingFolders(value: Boolean) { _isShowingFolders.value = value }
     fun setInsidePlaylist(value: Boolean) { _isInsidePlaylist.value = value }
@@ -68,6 +79,18 @@ class MainViewModel(
     fun setPlaying(value: Boolean) { _isPlaying.value = value }
     fun setAbModePlaying(value: Boolean) { _isAbModePlaying.value = value }
     fun setCurrentAbIntroSong(song: Song?) { _currentAbIntroSong.value = song }
+    fun setPlayMode(mode: PlayMode) { _playMode.value = mode }
+
+    fun togglePlayMode() {
+        val next = when (_playMode.value) {
+            PlayMode.SEQUENCE -> PlayMode.LIST_LOOP
+            PlayMode.LIST_LOOP -> PlayMode.SINGLE_LOOP
+            PlayMode.SINGLE_LOOP -> PlayMode.SHUFFLE
+            PlayMode.SHUFFLE -> PlayMode.SEQUENCE
+            null -> PlayMode.LIST_LOOP
+        }
+        _playMode.value = next
+    }
 
     fun updateCurrentPlaylist(songs: List<Song>, index: Int = -1) {
         _currentPlaylist.value = songs
@@ -236,5 +259,56 @@ class MainViewModel(
             }
         }
         return null
+    }
+
+    // --- 播放顺序控制喵 ---
+
+    fun getNextIndex(): Int {
+        val songs = _currentPlaylist.value ?: return -1
+        if (songs.isEmpty()) return -1
+        val currentIndex = _currentSongIndex.value ?: -1
+        val mode = _playMode.value ?: PlayMode.LIST_LOOP
+
+        return when (mode) {
+            PlayMode.SEQUENCE -> {
+                if (currentIndex < songs.size - 1) currentIndex + 1 else -1
+            }
+            PlayMode.LIST_LOOP -> {
+                (currentIndex + 1) % songs.size
+            }
+            PlayMode.SINGLE_LOOP -> {
+                currentIndex
+            }
+            PlayMode.SHUFFLE -> {
+                if (songs.size <= 1) return 0
+                var next = (0 until songs.size).random()
+                while (next == currentIndex && songs.size > 1) {
+                    next = (0 until songs.size).random()
+                }
+                next
+            }
+        }
+    }
+
+    fun getPrevIndex(): Int {
+        val songs = _currentPlaylist.value ?: return -1
+        if (songs.isEmpty()) return -1
+        val currentIndex = _currentSongIndex.value ?: -1
+        val mode = _playMode.value ?: PlayMode.LIST_LOOP
+
+        return when (mode) {
+            PlayMode.SEQUENCE -> {
+                if (currentIndex > 0) currentIndex - 1 else -1
+            }
+            PlayMode.LIST_LOOP -> {
+                if (currentIndex <= 0) songs.size - 1 else currentIndex - 1
+            }
+            PlayMode.SINGLE_LOOP -> {
+                currentIndex
+            }
+            PlayMode.SHUFFLE -> {
+                getNextIndex() // 随机模式下，上一首也是随机喵！
+            }
+        }
     }
 }

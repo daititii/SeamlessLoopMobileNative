@@ -97,6 +97,18 @@ Java_com_cpu_seamlessloopmobile_jni_NativeAudio_setLoopPoints(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_setLooping(
+        JNIEnv* env,
+        jobject /* this */,
+        jboolean isLooping) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    
+    if (audioEngine != nullptr) {
+        audioEngine->setLooping(isLooping);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_cpu_seamlessloopmobile_jni_NativeAudio_seekTo(
         JNIEnv* env,
         jobject /* this */,

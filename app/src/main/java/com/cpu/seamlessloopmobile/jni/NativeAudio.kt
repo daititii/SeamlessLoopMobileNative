@@ -10,6 +10,7 @@ object NativeAudio {
     external fun startAbAudioEngine(fdA: Int, offsetA: Long, lengthA: Long, fdB: Int, offsetB: Long, lengthB: Long)
     external fun stopAudioEngine()
     external fun setLoopPoints(start: Long, end: Long)
+    external fun setLooping(isLooping: Boolean)
     external fun seekTo(frame: Long)
     external fun getCurrentPosition(): Long
     external fun getDuration(): Long

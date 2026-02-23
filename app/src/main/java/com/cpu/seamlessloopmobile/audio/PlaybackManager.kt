@@ -53,6 +53,7 @@ class PlaybackManager(
                 if (song.loopEnd > 0) {
                     NativeAudio.setLoopPoints(song.loopStart, song.loopEnd)
                 }
+                NativeAudio.setLooping(viewModel.playMode.value == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP)
 
                 val durationFrames = NativeAudio.getDuration()
                 var finalSong = song
@@ -100,6 +101,7 @@ class PlaybackManager(
                 if (introSong.loopEnd > 0) {
                     NativeAudio.setLoopPoints(introSong.loopStart, introSong.loopEnd)
                 }
+                NativeAudio.setLooping(viewModel.playMode.value == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP)
 
                 val durationFrames = NativeAudio.getDuration()
                 var finalIntroSong = introSong

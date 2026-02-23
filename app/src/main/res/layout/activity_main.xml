@@ -129,6 +129,16 @@
                 android:contentDescription="下一首"
                 app:tint="?attr/colorOnSurface" />
 
+            <ImageButton
+                android:id="@+id/btn_play_mode"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@android:drawable/ic_menu_rotate"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="播放模式"
+                android:layout_marginStart="16dp"
+                app:tint="?attr/colorOnSurface" />
+
         </LinearLayout>
 
     </LinearLayout>
