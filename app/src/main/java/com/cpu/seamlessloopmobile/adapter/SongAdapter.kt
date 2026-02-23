@@ -79,6 +79,18 @@ class SongAdapter(
         notifyDataSetChanged()
     }
 
+    fun selectAll() {
+        if (selectedSongPaths.size == songs.size) {
+            selectedSongPaths.clear()
+        } else {
+            songs.forEach { selectedSongPaths.add(it.filePath) }
+        }
+        onSelectionChanged?.invoke(selectedSongPaths.size)
+        notifyDataSetChanged()
+    }
+
+    fun isAllSelected(): Boolean = songs.isNotEmpty() && selectedSongPaths.size == songs.size
+
     fun setOnSelectionChangedListener(listener: (Int) -> Unit) {
         this.onSelectionChanged = listener
     }

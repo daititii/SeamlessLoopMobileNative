@@ -48,6 +48,22 @@ class LibraryAdapter(
         notifyDataSetChanged()
     }
 
+    fun selectAll() {
+        val playlistItems = items.filterIsInstance<LibraryItem.PlaylistWrapper>()
+        if (selectedPlaylistIds.size == playlistItems.size) {
+            selectedPlaylistIds.clear()
+        } else {
+            playlistItems.forEach { selectedPlaylistIds.add(it.playlist.id) }
+        }
+        onSelectionChanged?.invoke(selectedPlaylistIds.size)
+        notifyDataSetChanged()
+    }
+
+    fun isAllSelected(): Boolean {
+        val playlistItems = items.filterIsInstance<LibraryItem.PlaylistWrapper>()
+        return playlistItems.isNotEmpty() && selectedPlaylistIds.size == playlistItems.size
+    }
+
     fun getSelectedPlaylists(): List<Playlist> {
         return items.mapNotNull { if (it is LibraryItem.PlaylistWrapper && selectedPlaylistIds.contains(it.playlist.id)) it.playlist else null }
     }

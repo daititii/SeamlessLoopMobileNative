@@ -47,6 +47,11 @@ interface PlaylistDao {
     @Query("DELETE FROM PlaylistItems WHERE PlaylistId = :playlistId AND SongId = :songId")
     suspend fun removeSongFromPlaylist(playlistId: Int, songId: Long)
 
+    @Transaction
+    suspend fun removeSongsFromPlaylist(playlistId: Int, songIds: List<Long>) {
+        songIds.forEach { removeSongFromPlaylist(playlistId, it) }
+    }
+
     @Query("SELECT * FROM PlaylistFolders WHERE PlaylistId = :playlistId")
     suspend fun getFoldersInPlaylist(playlistId: Int): List<PlaylistFolder>
 

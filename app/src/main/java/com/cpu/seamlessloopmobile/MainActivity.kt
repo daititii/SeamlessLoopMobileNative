@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     private var isShowingFolders = false // 默认不显示文件夹
     private var isExploringLocal = false // 是否正在探索本地音乐
     private var isInsidePlaylist = false // 是否正在查看某个歌单喵
+    private var currentOpenPlaylist: com.cpu.seamlessloopmobile.model.Playlist? = null // 当前打开的歌单喵
     
     // 播放状态管理
     private var currentPlaylist: List<com.cpu.seamlessloopmobile.model.Song> = emptyList()
@@ -243,6 +244,7 @@ class MainActivity : AppCompatActivity() {
         libraryAdapter.setOnSelectionChangedListener { count ->
             if (isPlaylistSelectionMode) {
                 binding.toolbar.title = "已选择歌单: $count"
+                updatePlaylistSelectionMenu()
             }
         }
 
@@ -260,6 +262,14 @@ class MainActivity : AppCompatActivity() {
     private fun updateSelectionMenu(count: Int) {
         binding.toolbar.title = "已选择: $count"
         binding.toolbar.menu.clear()
+
+        binding.toolbar.menu.add(if (songAdapter.isAllSelected()) "全不选" else "全选").apply {
+            setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
+            setOnMenuItemClickListener {
+                songAdapter.selectAll()
+                true
+            }
+        }
                 
         binding.toolbar.menu.add("添加到歌单").apply {
             setIcon(android.R.drawable.ic_menu_add)
@@ -269,9 +279,31 @@ class MainActivity : AppCompatActivity() {
                 true
             }
         }
+
+        if (isInsidePlaylist) {
+            binding.toolbar.menu.add("从歌单移除").apply {
+                setIcon(android.R.drawable.ic_menu_delete)
+                setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
+                setOnMenuItemClickListener {
+                    val selectedSongs = songAdapter.getSelectedSongs()
+                    currentOpenPlaylist?.let { playlist ->
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            playlistDao.removeSongsFromPlaylist(playlist.id, selectedSongs.map { it.id })
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@MainActivity, "已从歌单移除 ${selectedSongs.size} 首歌曲喵", Toast.LENGTH_SHORT).show()
+                                exitSelectionMode()
+                                openPlaylist(playlist) // 重新刷新歌单内容喵
+                            }
+                        }
+                    }
+                    true
+                }
+            }
+        }
     }
 
     private fun openPlaylist(playlist: com.cpu.seamlessloopmobile.model.Playlist) {
+        currentOpenPlaylist = playlist
         lifecycleScope.launch(Dispatchers.Main) {
             val songs = withContext(Dispatchers.IO) { playlistDao.getSongsInPlaylist(playlist.id) }
             isShowingFolders = false
@@ -715,7 +747,20 @@ class MainActivity : AppCompatActivity() {
             exitPlaylistSelectionMode()
         }
         
+        updatePlaylistSelectionMenu()
+    }
+
+    private fun updatePlaylistSelectionMenu() {
         binding.toolbar.menu.clear()
+        
+        binding.toolbar.menu.add(if (libraryAdapter.isAllSelected()) "全不选" else "全选").apply {
+            setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
+            setOnMenuItemClickListener {
+                libraryAdapter.selectAll()
+                true
+            }
+        }
+
         binding.toolbar.menu.add("删除已选").setIcon(android.R.drawable.ic_menu_delete).setShowAsActionFlags(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM).setOnMenuItemClickListener {
             val selected = libraryAdapter.getSelectedPlaylists()
             if (selected.isEmpty()) {
