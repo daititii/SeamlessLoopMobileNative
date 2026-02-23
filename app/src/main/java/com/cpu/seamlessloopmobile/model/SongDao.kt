@@ -17,7 +17,7 @@ interface SongDao {
     suspend fun insertSong(song: Song): Long
 
     @Update
-    suspend fun updateSong(song: Song)
+    suspend fun updateSong(song: Song): Int
 
     @Transaction
     suspend fun insertOrUpdateSong(song: Song): Long {
@@ -40,5 +40,5 @@ interface SongDao {
     }
 
     @Delete
-    suspend fun deleteSong(song: Song)
+    suspend fun deleteSong(song: Song): Int
 }

@@ -1,6 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
-    // alias(libs.plugins.kotlin.android) // 暂时注释掉，怀疑重复应用导致冲突
+    // alias(libs.plugins.kotlin.android)
     alias(libs.plugins.google.devtools.ksp)
 }
 
@@ -51,6 +51,10 @@ android {
     }
 }
 
+ksp {
+    arg("room.generateKotlin", "true")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
@@ -67,6 +71,9 @@ dependencies {
 
     // Google Oboe (高性能音频库)
     implementation("com.google.oboe:oboe:1.9.3")
+    // Lifecycle 相关喵
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.lifecycle.livedata.ktx)
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
 }

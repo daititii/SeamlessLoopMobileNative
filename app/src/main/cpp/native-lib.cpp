@@ -8,7 +8,7 @@ static AudioEngine *audioEngine = nullptr;
 static std::mutex engineMutex; 
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_cpu_seamlessloopmobile_MainActivity_startAudioEngine(
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_startAudioEngine(
         JNIEnv* env,
         jobject /* this */,
         jint fd,
@@ -27,7 +27,7 @@ Java_com_cpu_seamlessloopmobile_MainActivity_startAudioEngine(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_cpu_seamlessloopmobile_MainActivity_startAbAudioEngine(
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_startAbAudioEngine(
         JNIEnv* env,
         jobject /* this */,
         jint fdA,
@@ -47,7 +47,7 @@ Java_com_cpu_seamlessloopmobile_MainActivity_startAbAudioEngine(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_cpu_seamlessloopmobile_MainActivity_stopAudioEngine(
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_stopAudioEngine(
         JNIEnv* env,
         jobject /* this */) {
     std::lock_guard<std::mutex> lock(engineMutex);
@@ -62,7 +62,7 @@ Java_com_cpu_seamlessloopmobile_MainActivity_stopAudioEngine(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_cpu_seamlessloopmobile_MainActivity_pauseAudioEngine(
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_pauseAudioEngine(
         JNIEnv* env,
         jobject /* this */) {
     std::lock_guard<std::mutex> lock(engineMutex);
@@ -73,7 +73,7 @@ Java_com_cpu_seamlessloopmobile_MainActivity_pauseAudioEngine(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_cpu_seamlessloopmobile_MainActivity_resumeAudioEngine(
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_resumeAudioEngine(
         JNIEnv* env,
         jobject /* this */) {
     std::lock_guard<std::mutex> lock(engineMutex);
@@ -84,7 +84,7 @@ Java_com_cpu_seamlessloopmobile_MainActivity_resumeAudioEngine(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_cpu_seamlessloopmobile_MainActivity_setLoopPoints(
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_setLoopPoints(
         JNIEnv* env,
         jobject /* this */,
         jlong startFrame,
@@ -97,7 +97,7 @@ Java_com_cpu_seamlessloopmobile_MainActivity_setLoopPoints(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_cpu_seamlessloopmobile_MainActivity_seekTo(
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_seekTo(
         JNIEnv* env,
         jobject /* this */,
         jlong frame) {
@@ -109,7 +109,7 @@ Java_com_cpu_seamlessloopmobile_MainActivity_seekTo(
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_cpu_seamlessloopmobile_MainActivity_getCurrentPosition(
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_getCurrentPosition(
         JNIEnv* env,
         jobject /* this */) {
     // 读操作一般不需要加锁，因为 atomic 很安全，但也取决于具体场景
@@ -121,7 +121,7 @@ Java_com_cpu_seamlessloopmobile_MainActivity_getCurrentPosition(
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_cpu_seamlessloopmobile_MainActivity_getDuration(
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_getDuration(
         JNIEnv* env,
         jobject /* this */) {
     if (audioEngine != nullptr) {
@@ -131,7 +131,7 @@ Java_com_cpu_seamlessloopmobile_MainActivity_getDuration(
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_cpu_seamlessloopmobile_MainActivity_getSampleRate(
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_getSampleRate(
         JNIEnv* env,
         jobject /* this */) {
     if (audioEngine != nullptr) {
@@ -141,7 +141,7 @@ Java_com_cpu_seamlessloopmobile_MainActivity_getSampleRate(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_cpu_seamlessloopmobile_MainActivity_stringFromJNI(
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_stringFromJNI(
         JNIEnv* env,
         jobject /* this */) {
     std::string hello = "Hello from Seamless Loop Engine!";

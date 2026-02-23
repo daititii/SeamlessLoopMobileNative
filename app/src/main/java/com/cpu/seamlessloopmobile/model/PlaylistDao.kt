@@ -12,10 +12,10 @@ interface PlaylistDao {
     suspend fun insertPlaylist(playlist: Playlist): Long
 
     @Update
-    suspend fun updatePlaylist(playlist: Playlist)
+    suspend fun updatePlaylist(playlist: Playlist): Int
 
     @Delete
-    suspend fun deletePlaylist(playlist: Playlist)
+    suspend fun deletePlaylist(playlist: Playlist): Int
 
     // --- 歌单项管理 ---
     @Query("""
@@ -27,10 +27,10 @@ interface PlaylistDao {
     suspend fun getSongsInPlaylist(playlistId: Int): List<Song>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertPlaylistItem(item: PlaylistItem)
+    suspend fun insertPlaylistItem(item: PlaylistItem): Long
 
     @Transaction
-    suspend fun addSongsToPlaylist(playlistId: Int, songIds: List<Long>) {
+    suspend fun addSongsToPlaylist(playlistId: Int, songIds: List<Long>): Int {
         val currentMaxOrder = getMaxSortOrder(playlistId) ?: 0
         songIds.forEachIndexed { index, songId ->
             insertPlaylistItem(PlaylistItem(
@@ -39,17 +39,19 @@ interface PlaylistDao {
                 sortOrder = currentMaxOrder + index + 1
             ))
         }
+        return songIds.size
     }
 
     @Query("SELECT MAX(SortOrder) FROM PlaylistItems WHERE PlaylistId = :playlistId")
     suspend fun getMaxSortOrder(playlistId: Int): Int?
 
     @Query("DELETE FROM PlaylistItems WHERE PlaylistId = :playlistId AND SongId = :songId")
-    suspend fun removeSongFromPlaylist(playlistId: Int, songId: Long)
+    suspend fun removeSongFromPlaylist(playlistId: Int, songId: Long): Int
 
     @Transaction
-    suspend fun removeSongsFromPlaylist(playlistId: Int, songIds: List<Long>) {
+    suspend fun removeSongsFromPlaylist(playlistId: Int, songIds: List<Long>): Int {
         songIds.forEach { removeSongFromPlaylist(playlistId, it) }
+        return songIds.size
     }
 
     @Query("SELECT * FROM PlaylistFolders WHERE PlaylistId = :playlistId")

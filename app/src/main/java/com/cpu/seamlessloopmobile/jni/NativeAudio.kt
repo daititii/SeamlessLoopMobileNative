@@ -1,0 +1,19 @@
+package com.cpu.seamlessloopmobile.jni
+
+object NativeAudio {
+    init {
+        System.loadLibrary("seamlessloopmobile")
+    }
+
+    external fun stringFromJNI(): String
+    external fun startAudioEngine(fd: Int, offset: Long, length: Long)
+    external fun startAbAudioEngine(fdA: Int, offsetA: Long, lengthA: Long, fdB: Int, offsetB: Long, lengthB: Long)
+    external fun stopAudioEngine()
+    external fun setLoopPoints(start: Long, end: Long)
+    external fun seekTo(frame: Long)
+    external fun getCurrentPosition(): Long
+    external fun getDuration(): Long
+    external fun getSampleRate(): Int
+    external fun pauseAudioEngine()
+    external fun resumeAudioEngine()
+}
