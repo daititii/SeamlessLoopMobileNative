@@ -4,7 +4,7 @@ import androidx.room.*
 
 @Dao
 interface SongDao {
-    @Query("SELECT * FROM LoopPoints")
+    @Query("SELECT * FROM LoopPoints ORDER BY FileName ASC")
     suspend fun getAllSongs(): List<Song>
 
     @Query("SELECT * FROM LoopPoints WHERE FileName = :name AND TotalSamples = :samples LIMIT 1")

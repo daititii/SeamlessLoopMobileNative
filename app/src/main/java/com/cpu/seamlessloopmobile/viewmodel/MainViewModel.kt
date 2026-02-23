@@ -96,8 +96,9 @@ class MainViewModel(
 
     private suspend fun processSongsAndFolders(songs: List<Song>) {
         withContext(Dispatchers.Default) {
+            val sortedSongs = songs.sortedBy { it.displayName ?: it.fileName } // 先排好队喵！
             val folderMap = mutableMapOf<String, MutableList<Song>>()
-            for (song in songs) {
+            for (song in sortedSongs) {
                 val parentPath = File(song.filePath).parent ?: "Unknown"
                 folderMap.getOrPut(parentPath) { mutableListOf() }.add(song)
             }
@@ -172,8 +173,9 @@ class MainViewModel(
                 }
             }
 
-            // 过滤掉作为 B 段存在的歌曲喵
+            // 过滤掉作为 B 段存在的歌曲喵，并排好队
             val filteredSongs = scannedSongs.filter { it.filePath !in pathsToIgnore }
+                .sortedBy { it.displayName ?: it.fileName }
             
             // 2. 与数据库对碰喵
             val dbSongs = songDao.getAllSongs().associateBy { it.fileName } 

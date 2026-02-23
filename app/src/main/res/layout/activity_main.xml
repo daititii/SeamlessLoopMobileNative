@@ -33,6 +33,20 @@
         android:orientation="vertical"
         app:layout_constraintBottom_toBottomOf="parent">
 
+        <!-- 第〇行：当前歌名显示喵 -->
+        <TextView
+            android:id="@+id/tv_playing_song_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="未在播放"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginBottom="4dp"
+            android:ellipsize="end"
+            android:singleLine="true" />
+
         <!-- 第一行：进度条 -->
         <LinearLayout
             android:layout_width="match_parent"

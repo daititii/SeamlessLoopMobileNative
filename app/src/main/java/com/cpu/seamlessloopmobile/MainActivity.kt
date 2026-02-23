@@ -43,7 +43,8 @@ class MainActivity : AppCompatActivity() {
     private var isShowingFolders = false
     private var isExploringLocal = false
     private var isInsidePlaylist = false
-    private var currentPlaylist: List<Song> = emptyList()
+    private var displayedSongs: List<Song> = emptyList() // 专门负责显示的“看单”喵
+    private var currentPlaylist: List<Song> = emptyList() // 专门负责播放的“听单”喵
     private var currentSongIndex: Int = -1
     private var isPlaying = false
     private var isAbModePlaying = false
@@ -83,6 +84,7 @@ class MainActivity : AppCompatActivity() {
                 override fun onPlaybackStarted(song: com.cpu.seamlessloopmobile.model.Song, isAbMode: Boolean) {
                     if (isAbMode) selectionController.exitSelectionMode()
                     binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                    binding.tvPlayingSongName.text = song.displayName ?: song.fileName // 报上名来喵！
                     startProgressUpdater()
                     songAdapter.setPlayingSong(song.filePath)
                 }
@@ -117,7 +119,8 @@ class MainActivity : AppCompatActivity() {
         viewModel.isInsidePlaylist.observe(this) { isInsidePlaylist = it }
         viewModel.currentPlaylist.observe(this) { 
             currentPlaylist = it
-            if (!isShowingFolders) {
+            // 只要没在看文件夹列表，就刷新歌曲显示喵（包括歌单内和文件夹内）
+            if (!isShowingFolders && (isInsidePlaylist || isExploringLocal)) {
                 songAdapter.updateSongs(it)
             }
         }
@@ -325,7 +328,7 @@ class MainActivity : AppCompatActivity() {
                 override fun onExitSelection() {
                     if (isShowingFolders || isExploringLocal) {
                         if (!isShowingFolders) {
-                             val currentFolder = folders.find { it.songs.any { s -> s.id == currentPlaylist.firstOrNull()?.id } }
+                             val currentFolder = folders.find { it.songs.any { s -> s.filePath == currentPlaylist.firstOrNull()?.filePath } }
                              binding.toolbar.title = currentFolder?.name ?: "本地音乐"
                              binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
                              binding.toolbar.setNavigationOnClickListener { showFolderList() }
@@ -367,7 +370,9 @@ class MainActivity : AppCompatActivity() {
             isShowingFolders = false
             isExploringLocal = false
             isInsidePlaylist = true // 进入了歌单喵
-            currentPlaylist = songs
+            displayedSongs = songs // 先让大人看到
+            currentPlaylist = songs // 歌单点开时，默认听单也载入
+            viewModel.updateCurrentPlaylist(songs) 
             songAdapter.updateSongs(songs)
             binding.rvSongs.adapter = songAdapter
             
@@ -382,7 +387,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openFolder(folder: com.cpu.seamlessloopmobile.model.Folder) {
         isShowingFolders = false
-        currentPlaylist = folder.songs // 记录当前播放列表
+        displayedSongs = folder.songs // 记录当前看到的列表
         songAdapter.updateSongs(folder.songs)
         binding.rvSongs.adapter = songAdapter
         
@@ -428,14 +433,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun playSong(song: com.cpu.seamlessloopmobile.model.Song) {
-        // 更新当前播放索引 (使用 ID 查找更稳健)
-        val newIndex = currentPlaylist.indexOfFirst { it.id == song.id }
-        if (newIndex != -1) {
-            currentSongIndex = newIndex
+        // 如果是从 UI 点播，通常我们要把“看单”同步给“听单”喵！
+        // 这样按下一首时，才会按照眼前的顺序播下去
+        if (displayedSongs.contains(song)) {
+            currentPlaylist = displayedSongs
+            viewModel.updateCurrentPlaylist(displayedSongs)
+        }
+
+        // 更新当前播放索引 (使用 filePath 查找，因为有些新歌 ID 还没登记喵)
+        val newIndex = currentPlaylist.indexOfFirst { it.filePath == song.filePath }
+        currentSongIndex = if (newIndex != -1) {
+            newIndex
         } else {
-             android.util.Log.w("MainActivity", "Song not found in currentPlaylist!")
+             // 如果在当前列表没找到，就试图在全局列表找找
+             val globalIndex = allSongs.indexOfFirst { it.filePath == song.filePath }
+             if (globalIndex != -1) {
+                 currentPlaylist = allSongs
+                 viewModel.updateCurrentPlaylist(allSongs)
+                 globalIndex
+             } else {
+                 android.util.Log.w("MainActivity", "Song not found anywhere: ${song.filePath}")
+                 -1
+             }
         }
         
+        viewModel.updateSongIndex(currentSongIndex)
         playbackManager.playSong(song)
     }
 
