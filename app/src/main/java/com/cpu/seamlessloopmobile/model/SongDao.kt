@@ -19,21 +19,31 @@ interface SongDao {
     @Update
     suspend fun updateSong(song: Song): Int
 
+    @Query("SELECT * FROM LoopPoints WHERE FilePath = :path LIMIT 1")
+    suspend fun getSongByPath(path: String): Song?
+
     @Transaction
     suspend fun insertOrUpdateSong(song: Song): Long {
-        // 优先通过指纹（文件名+采样数）找人，不管它搬家到哪里了喵！
-        val existing = getSongByFingerprint(song.fileName, song.totalSamples)
-        return if (existing != null) {
-            // 只要大人的数据比较新，或者是带了循环点的数据，就更新它
-            if (song.lastModified >= existing.lastModified || existing.loopEnd == 0L) {
-                // 巧妙地保留本地特有的 mediaId 和最新的 filePath
-                updateSong(song.copy(
-                    id = existing.id, 
-                    mediaId = if (song.mediaId != 0L) song.mediaId else existing.mediaId,
-                    filePath = if (song.filePath.isNotEmpty()) song.filePath else existing.filePath
-                ))
-            }
-            existing.id
+        // 先按路径找，因为文件路径在安卓端也是唯一的喵！
+        val existingByPath = getSongByPath(song.filePath)
+        if (existingByPath != null) {
+            // 路径对上了，直接更新指纹和数据喵
+            updateSong(song.copy(
+                id = existingByPath.id,
+                mediaId = if (song.mediaId != 0L) song.mediaId else existingByPath.mediaId
+            ))
+            return existingByPath.id
+        }
+
+        // 再按指纹找，处理文件搬家的情况喵
+        val existingByFingerprint = getSongByFingerprint(song.fileName, song.totalSamples)
+        return if (existingByFingerprint != null) {
+            updateSong(song.copy(
+                id = existingByFingerprint.id, 
+                mediaId = if (song.mediaId != 0L) song.mediaId else existingByFingerprint.mediaId,
+                filePath = song.filePath // 更新到新家喵！
+            ))
+            existingByFingerprint.id
         } else {
             insertSong(song)
         }

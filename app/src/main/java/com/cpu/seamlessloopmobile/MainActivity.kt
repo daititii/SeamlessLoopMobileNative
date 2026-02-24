@@ -135,7 +135,14 @@ class MainActivity : AppCompatActivity() {
                 binding.toolbar.subtitle = null
             }
         }
-        viewModel.currentSongIndex.observe(this) { currentSongIndex = it }
+        viewModel.currentSongIndex.observe(this) { index ->
+            currentSongIndex = index
+            if (index >= 0 && index < currentPlaylist.size) {
+                songAdapter.setPlayingSong(currentPlaylist[index].filePath)
+            } else {
+                songAdapter.setPlayingSong(null)
+            }
+        }
         viewModel.isPlaying.observe(this) { isPlaying = it }
         viewModel.isAbModePlaying.observe(this) { isAbModePlaying = it }
         viewModel.currentAbIntroSong.observe(this) { currentAbIntroSong = it }
@@ -380,6 +387,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.rvSongs.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
+        binding.rvSongs.itemAnimator = null // 取消列表刷新的闪烁动画喵！
         // 默认显示主库（歌单+文件夹）
         binding.rvSongs.adapter = libraryAdapter
 
@@ -463,7 +471,9 @@ class MainActivity : AppCompatActivity() {
                 songAdapter.updateSongs(songs)
             }
             
-            binding.rvSongs.adapter = songAdapter
+            if (binding.rvSongs.adapter != songAdapter) {
+                binding.rvSongs.adapter = songAdapter
+            }
             binding.toolbar.title = "歌单: ${playlist.name}"
             binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
             binding.toolbar.setNavigationOnClickListener { 
@@ -525,9 +535,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun playSong(song: com.cpu.seamlessloopmobile.model.Song) {
-        // 如果是从 UI 点播，通常我们要把“看单”同步给“听单”喵！
-        // 这样按下一首时，才会按照眼前的顺序播下去
-        if (displayedSongs.contains(song)) {
+        // 只有当点击的歌不在当前“听单”里，或者“听单”和“看单”不对应时才强制同步喵
+        if (displayedSongs.contains(song) && currentPlaylist != displayedSongs) {
             currentPlaylist = displayedSongs
             viewModel.updateCurrentPlaylist(displayedSongs)
         }

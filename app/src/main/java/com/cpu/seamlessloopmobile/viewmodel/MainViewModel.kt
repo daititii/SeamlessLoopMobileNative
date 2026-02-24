@@ -368,11 +368,9 @@ class MainViewModel(
         val mode = _playMode.value ?: PlayMode.LIST_LOOP
 
         return when (mode) {
-            PlayMode.LIST_LOOP -> {
+            PlayMode.LIST_LOOP, PlayMode.SINGLE_LOOP -> {
+                // 无论是列表循环还是单曲循环，手动点“下一首”都应该去下一位喵！
                 (currentIndex + 1) % songs.size
-            }
-            PlayMode.SINGLE_LOOP -> {
-                currentIndex
             }
             PlayMode.SHUFFLE -> {
                 if (songs.size <= 1) return 0
@@ -392,11 +390,9 @@ class MainViewModel(
         val mode = _playMode.value ?: PlayMode.LIST_LOOP
 
         return when (mode) {
-            PlayMode.LIST_LOOP -> {
+            PlayMode.LIST_LOOP, PlayMode.SINGLE_LOOP -> {
+                // 同理，单曲循环时点“上一首”也要能跳走喵
                 if (currentIndex <= 0) songs.size - 1 else currentIndex - 1
-            }
-            PlayMode.SINGLE_LOOP -> {
-                currentIndex
             }
             PlayMode.SHUFFLE -> {
                 getNextIndex() // 随机模式下，上一首也是随机喵！

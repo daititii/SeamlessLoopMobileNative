@@ -104,7 +104,10 @@ class PlaybackManager(
                     }
                 }
 
-                if (introSong.loopEnd > 0) {
+                // AB 模式下，底层 loadAbAudioSource 已经默认设置了 [lenA, lenA + lenB] 的完美循环喵！
+                // 除非大人手动在弹窗里设置过特殊的跨越点，否则我们不应该用单文件的 loopEnd 去覆盖它喵。
+                // 如果大人之前保存过 AB 循环点（通常 loopEnd 会超过 A 段长度），我们才应用。
+                if (introSong.loopEnd > introSong.totalSamples) {
                     NativeAudio.setLoopPoints(introSong.loopStart, introSong.loopEnd)
                 }
                 NativeAudio.setLooping(viewModel.playMode.value == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP)
@@ -116,6 +119,7 @@ class PlaybackManager(
                     // 我们绝对不能把它写进 A 的 totalSamples 里存进数据库，那会破坏 A 自己的指纹并触发冲突喵！
                     // 只要更新一下毫秒 duration 喂给进度条就可以了喵！
                     finalIntroSong = introSong.copy(duration = durationFrames * 1000 / 44100)
+                    viewModel.updateSongInMemory(finalIntroSong)
                 }
                 
                 withContext(Dispatchers.Main) {

@@ -171,11 +171,11 @@ void AudioEngine::setLooping(bool isLooping) {
 }
 
 void AudioEngine::seekTo(int64_t frame) {
+    LOGD("seekTo: Requesting jump to frame %lld (ABMode=%d)", (long long)frame, mIsAbMode.load());
     if (mIsAbMode.load()) {
-        // AB 模式下的真·魔法跳转！
         mSeekTarget = frame;
         mShouldSeek = true;
-        mCurrentReadFrame.store(frame); // <--- 提前预载防闪烁
+        mCurrentReadFrame.store(frame);
         resetFifo();
         mFifoCond.notify_all();
         return;
@@ -297,52 +297,49 @@ void AudioEngine::decodingLoop() {
             // 处理外部跳转请求喵！
             if (mShouldSeek) {
                 int64_t target = mSeekTarget.load();
+                LOGD("decodingLoop: Processing seek to %lld (introLen=%lld, transitioned=%d)", 
+                     (long long)target, (long long)mAbIntroFrames.load(), mAbTransitionDone.load());
+                
                 if (mIsAbMode.load()) {
-                    // 这是超复杂的 AB 模式时间穿梭喵...
                     int64_t introLength = mAbIntroFrames.load();
                     if (target < introLength) {
-                        // 回到过去了，还在前奏区
                         if (mAbTransitionDone.load()) {
-                            // 哎呀，已经进入循环区了？现在我们要退回到引子 A！
+                            LOGD("decodingLoop: Seeking back to Part A from Part B...");
                             AudioDecoder* temp = mActiveDecoder;
                             mActiveDecoder = mNextDecoder;
-                            mNextDecoder = temp; // 换回来！
-                            // （此版本暂时没有重载 A 的逻辑，如果用户频繁这样跳可能会异常。
-                            // 电脑端实际上通常是把AB看作一体了，或者禁止向A退回。我们尽力一跳）
+                            mNextDecoder = temp;
                             mAbTransitionDone = false;
+                            
                             mLoopStartFrame = 0;
                             mLoopEndFrame = introLength;
                         }
                         mActiveDecoder->seekToFrame(target);
                         mCurrentReadFrame.store(target);
                     } else {
-                        // 在循环 B 段之内
                         if (!mAbTransitionDone.load()) {
-                            // 假装已经经历了前奏
+                            LOGD("decodingLoop: Seeking forward into Part B...");
                             AudioDecoder* temp = mActiveDecoder;
                             mActiveDecoder = mNextDecoder;
                             mNextDecoder = temp;
                             mNextDecoder->openFromDecoder(mActiveDecoder); 
                             mAbTransitionDone = true;
                         }
-                        // 需要把目标映射到 B 段内部的时间点
-                        int64_t bTotal = mActiveDecoder->getTotalFrames();
-                        int64_t uStart = mUserLoopStart.load() - introLength;
-                        int64_t uEnd = mUserLoopEnd.load() - introLength;
-
-                        // 映射跳转点：用户点的是全局 target，在 B 段里的位置是 target - intro
-                        int64_t offsetInB = (target - introLength);
+                        int64_t intro = introLength;
+                        int64_t offsetInB = (target - intro);
                         
-                        // 应用循环限制逻辑：如果用户点到了循环圈外，我们要把它圈回来喵
+                        int64_t uStart = mUserLoopStart.load() - intro;
+                        int64_t uEnd = mUserLoopEnd.load() - intro;
+                        
                         if (uEnd > uStart && uEnd > 0) {
                             offsetInB = uStart + (offsetInB - uStart) % (uEnd - uStart);
                         }
 
+                        LOGD("decodingLoop: Part B offset: %lld (BTotal=%lld)", (long long)offsetInB, (long long)mActiveDecoder->getTotalFrames());
                         mActiveDecoder->seekToFrame(offsetInB);
-                        mCurrentReadFrame.store(introLength + offsetInB);
+                        mCurrentReadFrame.store(intro + offsetInB);
                         
                         mLoopStartFrame = std::max((int64_t)0, uStart);
-                        mLoopEndFrame = std::max(mLoopStartFrame.load(), uEnd > 0 ? uEnd : bTotal);
+                        mLoopEndFrame = std::max(mLoopStartFrame.load(), uEnd > 0 ? uEnd : mActiveDecoder->getTotalFrames());
                     }
                 } else {
                     mActiveDecoder->seekToFrame(target);
