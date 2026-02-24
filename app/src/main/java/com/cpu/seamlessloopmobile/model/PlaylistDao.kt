@@ -65,6 +65,21 @@ interface PlaylistDao {
     @Query("SELECT * FROM PlaylistFolders WHERE PlaylistId = :playlistId")
     suspend fun getFoldersInPlaylist(playlistId: Int): List<PlaylistFolder>
 
+    @Query("DELETE FROM PlaylistItems WHERE PlaylistId = :playlistId")
+    suspend fun clearPlaylist(playlistId: Int)
+
+    @Transaction
+    suspend fun clearAndSyncPlaylist(playlistId: Int, songIds: List<Long>) {
+        clearPlaylist(playlistId)
+        songIds.distinct().forEachIndexed { index, songId ->
+            insertPlaylistItem(PlaylistItem(
+                playlistId = playlistId,
+                songId = songId,
+                sortOrder = index + 1
+            ))
+        }
+    }
+
     @Query("SELECT COUNT(*) FROM PlaylistItems WHERE PlaylistId = :playlistId")
     suspend fun getSongCountInPlaylist(playlistId: Int): Int
 }

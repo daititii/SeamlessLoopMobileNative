@@ -122,7 +122,17 @@ class MainActivity : AppCompatActivity() {
             currentPlaylist = it
             // 只要没在看文件夹列表，就刷新歌曲显示喵（包括歌单内和文件夹内）
             if (!isShowingFolders && (isInsidePlaylist || isExploringLocal)) {
+                displayedSongs = it // 保持看单和听单同步喵！
                 songAdapter.updateSongs(it)
+            }
+        }
+
+        viewModel.syncStatus.observe(this) { status ->
+            if (status.isNotEmpty()) {
+                // 在 Toolbar 字幕显示进度，这样最帅气喵！
+                binding.toolbar.subtitle = status
+            } else {
+                binding.toolbar.subtitle = null
             }
         }
         viewModel.currentSongIndex.observe(this) { currentSongIndex = it }
@@ -353,7 +363,8 @@ class MainActivity : AppCompatActivity() {
                     enterLocalMusic()
                 }
             },
-            onPlaylistLongClick = { playlist -> selectionController.enterPlaylistSelectionMode(playlist) }
+            onPlaylistLongClick = { playlist -> selectionController.enterPlaylistSelectionMode(playlist) },
+            onFolderLongClick = { folder -> selectionController.showLinkFolderDialog(folder) }
         )
         libraryAdapter.setOnSelectionChangedListener { count ->
             if (selectionController.isPlaylistSelectionMode) {
@@ -380,6 +391,7 @@ class MainActivity : AppCompatActivity() {
             libraryAdapter = libraryAdapter,
             songDao = songDao,
             playlistDao = playlistDao,
+            viewModel = viewModel,
             coroutineScope = lifecycleScope,
             uiCallback = object : com.cpu.seamlessloopmobile.ui.SelectionController.SelectionUiCallback {
                 override fun onExitSelection() {
@@ -432,12 +444,20 @@ class MainActivity : AppCompatActivity() {
         
         lifecycleScope.launch(Dispatchers.Main) {
             val songs = withContext(Dispatchers.IO) { playlistDao.getSongsInPlaylist(playlist.id) }
-            displayedSongs = songs // 先让大人看到
-            currentPlaylist = songs // 歌单点开时，默认听单也载入
-            viewModel.updateCurrentPlaylist(songs) 
-            songAdapter.updateSongs(songs)
-            binding.rvSongs.adapter = songAdapter
             
+            // 如果是关联文件夹的歌单，且里面没歌，才主动同步喵！
+            // 如果已经有歌了，就让大人先听着，莱芙不乱插手喵！
+            if (playlist.isFolderLinked == 1 && songs.isEmpty()) {
+                Toast.makeText(this@MainActivity, "正在同步文件夹信息喵...", Toast.LENGTH_SHORT).show()
+                viewModel.refreshFolderPlaylist(this@MainActivity, playlist)
+            } else {
+                displayedSongs = songs
+                currentPlaylist = songs
+                viewModel.updateCurrentPlaylist(songs) 
+                songAdapter.updateSongs(songs)
+            }
+            
+            binding.rvSongs.adapter = songAdapter
             binding.toolbar.title = "歌单: ${playlist.name}"
             binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
             binding.toolbar.setNavigationOnClickListener { 
@@ -557,7 +577,20 @@ class MainActivity : AppCompatActivity() {
             val dbPlaylists = withContext(Dispatchers.IO) { playlistDao.getAllPlaylists() }
             val playlistWithCounts = withContext(Dispatchers.IO) {
                 dbPlaylists.map { playlist ->
-                    Pair(playlist, playlistDao.getSongCountInPlaylist(playlist.id))
+                    var count = playlistDao.getSongCountInPlaylist(playlist.id)
+                    
+                    // 如果是联动文件夹，且数据库还没同步完，莱芙先实地数数，不让大人看到 0 喵！
+                    if (playlist.isFolderLinked == 1 && count == 0 && playlist.folderPath != null) {
+                        try {
+                            val folder = java.io.File(playlist.folderPath)
+                            val files = folder.listFiles { file ->
+                                val name = file.name.lowercase()
+                                name.endsWith(".wav") || name.endsWith(".mp3") || name.endsWith(".ogg")
+                            }
+                            count = files?.size ?: 0
+                        } catch (e: Exception) { /* 忽略错误喵 */ }
+                    }
+                    Pair(playlist, count)
                 }
             }
             

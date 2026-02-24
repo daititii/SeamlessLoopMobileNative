@@ -16,7 +16,8 @@ class LibraryAdapter(
     private val onPlaylistClick: (Playlist) -> Unit,
     private val onFolderClick: (Folder) -> Unit,
     private val onQuickActionClick: (String) -> Unit,
-    private val onPlaylistLongClick: ((Playlist) -> Unit)? = null
+    private val onPlaylistLongClick: ((Playlist) -> Unit)? = null,
+    private val onFolderLongClick: ((Folder) -> Unit)? = null
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private var isSelectionMode = false
@@ -126,6 +127,10 @@ class LibraryAdapter(
                 holder.itemView.alpha = 1.0f
                 holder.itemView.setBackgroundColor(0)
                 holder.itemView.setOnClickListener { onFolderClick(item.folder) }
+                holder.itemView.setOnLongClickListener {
+                    onFolderLongClick?.invoke(item.folder)
+                    true
+                }
             }
             is LibraryItem.QuickAction -> {
                 (holder as ItemViewHolder).bindQuickAction(item)

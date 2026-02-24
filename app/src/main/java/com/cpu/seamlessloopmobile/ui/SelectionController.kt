@@ -27,6 +27,7 @@ class SelectionController(
     private val libraryAdapter: LibraryAdapter,
     private val songDao: SongDao,
     private val playlistDao: PlaylistDao,
+    private val viewModel: com.cpu.seamlessloopmobile.viewmodel.MainViewModel,
     private val coroutineScope: CoroutineScope,
     private val uiCallback: SelectionUiCallback
 ) {
@@ -253,5 +254,35 @@ class SelectionController(
                 uiCallback.onReloadHomeView()
             }
         }
+    }
+
+    // --- 文件夹联动魔法喵 ---
+
+    fun showLinkFolderDialog(folder: com.cpu.seamlessloopmobile.model.Folder) {
+        MaterialAlertDialogBuilder(context)
+            .setTitle("文件夹联动")
+            .setMessage("cpu 大人，要把文件夹『${folder.name}』导入为同步歌单吗？\n\n(此模式下歌曲会自动同步，且莱芙会开启 100% 精准识别喵！)")
+            .setPositiveButton("同步导入") { _, _ ->
+                coroutineScope.launch(Dispatchers.IO) {
+                    val newPlaylist = Playlist(
+                        name = folder.name,
+                        folderPath = folder.path,
+                        isFolderLinked = 1 // 开启魔法开关喵！
+                    )
+                    val newId = playlistDao.insertPlaylist(newPlaylist)
+                    val playlistWithId = newPlaylist.copy(id = newId.toInt())
+
+                    // 莱芙在这里立即帮大人开启后台同步！不让它闲着喵！
+                    withContext(Dispatchers.Main) {
+                         // 给大人汇报一下进度，并触发扫描
+                         uiCallback.onRefreshPlaylist(playlistWithId)
+                         viewModel.refreshFolderPlaylist(context, playlistWithId)
+                         Toast.makeText(context, "已成功创建同步歌单：${folder.name} 喵！正在后台为您同步数据...", Toast.LENGTH_SHORT).show()
+                         uiCallback.onReloadHomeView()
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 }

@@ -1,6 +1,7 @@
 package com.cpu.seamlessloopmobile.scanner
 
 import android.content.ContentResolver
+import android.content.ContentUris
 import android.content.Context
 import android.provider.MediaStore
 import com.cpu.seamlessloopmobile.model.Song
@@ -49,25 +50,44 @@ object AudioScanner {
                 val filePath = it.getString(pathColumn)
                 val duration = it.getLong(durationColumn)
 
-                // 检查物理文件是否真的存在
+                // 物理文件校验
                 val file = File(filePath)
                 if (file.exists()) {
+                    // 先给个 0，让列表秒开喵！
                     songs.add(
                         Song(
-                            id = 0, // 新扫描的歌曲，数据库 ID 设为 0
-                            mediaId = id, // 记录媒体库原始 ID
+                            id = 0,
+                            mediaId = id,
                             fileName = fileName,
                             filePath = filePath,
                             displayName = title,
                             artist = artist,
                             duration = duration,
-                            totalSamples = 0,
-                            isLoopEnabled = false
+                            totalSamples = 0, 
+                            isLoopEnabled = false 
                         )
                     )
                 }
             }
         }
         return songs
+    }
+
+    /**
+     * 实地测量！利用 C++ 底层解码器拿到绝对准确的采样数喵！
+     */
+    fun getAccurateSampleCount(context: Context, mediaId: Long): Long {
+        return try {
+            val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, mediaId)
+            context.contentResolver.openAssetFileDescriptor(contentUri, "r")?.use { afd ->
+                com.cpu.seamlessloopmobile.jni.NativeAudio.getAudioFileDuration(
+                    afd.parcelFileDescriptor.fd, 
+                    afd.startOffset, 
+                    if (afd.declaredLength < 0) afd.length else afd.declaredLength
+                )
+            } ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
     }
 }
