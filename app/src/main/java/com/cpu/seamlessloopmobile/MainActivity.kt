@@ -324,7 +324,13 @@ class MainActivity : AppCompatActivity() {
                                 lastObservedFrame = -1L
                                 
                                 val nextIndex = viewModel.getNextIndex()
-                                if (nextIndex != -1) {
+                                val currentMode = viewModel.playMode.value ?: com.cpu.seamlessloopmobile.viewmodel.PlayMode.LIST_LOOP
+                                
+                                // 如果是单曲循环，并且原生引擎已经开启了无缝循环，
+                                // UI 绝对不能横插一脚去重新 playSong，否则无缝就破功了喵！
+                                if (currentMode == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP) {
+                                    // 什么都不做，让影子大魔王（C++引擎）自己处理无缝衔接喵
+                                } else if (nextIndex != -1) {
                                     playSong(currentPlaylist[nextIndex])
                                 } else {
                                     NativeAudio.stopAudioEngine()

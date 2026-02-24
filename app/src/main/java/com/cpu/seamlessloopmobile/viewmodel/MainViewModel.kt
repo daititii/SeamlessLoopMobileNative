@@ -258,6 +258,7 @@ class MainViewModel(
                 
                 val dbSong = dbSongs["${item.second}|$accurateSamples"]
                 val song = Song(
+                    mediaId = item.first, // 必须要这个 ID，不然回放的时候找不到文件喵！
                     fileName = item.second,
                     filePath = item.third,
                     totalSamples = accurateSamples,
