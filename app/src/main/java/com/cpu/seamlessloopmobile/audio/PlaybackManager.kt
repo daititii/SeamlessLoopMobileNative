@@ -58,8 +58,14 @@ class PlaybackManager(
                 val durationFrames = NativeAudio.getDuration()
                 var finalSong = song
                 if (durationFrames > 0) {
-                    finalSong = song.copy(totalSamples = durationFrames)
-                    songDao.insertOrUpdateSong(finalSong)
+                    finalSong = song.copy(
+                        duration = durationFrames * 1000 / 44100,
+                        totalSamples = if (song.totalSamples == 0L) durationFrames else song.totalSamples 
+                    )
+                    if (song.totalSamples == 0L && finalSong.id > 0) {
+                        // 如果之前没量过长度，才硬写入数据库更新它喵！
+                        songDao.updateSong(finalSong) 
+                    }
                     viewModel.updateSongInMemory(finalSong)
                 }
 
@@ -106,9 +112,10 @@ class PlaybackManager(
                 val durationFrames = NativeAudio.getDuration()
                 var finalIntroSong = introSong
                 if (durationFrames > 0) {
-                    finalIntroSong = introSong.copy(totalSamples = durationFrames)
-                    songDao.insertOrUpdateSong(finalIntroSong)
-                    viewModel.updateSongInMemory(finalIntroSong)
+                    // AB 模式下，底层返回的是 A+B 的总长度！
+                    // 我们绝对不能把它写进 A 的 totalSamples 里存进数据库，那会破坏 A 自己的指纹并触发冲突喵！
+                    // 只要更新一下毫秒 duration 喂给进度条就可以了喵！
+                    finalIntroSong = introSong.copy(duration = durationFrames * 1000 / 44100)
                 }
                 
                 withContext(Dispatchers.Main) {
