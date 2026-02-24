@@ -17,6 +17,7 @@ object NativeAudio {
     external fun getSampleRate(): Int
     external fun pauseAudioEngine()
     external fun resumeAudioEngine()
+    external fun isPlaying(): Boolean
     
     // 用于扫描阶段快速获取绝对准确的总采样数喵！
     external fun getAudioFileDuration(fd: Int, offset: Long, length: Long): Long

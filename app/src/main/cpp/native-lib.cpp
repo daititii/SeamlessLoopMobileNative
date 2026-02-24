@@ -152,6 +152,16 @@ Java_com_cpu_seamlessloopmobile_jni_NativeAudio_getSampleRate(
     return 44100;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_isPlaying(
+        JNIEnv* env,
+        jobject /* this */) {
+    if (audioEngine != nullptr) {
+        return audioEngine->isPlaying();
+    }
+    return false;
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_cpu_seamlessloopmobile_jni_NativeAudio_getAudioFileDuration(
         JNIEnv* env,

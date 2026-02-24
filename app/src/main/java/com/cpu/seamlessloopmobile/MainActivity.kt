@@ -55,6 +55,18 @@ class MainActivity : AppCompatActivity() {
     private var isUserSeeking: Boolean = false
     private lateinit var playbackManager: com.cpu.seamlessloopmobile.audio.PlaybackManager
     private lateinit var selectionController: com.cpu.seamlessloopmobile.ui.SelectionController
+    
+    // 专门抓捕耳机被拔掉瞬间的小广播喵！
+    private val becomingNoisyReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            if (intent?.action == android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                // 嘘！系统说现在声音可能外泄，我们要立刻暂停喵！
+                NativeAudio.pauseAudioEngine()
+                viewModel.setPlaying(false)
+                binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+            }
+        }
+    }
 
     // 文件选择器喵
     private val dbPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
@@ -187,10 +199,29 @@ class MainActivity : AppCompatActivity() {
         setupSeekBar()
         setupPlaybackControls()
         checkPermissionsAndLoadHome()
+        
+        // 注册耳机监控喵 (考虑到安卓 13+ 的动态权限要求喵)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(
+                becomingNoisyReceiver, 
+                android.content.IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+                RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            registerReceiver(
+                becomingNoisyReceiver, 
+                android.content.IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+            )
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            unregisterReceiver(becomingNoisyReceiver)
+        } catch (e: Exception) {
+            // 预防万一，如果没注册成功也不要崩掉喵
+        }
         updateProgressJob?.cancel()
         NativeAudio.stopAudioEngine()
     }
@@ -223,11 +254,11 @@ class MainActivity : AppCompatActivity() {
         binding.btnPlayPause.setOnClickListener {
             if (isPlaying) {
                 NativeAudio.pauseAudioEngine()
-                isPlaying = false
+                viewModel.setPlaying(false)
                 binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
             } else {
                 NativeAudio.resumeAudioEngine()
-                isPlaying = true
+                viewModel.setPlaying(true)
                 binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
             }
         }
@@ -314,6 +345,13 @@ class MainActivity : AppCompatActivity() {
                         binding.tvTotalTime.text = TimeUtils.formatTime(totalFrames, sampleRate)
 
                         if (isPlaying) {
+                            // 同步底层的断线休眠状态（比如拔耳机强行中止了播放）
+                            if (!NativeAudio.isPlaying()) {
+                                viewModel.setPlaying(false)
+                                binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                                continue
+                            }
+
                             // 物理文件末尾检测机制喵：进度卡住不动了（说明物理文件真播完了），或者接近绝对末尾了
                             // 留出约 1/8 秒的提前量，让切歌听起来更紧凑喵！
                             val endThreshold = (sampleRate / 8).coerceAtLeast(1024L)
@@ -348,7 +386,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 }
-                kotlinx.coroutines.delay(200) // 轮询频率稍微降低一点喵，省电！
+                kotlinx.coroutines.delay(50) // 提高实时性喵！50ms 是丝滑的水平线喵
             }
         }
     }

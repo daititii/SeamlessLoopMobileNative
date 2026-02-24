@@ -34,11 +34,13 @@ public:
     int64_t getCurrentPosition();
     int64_t getDuration();
     int32_t getSampleRate();
+    bool isPlaying() const;
 
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream *oboeStream, void *audioData, int32_t numFrames) override;
     void onErrorAfterClose(oboe::AudioStream *oboeStream, oboe::Result error) override;
 
 private:
+    std::mutex mStreamMutex;
     std::shared_ptr<oboe::AudioStream> mStream;
     std::unique_ptr<AudioDecoder> mDecoderA;
     std::unique_ptr<AudioDecoder> mDecoderB;
@@ -51,6 +53,7 @@ private:
     std::atomic<int64_t> mLoopEndFrame {0};
     std::atomic<int64_t> mCurrentReadFrame {0};
     std::atomic<bool> mIsLooping {false};
+    std::atomic<bool> mIsPlaying {false}; // 记录播放状态，防止断线重连后意外自动播放喵！
     std::atomic<bool> mIsAbMode {false};
     std::atomic<bool> mAbTransitionDone {false};
     

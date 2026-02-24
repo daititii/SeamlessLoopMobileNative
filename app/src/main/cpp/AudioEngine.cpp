@@ -1,5 +1,6 @@
 #include "AudioEngine.h"
 #include <cstring>
+#include <chrono>
 
 AudioEngine::AudioEngine() {
     mDecoderA = std::make_unique<AudioDecoder>();
@@ -21,6 +22,7 @@ AudioEngine::~AudioEngine() {
 }
 
 bool AudioEngine::start() {
+    std::lock_guard<std::mutex> lock(mStreamMutex);
     if (mStream) return true;
 
     oboe::AudioStreamBuilder builder;
@@ -37,10 +39,12 @@ bool AudioEngine::start() {
         return false;
     }
 
-    result = mStream->requestStart();
-    if (result != oboe::Result::OK) {
-        LOGE("Failed to start Oboe stream: %s", oboe::convertToText(result));
-        return false;
+    if (mIsPlaying.load()) {
+        result = mStream->requestStart();
+        if (result != oboe::Result::OK) {
+            LOGE("Failed to start Oboe stream: %s", oboe::convertToText(result));
+            return false;
+        }
     }
 
     LOGD("Audio stream started successfully");
@@ -48,6 +52,8 @@ bool AudioEngine::start() {
 }
 
 void AudioEngine::stop() {
+    mIsPlaying = false;
+    std::lock_guard<std::mutex> lock(mStreamMutex);
     if (mStream) {
         mStream->requestStop();
         mStream->close();
@@ -57,14 +63,22 @@ void AudioEngine::stop() {
 }
 
 void AudioEngine::pause() {
+    mIsPlaying = false;
+    std::lock_guard<std::mutex> lock(mStreamMutex);
     if (mStream) {
         mStream->requestPause();
     }
 }
 
 void AudioEngine::resume() {
+    mIsPlaying = true;
+    std::unique_lock<std::mutex> lock(mStreamMutex);
     if (mStream) {
         mStream->requestStart();
+    // 如果流不在了（比如拔耳机挂了没恢复），重新建一个！
+    } else {
+        lock.unlock(); // 解锁，以免在 start() 里发生死锁喵
+        start();
     }
 }
 
@@ -84,6 +98,7 @@ void AudioEngine::loadAudioSource(int fd, int64_t offset, int64_t length) {
         mLoopStartFrame = 0;
         mLoopEndFrame = mActiveDecoder->getTotalFrames();
         mIsLooping = true;
+        mIsPlaying = true; // 加载新歌时默认处于播放状态喵！
         mIsAbMode = false;
         mAbTransitionDone = false;
         mTotalAbFrames = 0;
@@ -123,6 +138,7 @@ void AudioEngine::loadAbAudioSource(int fdA, int64_t offsetA, int64_t lengthA, i
         // 初始用户期望：循环整个 Part B 喵
         mUserLoopStart = lenA;
         mUserLoopEnd = mTotalAbFrames.load();
+        mIsPlaying = true; // 加载新歌时默认处于播放状态喵！
 
         // 第一轮：内部解码器正在跑 A，所以只需跑到 A 的物理末尾即可触发换棒
         mLoopStartFrame = 0; 
@@ -204,6 +220,10 @@ int64_t AudioEngine::getDuration() {
 
 int32_t AudioEngine::getSampleRate() {
     return mSampleRate.load();
+}
+
+bool AudioEngine::isPlaying() const {
+    return mIsPlaying.load();
 }
 
 oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream *oboeStream,
@@ -493,7 +513,28 @@ void AudioEngine::resetFifo() {
 }
 
 void AudioEngine::onErrorAfterClose(oboe::AudioStream *oboeStream, oboe::Result error) {
+    LOGE("onErrorAfterClose: %s", oboe::convertToText(error));
     if (error == oboe::Result::ErrorDisconnected) {
-        start();
+        // 耳机插拔会导致流中断，Oboe 会关闭流并调用这里。
+        // 大人要求：一拔插就直接暂停，绝不能继续咋咋呼呼地放音乐喵！
+        mIsPlaying = false;
+        
+        // 绝命危机解除：一定不能在 Oboe 内部回调线程里同步去 reset（销毁包含 delete），
+        // 自己删除自己会直接引发应用底层死锁和闪退！必须新开线程扔到后台去收拾残局喵！
+        std::thread([this]() {
+            // 等 Oboe 回调安然退场喵
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            
+            {
+                std::lock_guard<std::mutex> lock(mStreamMutex);
+                if (mStream) {
+                    // 彻底碾碎那个幽灵断流指针喵！
+                    mStream.reset();
+                }
+            }
+            
+            // 重新挖个新管道备用（因为 mIsPlaying 上面被拍成了 false，所以水不会流出来）
+            start();
+        }).detach();
     }
 }
