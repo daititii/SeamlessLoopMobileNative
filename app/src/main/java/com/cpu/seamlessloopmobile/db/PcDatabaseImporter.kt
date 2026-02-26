@@ -72,15 +72,9 @@ object PcDatabaseImporter {
                 db.close()
                 tempFile.delete()
 
-                // 3. 开始对碰！
-                for (pcSong in pcData) {
-                    // --- 灵魂锚点理论喵！ ---
-                    // 不管手机里现在有没有这首歌的文件，
-                    // 莱芙都先把这份来自 PC 的“循环记忆”存在数据库里。
-                    // 等以后大人把文件拷进来，scanSongs 就会通过指纹自动认亲喵！
-                    songDao.insertOrUpdateSong(pcSong)
-                    syncCount++
-                }
+                // 3. 开始一锅端！
+                songDao.insertOrUpdateSongs(pcData)
+                syncCount = pcData.size
 
                 withContext(Dispatchers.Main) {
                     callback.onSuccess(syncCount)

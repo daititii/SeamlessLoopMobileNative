@@ -24,29 +24,35 @@ interface SongDao {
 
     @Transaction
     suspend fun insertOrUpdateSong(song: Song): Long {
-        // 先按路径找，因为文件路径在安卓端也是唯一的喵！
-        val existingByPath = getSongByPath(song.filePath)
-        if (existingByPath != null) {
-            // 路径对上了，直接更新指纹和数据喵
-            updateSong(song.copy(
-                id = existingByPath.id,
-                mediaId = if (song.mediaId != 0L) song.mediaId else existingByPath.mediaId
-            ))
-            return existingByPath.id
+        // 1. 如果有路径，优先按路径找喵
+        if (song.filePath.isNotBlank()) {
+            val existingByPath = getSongByPath(song.filePath)
+            if (existingByPath != null) {
+                updateSong(song.copy(
+                    id = existingByPath.id,
+                    mediaId = if (song.mediaId != 0L) song.mediaId else existingByPath.mediaId
+                ))
+                return existingByPath.id
+            }
         }
 
-        // 再按指纹找，处理文件搬家的情况喵
+        // 2. 再按指纹找，处理文件搬家或 PC 同步的情况喵
         val existingByFingerprint = getSongByFingerprint(song.fileName, song.totalSamples)
         return if (existingByFingerprint != null) {
             updateSong(song.copy(
                 id = existingByFingerprint.id, 
                 mediaId = if (song.mediaId != 0L) song.mediaId else existingByFingerprint.mediaId,
-                filePath = song.filePath // 更新到新家喵！
+                filePath = if (song.filePath.isNotBlank()) song.filePath else existingByFingerprint.filePath
             ))
             existingByFingerprint.id
         } else {
             insertSong(song)
         }
+    }
+
+    @Transaction
+    suspend fun insertOrUpdateSongs(songs: List<Song>) {
+        songs.forEach { insertOrUpdateSong(it) }
     }
 
     @Delete

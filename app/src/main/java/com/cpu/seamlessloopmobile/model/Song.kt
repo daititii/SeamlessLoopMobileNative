@@ -12,8 +12,8 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "LoopPoints", // 电脑端表名
     indices = [
-        Index(value = ["FilePath"], unique = true), // 尽可能匹配电脑端的约束逻辑
-        Index(value = ["FileName", "TotalSamples"], unique = true) // 电脑端的指纹约束
+        Index(value = ["FilePath"]), // 移除 unique=true，允许同步时的空路径共存喵
+        Index(value = ["FileName", "TotalSamples"], unique = true) // 保持指纹唯一
     ]
 )
 data class Song(
