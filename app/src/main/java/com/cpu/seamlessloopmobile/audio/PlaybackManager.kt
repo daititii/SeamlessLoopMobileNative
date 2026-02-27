@@ -50,7 +50,7 @@ class PlaybackManager(
         fun onPlaybackError(message: String)
     }
 
-    fun playSong(song: Song) {
+    fun playSong(song: Song, startPosition: Long = 0, startPaused: Boolean = false) {
         // --- 莱芙的“自动合体”魔法 (仿电脑端) ---
         val abPair = viewModel.findAbPair(song)
         if (abPair != null) {
@@ -75,6 +75,14 @@ class PlaybackManager(
                 }
                 NativeAudio.setLooping(viewModel.playMode.value == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP)
 
+                if (startPosition > 0) {
+                    NativeAudio.seekTo(startPosition)
+                }
+                
+                if (startPaused) {
+                    NativeAudio.pauseAudioEngine()
+                }
+
                 val durationFrames = NativeAudio.getDuration()
                 var finalSong = song
                 if (durationFrames > 0) {
@@ -83,7 +91,6 @@ class PlaybackManager(
                         totalSamples = if (song.totalSamples == 0L) durationFrames else song.totalSamples 
                     )
                     if (song.totalSamples == 0L && finalSong.id > 0) {
-                        // 如果之前没量过长度，才硬写入数据库更新它喵！
                         songDao.updateSong(finalSong) 
                     }
                     viewModel.updateSongInMemory(finalSong)
@@ -91,9 +98,15 @@ class PlaybackManager(
 
                 withContext(Dispatchers.Main) {
                     viewModel.setAbModePlaying(false)
-                    viewModel.setPlaying(true)
+                    viewModel.setPlaying(!startPaused)
                     uiCallback.onPlaybackStarted(finalSong, false)
-                    playbackService?.updateNotification(finalSong, true)
+                    // 只有真正在放才更新通知栏喵
+                    if (!startPaused) {
+                        playbackService?.updateNotification(finalSong, true)
+                    } else {
+                        // 初始恢复时刷新进度条显示，防止进度显示为 0
+                        // 这一步由 MainActivity 的观察者随后根据 startPosition 自动处理
+                    }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {

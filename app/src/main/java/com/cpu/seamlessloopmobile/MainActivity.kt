@@ -241,9 +241,57 @@ class MainActivity : AppCompatActivity() {
                         "PREVIOUS" -> viewModel.playPrevious(playbackManager)
                     }
                 }
+
+                // --- 奇迹时刻：恢复上次没听完的歌喵！ ---
+                restoreLastPlayedSong()
             }
             override fun onServiceDisconnected(name: android.content.ComponentName?) {}
         }, BIND_AUTO_CREATE)
+    }
+
+    private fun restoreLastPlayedSong() {
+        val prefs = getSharedPreferences("last_state", MODE_PRIVATE)
+        val lastPath = prefs.getString("last_song_path", null)
+        val lastPos = prefs.getLong("last_position", 0L)
+
+        if (lastPath != null) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                val song = songDao.getSongByPath(lastPath)
+                if (song != null) {
+                    withContext(Dispatchers.Main) {
+                        // 把它装好，并同步进听单喵，这样进度条和切歌逻辑才能跑起来喵！
+                        binding.tvPlayingSongName.text = song.displayName ?: song.fileName
+                        
+                        // 先建立一个只包含这首歌的临时听单，防止切歌时崩溃喵
+                        viewModel.updateCurrentPlaylist(listOf(song), 0)
+                        
+                        // 直接恢复到那个进度，并默认处于暂停状态喵！
+                        playbackManager.playSong(song, lastPos, startPaused = true)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onStop() {
+        // --- 莱芙的“应急预案”：趁着还没被系统杀掉，赶紧记下进度喵！ ---
+        saveCurrentState()
+        super.onStop()
+    }
+
+    private fun saveCurrentState() {
+        val currentSong = if (currentSongIndex >= 0 && currentSongIndex < currentPlaylist.size) {
+            currentPlaylist[currentSongIndex]
+        } else null
+        
+        currentSong?.let { song ->
+            val prefs = getSharedPreferences("last_state", MODE_PRIVATE)
+            prefs.edit().apply {
+                putString("last_song_path", song.filePath)
+                putLong("last_position", NativeAudio.getCurrentPosition())
+                apply()
+            }
+        }
     }
 
     override fun onDestroy() {
