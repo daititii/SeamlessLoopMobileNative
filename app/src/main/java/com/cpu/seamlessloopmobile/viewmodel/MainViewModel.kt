@@ -68,7 +68,7 @@ class MainViewModel(
     private val _currentAbIntroSong = MutableLiveData<Song?>(null)
     val currentAbIntroSong: LiveData<Song?> = _currentAbIntroSong
 
-    private val _playMode = MutableLiveData(PlayMode.LIST_LOOP)
+    private val _playMode = MutableLiveData(PlayMode.SINGLE_LOOP)
     val playMode: LiveData<PlayMode> = _playMode
 
     fun setExploringLocal(value: Boolean) { _isExploringLocal.value = value }
@@ -88,6 +88,28 @@ class MainViewModel(
             null -> PlayMode.LIST_LOOP
         }
         _playMode.value = next
+    }
+
+    // --- 外部媒体控制回调喵 ---
+    fun togglePlayPauseManual() {
+        // 通知 UI 层执行真正的播放/暂停操作喵
+        _isPlaying.value = !(_isPlaying.value ?: false)
+    }
+
+    fun playNext(playbackManager: com.cpu.seamlessloopmobile.audio.PlaybackManager) {
+        val nextIndex = getNextIndex()
+        if (nextIndex != -1) {
+            val songs = _currentPlaylist.value ?: return
+            playbackManager.playSong(songs[nextIndex])
+        }
+    }
+
+    fun playPrevious(playbackManager: com.cpu.seamlessloopmobile.audio.PlaybackManager) {
+        val prevIndex = getPrevIndex()
+        if (prevIndex != -1) {
+            val songs = _currentPlaylist.value ?: return
+            playbackManager.playSong(songs[prevIndex])
+        }
     }
 
     fun updateCurrentPlaylist(songs: List<Song>, index: Int = -1) {

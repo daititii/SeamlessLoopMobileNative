@@ -23,6 +23,26 @@ class PlaybackManager(
     private val viewModel: MainViewModel,
     private val uiCallback: PlaybackUiCallback
 ) {
+    var playbackService: PlaybackService? = null
+
+    fun updateMediaSessionState(isPlaying: Boolean) {
+        val currentSong = if (viewModel.isAbModePlaying.value == true) {
+            viewModel.currentAbIntroSong.value
+        } else {
+            val songs = viewModel.currentPlaylist.value
+            val index = viewModel.currentSongIndex.value ?: -1
+            if (index in (songs?.indices ?: (0 until -1))) songs?.get(index) else null
+        }
+        
+        currentSong?.let { 
+            if (isPlaying) {
+                playbackService?.updateNotification(it, true)
+            } else {
+                playbackService?.updateNotification(it, false)
+                playbackService?.stopForegroundCompletely()
+            }
+        }
+    }
 
     interface PlaybackUiCallback {
         fun onPrePlayback(songName: String)
@@ -73,6 +93,7 @@ class PlaybackManager(
                     viewModel.setAbModePlaying(false)
                     viewModel.setPlaying(true)
                     uiCallback.onPlaybackStarted(finalSong, false)
+                    playbackService?.updateNotification(finalSong, true)
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -127,6 +148,7 @@ class PlaybackManager(
                     viewModel.setAbModePlaying(true)
                     viewModel.setPlaying(true)
                     uiCallback.onPlaybackStarted(finalIntroSong, true)
+                    playbackService?.updateNotification(finalIntroSong, true)
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {

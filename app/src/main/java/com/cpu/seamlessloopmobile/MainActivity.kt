@@ -1,6 +1,7 @@
 package com.cpu.seamlessloopmobile
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
@@ -155,7 +156,17 @@ class MainActivity : AppCompatActivity() {
                 songAdapter.setPlayingSong(null)
             }
         }
-        viewModel.isPlaying.observe(this) { isPlaying = it }
+        viewModel.isPlaying.observe(this) { playing ->
+            isPlaying = playing 
+            if (playing) {
+                NativeAudio.resumeAudioEngine()
+                binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+            } else {
+                NativeAudio.pauseAudioEngine()
+                binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+            }
+            playbackManager.updateMediaSessionState(playing) // 同步通知栏按钮喵！
+        }
         viewModel.isAbModePlaying.observe(this) { isAbModePlaying = it }
         viewModel.currentAbIntroSong.observe(this) { currentAbIntroSong = it }
         viewModel.currentOpenPlaylist.observe(this) { currentOpenPlaylist = it }
@@ -213,6 +224,26 @@ class MainActivity : AppCompatActivity() {
                 android.content.IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY)
             )
         }
+
+        // --- 绑定后台服务喵 ---
+        val serviceIntent = Intent(this, com.cpu.seamlessloopmobile.audio.PlaybackService::class.java)
+        bindService(serviceIntent, object : android.content.ServiceConnection {
+            override fun onServiceConnected(name: android.content.ComponentName?, service: android.os.IBinder?) {
+                val binder = service as com.cpu.seamlessloopmobile.audio.PlaybackService.PlaybackBinder
+                val playbackService = binder.getService()
+                playbackManager.playbackService = playbackService
+                
+                // 将锁屏按钮的操作连接到 ViewModel 喵！
+                playbackService.onMediaAction = { action ->
+                    when (action) {
+                        "PLAY_PAUSE" -> viewModel.togglePlayPauseManual()
+                        "NEXT" -> viewModel.playNext(playbackManager)
+                        "PREVIOUS" -> viewModel.playPrevious(playbackManager)
+                    }
+                }
+            }
+            override fun onServiceDisconnected(name: android.content.ComponentName?) {}
+        }, BIND_AUTO_CREATE)
     }
 
     override fun onDestroy() {
@@ -252,15 +283,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupPlaybackControls() {
         // 播放/暂停按钮
         binding.btnPlayPause.setOnClickListener {
-            if (isPlaying) {
-                NativeAudio.pauseAudioEngine()
-                viewModel.setPlaying(false)
-                binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
-            } else {
-                NativeAudio.resumeAudioEngine()
-                viewModel.setPlaying(true)
-                binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-            }
+            viewModel.togglePlayPauseManual()
         }
 
         // 循环设置按钮
@@ -307,8 +330,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePlayModeIcon(mode: PlayMode) {
         val iconRes = when (mode) {
-            PlayMode.LIST_LOOP -> android.R.drawable.ic_menu_rotate
-            PlayMode.SINGLE_LOOP -> android.R.drawable.ic_menu_revert
+            PlayMode.LIST_LOOP -> android.R.drawable.ic_menu_revert
+            PlayMode.SINGLE_LOOP -> android.R.drawable.ic_menu_rotate
             PlayMode.SHUFFLE -> android.R.drawable.ic_menu_share // 暂代随机
         }
         binding.btnPlayMode.setImageResource(iconRes)
@@ -607,12 +630,17 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
 
-        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+        val permissions = mutableListOf(permission)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        if (permissions.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
             loadHomeView()
             // 偷偷在后台扫一下，不打扰大人喵
             viewModel.scanLibrary(this)
         } else {
-            ActivityCompat.requestPermissions(this, arrayOf(permission), REQUEST_CODE_PERMISSION)
+            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), REQUEST_CODE_PERMISSION)
         }
     }
 
