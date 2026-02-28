@@ -22,6 +22,8 @@ import com.cpu.seamlessloopmobile.model.Playlist
 import com.cpu.seamlessloopmobile.adapter.SongAdapter
 import com.cpu.seamlessloopmobile.adapter.LibraryAdapter
 import com.cpu.seamlessloopmobile.databinding.ActivityMainBinding
+import android.support.v4.media.MediaBrowserCompat
+import android.support.v4.media.session.MediaControllerCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -52,8 +54,8 @@ class MainActivity : AppCompatActivity() {
     private var currentOpenPlaylist: Playlist? = null
     private var updateProgressJob: kotlinx.coroutines.Job? = null
     private var isUserSeeking: Boolean = false
-    private lateinit var playbackManager: com.cpu.seamlessloopmobile.audio.PlaybackManager
     private lateinit var selectionController: com.cpu.seamlessloopmobile.ui.SelectionController
+    private lateinit var mediaBrowser: MediaBrowserCompat
     
     // 专门抓捕耳机被拔掉瞬间的小广播喵！
     private val becomingNoisyReceiver = object : android.content.BroadcastReceiver() {
@@ -83,31 +85,6 @@ class MainActivity : AppCompatActivity() {
         // 逻辑大脑初始化喵！
         val factory = MainViewModelFactory(database.songDao(), database.playlistDao())
         viewModel = ViewModelProvider(this, factory)[MainViewModel::class.java]
-
-        playbackManager = com.cpu.seamlessloopmobile.audio.PlaybackManager(
-            context = this,
-            coroutineScope = lifecycleScope,
-            repository = repository,
-            viewModel = viewModel,
-            uiCallback = object : com.cpu.seamlessloopmobile.audio.PlaybackManager.PlaybackUiCallback {
-                override fun onPrePlayback(message: String) {
-                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
-                    updateProgressJob?.cancel()
-                }
-
-                override fun onPlaybackStarted(song: com.cpu.seamlessloopmobile.model.Song, isAbMode: Boolean) {
-                    if (isAbMode) selectionController.exitSelectionMode()
-                    binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-                    binding.tvPlayingSongName.text = song.displayName ?: song.fileName // 报上名来喵！
-                    startProgressUpdater()
-                    songAdapter.setPlayingSong(song.filePath)
-                }
-
-                override fun onPlaybackError(message: String) {
-                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
-                }
-            }
-        )
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -159,13 +136,10 @@ class MainActivity : AppCompatActivity() {
         viewModel.isPlaying.observe(this) { playing ->
             isPlaying = playing 
             if (playing) {
-                NativeAudio.resumeAudioEngine()
                 binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
             } else {
-                NativeAudio.pauseAudioEngine()
                 binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
             }
-            playbackManager.updateMediaSessionState(playing) // 同步通知栏按钮喵！
         }
         viewModel.isAbModePlaying.observe(this) { isAbModePlaying = it }
         viewModel.currentAbIntroSong.observe(this) { currentAbIntroSong = it }
@@ -178,7 +152,12 @@ class MainActivity : AppCompatActivity() {
         }
         viewModel.playMode.observe(this) { mode ->
             updatePlayModeIcon(mode)
-            NativeAudio.setLooping(mode == PlayMode.SINGLE_LOOP)
+            // 循环模式的变更也应该通过遥控器传给后台喵
+            val controller = MediaControllerCompat.getMediaController(this)
+            val bundle = android.os.Bundle().apply {
+                putInt("play_mode", mode.ordinal)
+            }
+            controller?.transportControls?.sendCustomAction("SET_PLAY_MODE", bundle)
         }
 
         // 设置返回键逻辑喵 (现代安卓做法)
@@ -225,28 +204,79 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
+        // --- 官方遥控器：初始化 MediaBrowser 喵 ---
+        mediaBrowser = MediaBrowserCompat(
+            this,
+            android.content.ComponentName(this, com.cpu.seamlessloopmobile.audio.PlaybackService::class.java),
+            connectionCallbacks,
+            null
+        )
+ 
         // --- 绑定后台服务喵 ---
         val serviceIntent = Intent(this, com.cpu.seamlessloopmobile.audio.PlaybackService::class.java)
         bindService(serviceIntent, object : android.content.ServiceConnection {
             override fun onServiceConnected(name: android.content.ComponentName?, service: android.os.IBinder?) {
-                val binder = service as com.cpu.seamlessloopmobile.audio.PlaybackService.PlaybackBinder
-                val playbackService = binder.getService()
-                playbackManager.playbackService = playbackService
-                
-                // 将锁屏按钮的操作连接到 ViewModel 喵！
-                playbackService.onMediaAction = { action ->
-                    when (action) {
-                        "PLAY_PAUSE" -> viewModel.togglePlayPauseManual()
-                        "NEXT" -> viewModel.playNext(playbackManager)
-                        "PREVIOUS" -> viewModel.playPrevious(playbackManager)
-                    }
-                }
-
-                // --- 奇迹时刻：恢复上次没听完的歌喵！ ---
+                // 现在主要通过 MediaBrowser 通信，Binder 仅作极少数兼容喵
                 restoreLastPlayedSong()
             }
             override fun onServiceDisconnected(name: android.content.ComponentName?) {}
         }, BIND_AUTO_CREATE)
+    }
+
+    private val connectionCallbacks = object : MediaBrowserCompat.ConnectionCallback() {
+        override fun onConnected() {
+            // 拿到令牌，制作遥控器喵！
+            mediaBrowser.sessionToken.let { token ->
+                val mediaController = MediaControllerCompat(this@MainActivity, token)
+                MediaControllerCompat.setMediaController(this@MainActivity, mediaController)
+                
+                // 注册反馈监听喵！
+                mediaController.registerCallback(controllerCallback)
+                
+                // 初次同步状态喵
+                controllerCallback.onPlaybackStateChanged(mediaController.playbackState)
+                controllerCallback.onMetadataChanged(mediaController.metadata)
+            }
+        }
+
+        override fun onConnectionSuspended() {}
+        override fun onConnectionFailed() {}
+    }
+
+    private val controllerCallback = object : MediaControllerCompat.Callback() {
+        override fun onPlaybackStateChanged(state: android.support.v4.media.session.PlaybackStateCompat?) {
+            state?.let {
+                val isPlaying = it.state == android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING
+                viewModel.setPlaying(isPlaying)
+                if (isPlaying) {
+                    startProgressUpdater()
+                    binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                } else {
+                    binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                }
+            }
+        }
+
+        override fun onMetadataChanged(metadata: android.support.v4.media.MediaMetadataCompat?) {
+            metadata?.let {
+                val title = it.getString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_TITLE)
+                binding.tvPlayingSongName.text = title ?: "未知歌曲"
+                // 以后还可以更新封面图喵
+            }
+        }
+    }
+
+
+    override fun onStart() {
+        super.onStart()
+        mediaBrowser.connect()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // 断开连接前记得存一下进度喵！
+        saveCurrentState()
+        mediaBrowser.disconnect()
     }
 
     private fun restoreLastPlayedSong() {
@@ -269,17 +299,21 @@ class MainActivity : AppCompatActivity() {
                         viewModel.updateCurrentPlaylist(listOf(song), 0)
                         
                         // 直接恢复到那个进度，并下达“初始暂停”的死命令喵！
-                        playbackManager.playSong(song, lastPos, startPaused = true)
+                        // 注意：这里需要考虑 Service 是否已经由 MediaBrowser 连通喵
+                        val controller = android.support.v4.media.session.MediaControllerCompat.getMediaController(this@MainActivity)
+                        if (controller != null) {
+                            val extras = android.os.Bundle().apply {
+                                putLong("start_pos", lastPos)
+                                putBoolean("start_paused", true)
+                            }
+                            controller.transportControls.playFromMediaId(song.mediaId.toString(), extras)
+                        } else {
+                            // TODO: 备选方案，或者等连通后再发喵
+                        }
                     }
                 }
             }
         }
-    }
-
-    override fun onStop() {
-        // --- 莱芙的“应急预案”：趁着还没被系统杀掉，赶紧记下进度喵！ ---
-        saveCurrentState()
-        super.onStop()
     }
 
     private fun saveCurrentState() {
@@ -323,8 +357,9 @@ class MainActivity : AppCompatActivity() {
 
             override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
                 seekBar?.let {
-                    // 调用 JNI seekTo
-                    NativeAudio.seekTo(it.progress.toLong())
+                    // 通过遥控器下达 Seek 指令喵！
+                    MediaControllerCompat.getMediaController(this@MainActivity)
+                        ?.transportControls?.seekTo(it.progress.toLong())
                     isUserSeeking = false
                 }
             }
@@ -334,7 +369,13 @@ class MainActivity : AppCompatActivity() {
     private fun setupPlaybackControls() {
         // 播放/暂停按钮
         binding.btnPlayPause.setOnClickListener {
-            viewModel.togglePlayPauseManual()
+            val controller = MediaControllerCompat.getMediaController(this)
+            val state = controller?.playbackState?.state
+            if (state == android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING) {
+                controller.transportControls.pause()
+            } else {
+                controller.transportControls.play()
+            }
         }
 
         // 循环设置按钮
@@ -670,7 +711,10 @@ class MainActivity : AppCompatActivity() {
         }
         
         viewModel.updateSongIndex(currentSongIndex)
-        playbackManager.playSong(song)
+        
+        // 官方遥控器：点火！
+        MediaControllerCompat.getMediaController(this)?.transportControls
+            ?.playFromMediaId(song.mediaId.toString(), null)
     }
 
     private fun checkPermissionsAndLoadHome() {

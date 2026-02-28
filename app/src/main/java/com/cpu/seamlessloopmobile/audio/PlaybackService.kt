@@ -1,41 +1,90 @@
 package com.cpu.seamlessloopmobile.audio
 
-import android.app.Service
-import android.content.Intent
-import android.os.Binder
-import android.os.IBinder
-import android.support.v4.media.session.MediaSessionCompat
+import android.os.Bundle
+import android.support.v4.media.MediaBrowserCompat
+import androidx.media.MediaBrowserServiceCompat
 import androidx.media.session.MediaButtonReceiver
+import android.support.v4.media.session.MediaSessionCompat
 import com.cpu.seamlessloopmobile.model.Song
+import com.cpu.seamlessloopmobile.data.MusicRepository
+import com.cpu.seamlessloopmobile.db.AppDatabase
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import android.content.Intent
 
 /**
- * 影子司令部：负责在后台默默维持音频引擎的生命线喵！
+ * 影子司令部：正式升级为官方“明星架构”——媒体浏览器服务喵！
+ * 负责在后台默默维持音频引擎的生命线，并为系统和其他应用提供标准的控制接口。
  */
-class PlaybackService : Service() {
+class PlaybackService : MediaBrowserServiceCompat() {
 
     private val binder = PlaybackBinder()
+    private val serviceScope = MainScope()
+    private lateinit var repository: MusicRepository
+    var playbackManager: PlaybackManager? = null
     var mediaControlManager: MediaControlManager? = null
-    
-    // 专门给 PlaybackManager 实地调用的回调钩子喵
-    var onMediaAction: ((String) -> Unit)? = null
 
-    inner class PlaybackBinder : Binder() {
+    inner class PlaybackBinder : android.os.Binder() {
         fun getService(): PlaybackService = this@PlaybackService
-    }
-
-    override fun onBind(intent: Intent?): IBinder {
-        return binder
     }
 
     override fun onCreate() {
         super.onCreate()
-        // 服务启动时就准备好管家喵！
+        
+        // 1. 初始化数据库与仓库喵
+        val database = AppDatabase.getDatabase(this)
+        repository = MusicRepository(database.songDao(), database.playlistDao())
+
+        // 2. 准备官方管家喵
         mediaControlManager = MediaControlManager(
             context = this,
-            onPlayPause = { onMediaAction?.invoke("PLAY_PAUSE") },
-            onNext = { onMediaAction?.invoke("NEXT") },
-            onPrevious = { onMediaAction?.invoke("PREVIOUS") }
+            playbackService = this
         )
+
+        // 3. 关键：初始化大脑！
+        mediaControlManager?.getSession()?.let { session ->
+            sessionToken = session.sessionToken
+            
+            playbackManager = PlaybackManager(
+                context = this,
+                coroutineScope = serviceScope,
+                repository = repository,
+                mediaSession = session
+            ).apply {
+                onPlaybackStatusChanged = { isPlaying, song ->
+                    if (song != null) {
+                        updateNotification(song, isPlaying)
+                    }
+                }
+            }
+        }
+    }
+
+    // --- MediaBrowserServiceCompat 必须实现的接口喵 ---
+
+    override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?): BrowserRoot? {
+        // 为了安全，暂时只允许咱们自己的 App 连进来喵
+        return if (clientPackageName == packageName) {
+            BrowserRoot("root", null)
+        } else {
+            // 如果想让 Android Auto 也能用，以后可以在这里放行喵
+            null
+        }
+    }
+
+    override fun onLoadChildren(parentId: String, result: Result<MutableList<MediaBrowserCompat.MediaItem>>) {
+        // 暂时不提供对外的媒体库浏览功能喵
+        result.sendResult(null)
+    }
+
+    // 莱芙的兼容贴纸：虽然升级了架构，但为了不让 MainActivity 的旧连接断掉，我们还得支持 Binder 连接喵
+    override fun onBind(intent: android.content.Intent?): android.os.IBinder? {
+        return if (intent?.action == SERVICE_INTERFACE) {
+            super.onBind(intent)
+        } else {
+            binder
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -62,6 +111,7 @@ class PlaybackService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        serviceScope.cancel() // 关掉大脑喵！
         mediaControlManager?.release()
     }
 }

@@ -23,9 +23,7 @@ import com.cpu.seamlessloopmobile.model.Song
  */
 class MediaControlManager(
     private val context: Context,
-    private val onPlayPause: () -> Unit,
-    private val onNext: () -> Unit,
-    private val onPrevious: () -> Unit
+    private val playbackService: PlaybackService
 ) {
     private val mediaSession: MediaSessionCompat
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -38,11 +36,39 @@ class MediaControlManager(
 
         mediaSession = MediaSessionCompat(context, "SeamlessLoopMediaSession").apply {
             setCallback(object : MediaSessionCompat.Callback() {
-                override fun onPlay() = onPlayPause()
-                override fun onPause() = onPlayPause()
-                override fun onSkipToNext() = onNext()
-                override fun onSkipToPrevious() = onPrevious()
-                // 我们不再拦截 onMediaButtonEvent，让 Service 统一分发喵！
+                override fun onPlay() {
+                    com.cpu.seamlessloopmobile.jni.NativeAudio.resumeAudioEngine()
+                    // 莱芙知道现在在播什么喵？Session 应该已经存好了 Metadata
+                    // 暂时先简单恢复状态
+                    playbackService.playbackManager?.let { mgr ->
+                         //mgr.updateMediaSessionState(...) // 这里可能需要存一下当前的 Song 喵
+                    }
+                }
+                override fun onPause() {
+                    com.cpu.seamlessloopmobile.jni.NativeAudio.pauseAudioEngine()
+                    playbackService.playbackManager?.let { mgr ->
+                         //mgr.updateMediaSessionState(...)
+                    }
+                }
+                override fun onSkipToNext() {
+                    // TODO: 真正的切歌逻辑需要 Service 持有当前的 Playlist 喵！
+                }
+                override fun onSkipToPrevious() {
+                }
+                override fun onPlayFromMediaId(mediaId: String?, extras: android.os.Bundle?) {
+                    val idLong = mediaId?.toLongOrNull() ?: return
+                    playbackService.playbackManager?.playFromMediaId(idLong)
+                }
+                override fun onSeekTo(pos: Long) {
+                    com.cpu.seamlessloopmobile.jni.NativeAudio.seekTo(pos)
+                }
+                override fun onCustomAction(action: String?, extras: android.os.Bundle?) {
+                    if (action == "SET_PLAY_MODE") {
+                        val modeOrdinal = extras?.getInt("play_mode") ?: return
+                        val isSingleLoop = modeOrdinal == 1 // com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
+                        com.cpu.seamlessloopmobile.jni.NativeAudio.setLooping(isSingleLoop)
+                    }
+                }
             })
             setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS)
             isActive = true
