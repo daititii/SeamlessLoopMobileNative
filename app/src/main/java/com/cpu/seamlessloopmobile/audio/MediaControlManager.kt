@@ -37,18 +37,14 @@ class MediaControlManager(
         mediaSession = MediaSessionCompat(context, "SeamlessLoopMediaSession").apply {
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() {
-                    com.cpu.seamlessloopmobile.jni.NativeAudio.resumeAudioEngine()
-                    // 莱芙知道现在在播什么喵？Session 应该已经存好了 Metadata
-                    // 暂时先简单恢复状态
-                    playbackService.playbackManager?.let { mgr ->
-                         //mgr.updateMediaSessionState(...) // 这里可能需要存一下当前的 Song 喵
-                    }
+                    playbackService.playbackManager?.resume()
                 }
                 override fun onPause() {
-                    com.cpu.seamlessloopmobile.jni.NativeAudio.pauseAudioEngine()
-                    playbackService.playbackManager?.let { mgr ->
-                         //mgr.updateMediaSessionState(...)
-                    }
+                    playbackService.playbackManager?.pause()
+                }
+                override fun onStop() {
+                    playbackService.playbackManager?.stop()
+                    playbackService.stopForegroundCompletely()
                 }
                 override fun onSkipToNext() {
                     // TODO: 真正的切歌逻辑需要 Service 持有当前的 Playlist 喵！

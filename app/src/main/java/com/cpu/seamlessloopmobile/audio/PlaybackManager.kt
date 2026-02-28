@@ -26,7 +26,34 @@ class PlaybackManager(
     var onPlaybackStatusChanged: ((isPlaying: Boolean, currentSong: Song?) -> Unit)? = null
     var onPlaybackError: ((String) -> Unit)? = null
 
+    private var currentSong: Song? = null
+    private var isAbMode = false
+
+    fun pause() {
+        NativeAudio.pauseAudioEngine()
+        currentSong?.let {
+            updateMediaSessionState(it, false, isAbMode)
+        }
+    }
+
+    fun resume() {
+        NativeAudio.resumeAudioEngine()
+        currentSong?.let {
+            updateMediaSessionState(it, true, isAbMode)
+        }
+    }
+
+    fun stop() {
+        NativeAudio.stopAudioEngine()
+        currentSong = null
+        isAbMode = false
+        // 不在这里更新 Session，通常由 Service 处理销毁
+    }
+
     fun updateMediaSessionState(song: Song, isPlaying: Boolean, isAbMode: Boolean = false) {
+        this.currentSong = song
+        this.isAbMode = isAbMode
+        
         val metadata = android.support.v4.media.MediaMetadataCompat.Builder()
             .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_TITLE, song.displayName ?: song.fileName)
             .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ARTIST, song.artist ?: "Unknown Artist")
@@ -43,7 +70,8 @@ class PlaybackManager(
                 android.support.v4.media.session.PlaybackStateCompat.ACTION_PLAY_PAUSE or
                 android.support.v4.media.session.PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
                 android.support.v4.media.session.PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                android.support.v4.media.session.PlaybackStateCompat.ACTION_SEEK_TO
+                android.support.v4.media.session.PlaybackStateCompat.ACTION_SEEK_TO or
+                android.support.v4.media.session.PlaybackStateCompat.ACTION_STOP
             )
             .setState(
                 if (isPlaying) android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING 

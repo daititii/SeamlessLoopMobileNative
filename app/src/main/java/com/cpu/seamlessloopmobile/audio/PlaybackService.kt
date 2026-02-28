@@ -29,23 +29,41 @@ class PlaybackService : MediaBrowserServiceCompat() {
         fun getService(): PlaybackService = this@PlaybackService
     }
 
+    private lateinit var audioManager: android.media.AudioManager
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
+
+    private val audioFocusChangeListener = android.media.AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            android.media.AudioManager.AUDIOFOCUS_GAIN -> {
+                playbackManager?.resume()
+            }
+            android.media.AudioManager.AUDIOFOCUS_LOSS -> {
+                playbackManager?.pause()
+            }
+            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                playbackManager?.pause()
+            }
+            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // 暂时不调小声音，直接暂停喵
+                playbackManager?.pause()
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         
-        // 1. 初始化数据库与仓库喵
+        audioManager = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+        val powerManager = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+        wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "SeamlessLoop:PlaybackWakeLock")
+
         val database = AppDatabase.getDatabase(this)
         repository = MusicRepository(database.songDao(), database.playlistDao())
 
-        // 2. 准备官方管家喵
-        mediaControlManager = MediaControlManager(
-            context = this,
-            playbackService = this
-        )
+        mediaControlManager = MediaControlManager(context = this, playbackService = this)
 
-        // 3. 关键：初始化大脑！
         mediaControlManager?.getSession()?.let { session ->
             sessionToken = session.sessionToken
-            
             playbackManager = PlaybackManager(
                 context = this,
                 coroutineScope = serviceScope,
@@ -54,7 +72,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
             ).apply {
                 onPlaybackStatusChanged = { isPlaying, song ->
                     if (song != null) {
-                        updateNotification(song, isPlaying)
+                        handlePlaybackStateChange(isPlaying, song)
                     }
                 }
             }
@@ -64,16 +82,13 @@ class PlaybackService : MediaBrowserServiceCompat() {
     // --- MediaBrowserServiceCompat 必须实现的接口喵 ---
 
     override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?): BrowserRoot? {
-        // 放宽准入条件喵，不仅允许咱们自己，也允许系统或其他正经管家连进来，防止因为拒绝访问被强制杀进程喵！
         return BrowserRoot("root", null)
     }
 
     override fun onLoadChildren(parentId: String, result: Result<MutableList<MediaBrowserCompat.MediaItem>>) {
-        // 暂时不提供对外的媒体库浏览功能喵
         result.sendResult(null)
     }
 
-    // 莱芙的兼容贴纸：虽然升级了架构，但为了不让 MainActivity 的旧连接断掉，我们还得支持 Binder 连接喵
     override fun onBind(intent: android.content.Intent?): android.os.IBinder? {
         return if (intent?.action == SERVICE_INTERFACE) {
             super.onBind(intent)
@@ -83,17 +98,42 @@ class PlaybackService : MediaBrowserServiceCompat() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // 让系统发来的按键指令直接送达管家手里喵！
         mediaControlManager?.getSession()?.let { session ->
             MediaButtonReceiver.handleIntent(session, intent)
         }
         return START_STICKY
     }
 
+    private fun handlePlaybackStateChange(isPlaying: Boolean, song: Song) {
+        if (isPlaying) {
+            // 申请音频焦点喵！
+            val result = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val focusRequest = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build())
+                    .setAcceptsDelayedFocusGain(true)
+                    .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                    .build()
+                audioManager.requestAudioFocus(focusRequest)
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.requestAudioFocus(audioFocusChangeListener, android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.AUDIOFOCUS_GAIN)
+            }
+
+            if (result == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                if (wakeLock?.isHeld == false) wakeLock?.acquire(10 * 60 * 1000L /* 10 mins fallback */)
+                updateNotification(song, true)
+            }
+        } else {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+            updateNotification(song, false)
+        }
+    }
+
     fun updateNotification(song: Song, isPlaying: Boolean) {
         mediaControlManager?.updatePlaybackState(song, isPlaying)
-        
-        // 关键喵：在这里打报告，告诉系统我们是正经的前台播放服务！
         val notification = mediaControlManager?.createNotification(song, isPlaying)
         if (notification != null) {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
@@ -102,15 +142,24 @@ class PlaybackService : MediaBrowserServiceCompat() {
                 startForeground(1, notification)
             }
         }
+        
+        // 只有在暂停且应用没被销毁时，才允许设置为非前台（可划掉通知）
+        if (!isPlaying) {
+            stopForeground(false)
+        }
     }
 
     fun stopForegroundCompletely() {
-        stopForeground(STOP_FOREGROUND_DETACH)
+        if (wakeLock?.isHeld == true) wakeLock?.release()
+        audioManager.abandonAudioFocus(audioFocusChangeListener)
+        stopForeground(STOP_FOREGROUND_REMOVE or STOP_FOREGROUND_DETACH)
+        stopSelf()
     }
 
     override fun onDestroy() {
+        if (wakeLock?.isHeld == true) wakeLock?.release()
         super.onDestroy()
-        serviceScope.cancel() // 关掉大脑喵！
+        serviceScope.cancel() 
         mediaControlManager?.release()
     }
 }
