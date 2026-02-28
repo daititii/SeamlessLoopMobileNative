@@ -25,9 +25,15 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
-                // 搬家到“外部公开目录”喵！路径在：Android/data/com.cpu.seamlessloopmobile/files/databases/
-                // 这样大人插上数据线，在电脑上就能一眼看到它啦
-                val dbFile = java.io.File(context.getExternalFilesDir(null), "databases/seamless_loop_db")
+                // 应急预案 A：优先搬家到“外部公开目录”喵！路径在：Android/data/com.cpu.seamlessloopmobile/files/databases/
+                // 如果外部目录不可用（比如没插 SD 卡或系统限制），莱芙会默默退回到内部私有目录喵！
+                val externalDir = context.getExternalFilesDir(null)
+                val dbFile = if (externalDir != null) {
+                    java.io.File(externalDir, "databases/seamless_loop_db")
+                } else {
+                    java.io.File(context.filesDir, "databases/seamless_loop_db")
+                }
+                
                 if (dbFile.parentFile?.exists() == false) {
                     dbFile.parentFile?.mkdirs()
                 }
@@ -37,7 +43,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     dbFile.absolutePath
                 )
-                .fallbackToDestructiveMigration() // 既然大人不要旧数据，结构要是变了就直接删掉重开喵
+                .fallbackToDestructiveMigration() 
                 .build()
                 INSTANCE = instance
                 instance

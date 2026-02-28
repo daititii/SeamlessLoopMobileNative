@@ -54,13 +54,15 @@ class MainActivity : AppCompatActivity() {
     private var currentOpenPlaylist: Playlist? = null
     private var updateProgressJob: kotlinx.coroutines.Job? = null
     private var isUserSeeking: Boolean = false
+    private var isSelectionControllerInitialized = false
     private lateinit var selectionController: com.cpu.seamlessloopmobile.ui.SelectionController
     private lateinit var mediaBrowser: MediaBrowserCompat
     
     // 专门抓捕耳机被拔掉瞬间的小广播喵！
     private val becomingNoisyReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
-            if (intent?.action == android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+            // 增加一点安全防御，等一切准备好（binding 就绪）再响应喵
+            if (intent?.action == android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY && ::binding.isInitialized) {
                 // 嘘！系统说现在声音可能外泄，我们要立刻暂停喵！
                 NativeAudio.pauseAudioEngine()
                 viewModel.setPlaying(false)
@@ -95,7 +97,7 @@ class MainActivity : AppCompatActivity() {
         // 中间层同步：把 ViewModel 的状态同步给本地冗余变量 (过渡用喵)
         viewModel.allSongs.observe(this) { 
             allSongs = it
-            if (!viewModel.isExploringLocal.value!! && !viewModel.isInsidePlaylist.value!!) {
+            if ((viewModel.isExploringLocal.value ?: false) == false && (viewModel.isInsidePlaylist.value ?: false) == false) {
                 loadHomeView()
             }
         }
@@ -146,7 +148,7 @@ class MainActivity : AppCompatActivity() {
         viewModel.currentOpenPlaylist.observe(this) { currentOpenPlaylist = it }
         viewModel.rawScannedSongs.observe(this) { rawScannedSongs = it }
         viewModel.playlists.observe(this) {
-            if (!viewModel.isExploringLocal.value!! && !viewModel.isInsidePlaylist.value!!) {
+            if ((viewModel.isExploringLocal.value ?: false) == false && (viewModel.isInsidePlaylist.value ?: false) == false) {
                 loadHomeView()
             }
         }
@@ -163,6 +165,14 @@ class MainActivity : AppCompatActivity() {
         // 设置返回键逻辑喵 (现代安卓做法)
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                // 增加安全性检查：万一初始化还没跑完大人就按返回键了喵！
+                if (!isSelectionControllerInitialized) {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                    return
+                }
+
                 if (selectionController.isSelectionMode) {
                     selectionController.exitSelectionMode()
                 } else if (selectionController.isPlaylistSelectionMode) {
@@ -191,11 +201,12 @@ class MainActivity : AppCompatActivity() {
         checkPermissionsAndLoadHome()
         
         // 注册耳机监控喵 (考虑到安卓 13+ 的动态权限要求喵)
+        // 莱芙使用了更安全的 ContextCompat 做法逻辑，避免直接引用可能不存在的常量喵
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(
                 becomingNoisyReceiver, 
                 android.content.IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY),
-                RECEIVER_NOT_EXPORTED
+                if (android.os.Build.VERSION.SDK_INT >= 33) 4 else 0 // 4 是 RECEIVER_NOT_EXPORTED 喵
             )
         } else {
             registerReceiver(
@@ -327,7 +338,11 @@ class MainActivity : AppCompatActivity() {
             val prefs = getSharedPreferences("last_state", MODE_PRIVATE)
             prefs.edit().apply {
                 putString("last_song_path", song.filePath)
-                putLong("last_position", NativeAudio.getCurrentPosition())
+                try {
+                    putLong("last_position", NativeAudio.getCurrentPosition())
+                } catch (e: Exception) {
+                    putLong("last_position", 0L)
+                }
                 apply()
             }
         }
@@ -600,6 +615,7 @@ class MainActivity : AppCompatActivity() {
                     get() = this@MainActivity.currentOpenPlaylist
             }
         )
+        isSelectionControllerInitialized = true
     }
 
 

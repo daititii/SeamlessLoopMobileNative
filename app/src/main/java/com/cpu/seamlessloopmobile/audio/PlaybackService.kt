@@ -64,13 +64,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
     // --- MediaBrowserServiceCompat 必须实现的接口喵 ---
 
     override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?): BrowserRoot? {
-        // 为了安全，暂时只允许咱们自己的 App 连进来喵
-        return if (clientPackageName == packageName) {
-            BrowserRoot("root", null)
-        } else {
-            // 如果想让 Android Auto 也能用，以后可以在这里放行喵
-            null
-        }
+        // 放宽准入条件喵，不仅允许咱们自己，也允许系统或其他正经管家连进来，防止因为拒绝访问被强制杀进程喵！
+        return BrowserRoot("root", null)
     }
 
     override fun onLoadChildren(parentId: String, result: Result<MutableList<MediaBrowserCompat.MediaItem>>) {
@@ -101,7 +96,11 @@ class PlaybackService : MediaBrowserServiceCompat() {
         // 关键喵：在这里打报告，告诉系统我们是正经的前台播放服务！
         val notification = mediaControlManager?.createNotification(song, isPlaying)
         if (notification != null) {
-            startForeground(1, notification)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            } else {
+                startForeground(1, notification)
+            }
         }
     }
 

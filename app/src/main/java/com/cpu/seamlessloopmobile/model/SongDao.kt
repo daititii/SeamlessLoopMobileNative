@@ -24,30 +24,38 @@ interface SongDao {
 
     @Transaction
     suspend fun insertOrUpdateSong(song: Song): Long {
-        // 1. 如果有路径，优先按路径找喵
-        if (song.filePath.isNotBlank()) {
-            val existingByPath = getSongByPath(song.filePath)
-            if (existingByPath != null) {
-                updateSong(song.copy(
-                    id = existingByPath.id,
-                    mediaId = if (song.mediaId != 0L) song.mediaId else existingByPath.mediaId
-                ))
-                return existingByPath.id
-            }
+        // 首先查找指纹，指纹才是歌曲的核心绑定（影响播放列表等喵）
+        val existingByFingerprint = getSongByFingerprint(song.fileName, song.totalSamples)
+        val existingByPath = if (song.filePath.isNotBlank()) getSongByPath(song.filePath) else null
+
+        // 场景 1：既找到了指纹，又找到了路径，而且它们不是同一首歌
+        // 这说明用户覆盖了同名文件，或者系统刷新了 MediaStore
+        if (existingByFingerprint != null && existingByPath != null && existingByFingerprint.id != existingByPath.id) {
+            // 果断删除旧路径占用的幽灵数据，给真身让路，否则会报 UNIQUE constraint failed 喵！
+            deleteSong(existingByPath)
         }
 
-        // 2. 再按指纹找，处理文件搬家或 PC 同步的情况喵
-        val existingByFingerprint = getSongByFingerprint(song.fileName, song.totalSamples)
-        return if (existingByFingerprint != null) {
+        // 场景 2：指纹存在，直接更新指纹主体
+        if (existingByFingerprint != null) {
             updateSong(song.copy(
                 id = existingByFingerprint.id, 
                 mediaId = if (song.mediaId != 0L) song.mediaId else existingByFingerprint.mediaId,
                 filePath = if (song.filePath.isNotBlank()) song.filePath else existingByFingerprint.filePath
             ))
-            existingByFingerprint.id
-        } else {
-            insertSong(song)
+            return existingByFingerprint.id
         }
+
+        // 场景 3：指纹不存在，但路径存在（说明这是一首新剪辑或被大幅改动的歌，仅仅占据了旧位置）
+        if (existingByPath != null) {
+            updateSong(song.copy(
+                id = existingByPath.id,
+                mediaId = if (song.mediaId != 0L) song.mediaId else existingByPath.mediaId
+            ))
+            return existingByPath.id
+        }
+
+        // 场景 4：是个彻头彻尾的新人，直接加进去喵
+        return insertSong(song)
     }
 
     @Transaction
