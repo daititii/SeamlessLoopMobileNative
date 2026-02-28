@@ -33,11 +33,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var songAdapter: SongAdapter
     private lateinit var libraryAdapter: LibraryAdapter
     
-    private lateinit var database: com.cpu.seamlessloopmobile.db.AppDatabase
-    private val songDao by lazy { database.songDao() }
-    private val playlistDao by lazy { database.playlistDao() }
-    
     private lateinit var viewModel: MainViewModel
+    private lateinit var repository: com.cpu.seamlessloopmobile.data.MusicRepository
+    private lateinit var database: com.cpu.seamlessloopmobile.db.AppDatabase
 
     private var rawScannedSongs: List<Song> = emptyList()
     private var allSongs: List<Song> = emptyList()
@@ -80,14 +78,16 @@ class MainActivity : AppCompatActivity() {
         // 初始化数据库
         database = com.cpu.seamlessloopmobile.db.AppDatabase.getDatabase(this)
         
+        repository = com.cpu.seamlessloopmobile.data.MusicRepository(database.songDao(), database.playlistDao())
+        
         // 逻辑大脑初始化喵！
-        val factory = MainViewModelFactory(songDao, playlistDao)
+        val factory = MainViewModelFactory(database.songDao(), database.playlistDao())
         viewModel = ViewModelProvider(this, factory)[MainViewModel::class.java]
 
         playbackManager = com.cpu.seamlessloopmobile.audio.PlaybackManager(
             context = this,
             coroutineScope = lifecycleScope,
-            songDao = songDao,
+            repository = repository,
             viewModel = viewModel,
             uiCallback = object : com.cpu.seamlessloopmobile.audio.PlaybackManager.PlaybackUiCallback {
                 override fun onPrePlayback(message: String) {
@@ -255,8 +255,8 @@ class MainActivity : AppCompatActivity() {
         val lastPos = prefs.getLong("last_position", 0L)
 
         if (lastPath != null) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                val song = songDao.getSongByPath(lastPath)
+            lifecycleScope.launch {
+                val song = repository.getSongByPath(lastPath)
                 if (song != null) {
                     withContext(Dispatchers.Main) {
                         // 把它装好，并同步进听单喵，这样进度条和切歌逻辑才能跑起来喵！
@@ -515,8 +515,7 @@ class MainActivity : AppCompatActivity() {
             toolbar = binding.toolbar,
             songAdapter = songAdapter,
             libraryAdapter = libraryAdapter,
-            songDao = songDao,
-            playlistDao = playlistDao,
+            repository = repository,
             viewModel = viewModel,
             coroutineScope = lifecycleScope,
             uiCallback = object : com.cpu.seamlessloopmobile.ui.SelectionController.SelectionUiCallback {
@@ -569,7 +568,7 @@ class MainActivity : AppCompatActivity() {
         viewModel.setShowingFolders(false)
         
         lifecycleScope.launch(Dispatchers.Main) {
-            val songs = withContext(Dispatchers.IO) { playlistDao.getSongsInPlaylist(playlist.id) }
+            val songs = repository.getSongsInPlaylist(playlist.id)
             
             // 如果是关联文件夹的歌单，且里面没歌，才主动同步喵！
             // 如果已经有歌了，就让大人先听着，莱芙不乱插手喵！
@@ -706,10 +705,9 @@ class MainActivity : AppCompatActivity() {
             binding.toolbar.navigationIcon = null
             
             // 1. 从数据库读取歌单喵
-            val dbPlaylists = withContext(Dispatchers.IO) { playlistDao.getAllPlaylists() }
-            val playlistWithCounts = withContext(Dispatchers.IO) {
-                dbPlaylists.map { playlist ->
-                    var count = playlistDao.getSongCountInPlaylist(playlist.id)
+            val dbPlaylists = repository.getAllPlaylists()
+            val playlistWithCounts = dbPlaylists.map { playlist ->
+                var count = repository.getSongCountInPlaylist(playlist.id)
                     
                     // 如果是联动文件夹，且数据库还没同步完，莱芙先实地数数，不让大人看到 0 喵！
                     if (playlist.isFolderLinked == 1 && count == 0 && playlist.folderPath != null) {
@@ -724,10 +722,9 @@ class MainActivity : AppCompatActivity() {
                     }
                     Pair(playlist, count)
                 }
-            }
             
             // 2. 这里的本地音乐数量先从数据库里拿个大概，或者直接显示“去探索”喵
-            val localCount = withContext(Dispatchers.IO) { songDao.getAllSongs().size }
+            val localCount = repository.getAllSongs().size
 
             // 3. 构建主页混合列表
             val libraryItems = mutableListOf<com.cpu.seamlessloopmobile.model.LibraryItem>()
@@ -795,7 +792,7 @@ class MainActivity : AppCompatActivity() {
             com.cpu.seamlessloopmobile.db.PcDatabaseImporter.importFromPcDatabase(
                 context = this@MainActivity,
                 uri = uri,
-                songDao = songDao,
+                songDao = database.songDao(),
                 callback = object : com.cpu.seamlessloopmobile.db.PcDatabaseImporter.ImportCallback {
                     override fun onSuccess(syncCount: Int) {
                         Toast.makeText(this@MainActivity, "同步完成喵！成功找回 $syncCount 条循环数据", Toast.LENGTH_LONG).show()

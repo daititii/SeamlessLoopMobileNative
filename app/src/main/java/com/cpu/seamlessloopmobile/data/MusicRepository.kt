@@ -21,6 +21,52 @@ class MusicRepository(
     private val playlistDao: PlaylistDao
 ) {
 
+    // --- 基础查询喵 ---
+
+    suspend fun getAllPlaylists(): List<Playlist> = withContext(Dispatchers.IO) {
+        playlistDao.getAllPlaylists()
+    }
+
+    suspend fun getAllSongs(): List<Song> = withContext(Dispatchers.IO) {
+        songDao.getAllSongs()
+    }
+
+    suspend fun getSongsInPlaylist(playlistId: Int): List<Song> = withContext(Dispatchers.IO) {
+        playlistDao.getSongsInPlaylist(playlistId)
+    }
+
+    suspend fun getSongByPath(path: String): Song? = withContext(Dispatchers.IO) {
+        songDao.getSongByPath(path)
+    }
+
+    suspend fun getSongCountInPlaylist(playlistId: Int): Int = withContext(Dispatchers.IO) {
+        playlistDao.getSongCountInPlaylist(playlistId)
+    }
+
+    suspend fun updateSong(song: Song) = withContext(Dispatchers.IO) {
+        songDao.updateSong(song)
+    }
+
+    suspend fun insertOrUpdateSong(song: Song): Long = withContext(Dispatchers.IO) {
+        songDao.insertOrUpdateSong(song)
+    }
+
+    suspend fun insertPlaylist(playlist: Playlist): Long = withContext(Dispatchers.IO) {
+        playlistDao.insertPlaylist(playlist)
+    }
+
+    suspend fun deletePlaylist(playlist: Playlist) = withContext(Dispatchers.IO) {
+        playlistDao.deletePlaylist(playlist)
+    }
+
+    suspend fun addSongsToPlaylist(playlistId: Int, songIds: List<Long>): Int = withContext(Dispatchers.IO) {
+        playlistDao.addSongsToPlaylist(playlistId, songIds)
+    }
+
+    suspend fun removeSongsFromPlaylist(playlistId: Int, songIds: List<Long>) = withContext(Dispatchers.IO) {
+        playlistDao.removeSongsFromPlaylist(playlistId, songIds)
+    }
+
     /**
      * 从本地媒体库快速扫描基础信息喵
      */

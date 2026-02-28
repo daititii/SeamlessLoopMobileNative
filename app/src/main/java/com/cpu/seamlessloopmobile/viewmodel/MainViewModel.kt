@@ -7,8 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.cpu.seamlessloopmobile.model.Folder
 import com.cpu.seamlessloopmobile.model.Playlist
 import com.cpu.seamlessloopmobile.model.Song
-import com.cpu.seamlessloopmobile.model.SongDao
-import com.cpu.seamlessloopmobile.model.PlaylistDao
+import com.cpu.seamlessloopmobile.data.MusicRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -22,9 +21,7 @@ enum class PlayMode {
 }
 
 class MainViewModel(
-    private val repository: com.cpu.seamlessloopmobile.data.MusicRepository,
-    private val songDao: com.cpu.seamlessloopmobile.model.SongDao,
-    private val playlistDao: com.cpu.seamlessloopmobile.model.PlaylistDao
+    private val repository: MusicRepository
 ) : ViewModel() {
 
     // --- 乐库数据喵 ---
@@ -126,14 +123,14 @@ class MainViewModel(
 
     fun refreshPlaylists() {
         viewModelScope.launch(Dispatchers.IO) {
-            val list = playlistDao.getAllPlaylists()
+            val list = repository.getAllPlaylists()
             _playlists.postValue(list)
         }
     }
 
     fun loadSongsFromDatabase() {
         viewModelScope.launch(Dispatchers.IO) {
-            val songs = songDao.getAllSongs()
+            val songs = repository.getAllSongs()
             processSongsAndFolders(songs)
         }
     }
@@ -217,9 +214,7 @@ class MainViewModel(
                 _syncStatus.postValue("同步完成喵！")
                 loadPlaylists() 
                 
-                val updatedSongs = withContext(Dispatchers.IO) {
-                    playlistDao.getSongsInPlaylist(playlist.id)
-                }
+                val updatedSongs = repository.getSongsInPlaylist(playlist.id)
                 _currentPlaylist.postValue(updatedSongs)
                 
                 kotlinx.coroutines.delay(3000)
@@ -239,7 +234,7 @@ class MainViewModel(
      */
     fun loadPlaylists() {
         viewModelScope.launch(Dispatchers.IO) {
-            val list = playlistDao.getAllPlaylists()
+            val list = repository.getAllPlaylists()
             _playlists.postValue(list)
         }
     }

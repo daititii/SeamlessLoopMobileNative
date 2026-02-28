@@ -6,10 +6,8 @@ import android.widget.Toast
 import androidx.appcompat.widget.Toolbar
 import com.cpu.seamlessloopmobile.adapter.LibraryAdapter
 import com.cpu.seamlessloopmobile.adapter.SongAdapter
-import com.cpu.seamlessloopmobile.model.Playlist
-import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.model.Song
-import com.cpu.seamlessloopmobile.model.SongDao
+import com.cpu.seamlessloopmobile.data.MusicRepository
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,8 +23,7 @@ class SelectionController(
     private val toolbar: Toolbar,
     private val songAdapter: SongAdapter,
     private val libraryAdapter: LibraryAdapter,
-    private val songDao: SongDao,
-    private val playlistDao: PlaylistDao,
+    private val repository: MusicRepository,
     private val viewModel: com.cpu.seamlessloopmobile.viewmodel.MainViewModel,
     private val coroutineScope: CoroutineScope,
     private val uiCallback: SelectionUiCallback
@@ -36,9 +33,9 @@ class SelectionController(
         fun onExitSelection()
         fun onExitPlaylistSelection()
         fun onReloadHomeView()
-        fun onRefreshPlaylist(playlist: Playlist)
+        fun onRefreshPlaylist(playlist: com.cpu.seamlessloopmobile.model.Playlist)
         val isInsidePlaylist: Boolean
-        val currentOpenPlaylist: Playlist?
+        val currentOpenPlaylist: com.cpu.seamlessloopmobile.model.Playlist?
     }
 
     var isSelectionMode = false
@@ -91,8 +88,8 @@ class SelectionController(
                 setOnMenuItemClickListener {
                     val selectedSongs = songAdapter.getSelectedSongs()
                     uiCallback.currentOpenPlaylist?.let { playlist ->
-                        coroutineScope.launch(Dispatchers.IO) {
-                            playlistDao.removeSongsFromPlaylist(playlist.id, selectedSongs.map { it.id })
+                        coroutineScope.launch {
+                            repository.removeSongsFromPlaylist(playlist.id, selectedSongs.map { it.id })
                             withContext(Dispatchers.Main) {
                                 Toast.makeText(context, "已从歌单移除 ${selectedSongs.size} 首歌曲喵", Toast.LENGTH_SHORT).show()
                                 exitSelectionMode()
@@ -108,7 +105,7 @@ class SelectionController(
 
     // --- 歌单多选模式喵 ---
 
-    fun enterPlaylistSelectionMode(initialPlaylist: Playlist?) {
+    fun enterPlaylistSelectionMode(initialPlaylist: com.cpu.seamlessloopmobile.model.Playlist?) {
         if (isPlaylistSelectionMode) return
         isPlaylistSelectionMode = true
         libraryAdapter.setSelectionMode(true)
@@ -148,8 +145,8 @@ class SelectionController(
                     .setTitle("批量删除歌单")
                     .setMessage("cpu 大人，真的要心碎地删除这 ${selected.size} 个歌单吗？")
                     .setPositiveButton("删除") { _, _ ->
-                        coroutineScope.launch(Dispatchers.IO) {
-                            selected.forEach { playlistDao.deletePlaylist(it) }
+                        coroutineScope.launch {
+                            selected.forEach { repository.deletePlaylist(it) }
                             withContext(Dispatchers.Main) {
                                 Toast.makeText(context, "成功删除这 ${selected.size} 个歌单喵!", Toast.LENGTH_SHORT).show()
                                 exitPlaylistSelectionMode()
@@ -180,7 +177,7 @@ class SelectionController(
         }
 
         coroutineScope.launch(Dispatchers.Main) {
-            val playlists = withContext(Dispatchers.IO) { playlistDao.getAllPlaylists() }
+            val playlists = repository.getAllPlaylists()
             
             val dialog = MaterialAlertDialogBuilder(context)
                 .setTitle("添加到歌单")
@@ -210,13 +207,13 @@ class SelectionController(
             .setPositiveButton("确定") { _, _ ->
                 val name = editText.text.toString()
                 if (name.isNotEmpty()) {
-                    coroutineScope.launch(Dispatchers.IO) {
+                    coroutineScope.launch {
                         val persistentSongIds = songs.map { song ->
-                            songDao.insertOrUpdateSong(song)
+                            repository.insertOrUpdateSong(song)
                         }
                         
-                        val newId = playlistDao.insertPlaylist(Playlist(name = name))
-                        val count = playlistDao.addSongsToPlaylist(newId.toInt(), persistentSongIds)
+                        val newId = repository.insertPlaylist(com.cpu.seamlessloopmobile.model.Playlist(name = name))
+                        val count = repository.addSongsToPlaylist(newId.toInt(), persistentSongIds)
                         
                         withContext(Dispatchers.Main) {
                             val message = if (count > 0) {
@@ -235,13 +232,13 @@ class SelectionController(
             .show()
     }
 
-    private fun addSongsToExistingPlaylist(playlist: Playlist, songs: List<Song>) {
-        coroutineScope.launch(Dispatchers.IO) {
+    private fun addSongsToExistingPlaylist(playlist: com.cpu.seamlessloopmobile.model.Playlist, songs: List<Song>) {
+        coroutineScope.launch {
             val persistentSongIds = songs.map { song ->
-                songDao.insertOrUpdateSong(song)
+                repository.insertOrUpdateSong(song)
             }
             
-            val count = playlistDao.addSongsToPlaylist(playlist.id, persistentSongIds)
+            val count = repository.addSongsToPlaylist(playlist.id, persistentSongIds)
             
             withContext(Dispatchers.Main) {
                 val message = when {
@@ -263,13 +260,13 @@ class SelectionController(
             .setTitle("文件夹联动")
             .setMessage("cpu 大人，要把文件夹『${folder.name}』导入为同步歌单吗？\n\n(此模式下歌曲会自动同步，且莱芙会开启 100% 精准识别喵！)")
             .setPositiveButton("同步导入") { _, _ ->
-                coroutineScope.launch(Dispatchers.IO) {
-                    val newPlaylist = Playlist(
+                coroutineScope.launch {
+                    val newPlaylist = com.cpu.seamlessloopmobile.model.Playlist(
                         name = folder.name,
                         folderPath = folder.path,
                         isFolderLinked = 1 // 开启魔法开关喵！
                     )
-                    val newId = playlistDao.insertPlaylist(newPlaylist)
+                    val newId = repository.insertPlaylist(newPlaylist)
                     val playlistWithId = newPlaylist.copy(id = newId.toInt())
 
                     // 莱芙在这里立即帮大人开启后台同步！不让它闲着喵！

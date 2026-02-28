@@ -5,7 +5,7 @@ import android.content.Context
 import android.provider.MediaStore
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.model.Song
-import com.cpu.seamlessloopmobile.model.SongDao
+import com.cpu.seamlessloopmobile.data.MusicRepository
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
 class PlaybackManager(
     private val context: Context,
     private val coroutineScope: CoroutineScope,
-    private val songDao: SongDao,
+    private val repository: MusicRepository,
     private val viewModel: MainViewModel,
     private val uiCallback: PlaybackUiCallback
 ) {
@@ -91,7 +91,7 @@ class PlaybackManager(
                         totalSamples = if (song.totalSamples == 0L) durationFrames else song.totalSamples 
                     )
                     if (song.totalSamples == 0L && finalSong.id > 0) {
-                        songDao.updateSong(finalSong) 
+                        repository.updateSong(finalSong) 
                     }
                     viewModel.updateSongInMemory(finalSong)
                 }
