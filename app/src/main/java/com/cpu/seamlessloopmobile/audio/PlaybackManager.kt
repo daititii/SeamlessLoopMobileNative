@@ -151,6 +151,10 @@ class PlaybackManager(
             NativeAudio.stopAudioEngine()
             
             try {
+                android.util.Log.d("PlaybackManager", "====== 准备启动 AB 循环喵！======")
+                android.util.Log.d("PlaybackManager", "🍒 A 段 (前奏): ${introSong.fileName} (ID=${introSong.mediaId})")
+                android.util.Log.d("PlaybackManager", "🍓 B 段 (循环): ${loopSong.fileName} (ID=${loopSong.mediaId})")
+
                 val uriA = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, introSong.mediaId)
                 val uriB = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, loopSong.mediaId)
                 
@@ -159,10 +163,14 @@ class PlaybackManager(
                         val lenA = if (afdA.declaredLength < 0) afdA.length else afdA.declaredLength
                         val lenB = if (afdB.declaredLength < 0) afdB.length else afdB.declaredLength
                         
+                        android.util.Log.d("PlaybackManager", "⚖️ 测量完毕！A段长度: $lenA 字节, B段长度: $lenB 字节")
+                        android.util.Log.d("PlaybackManager", "🚀 (莱芙捂住耳朵) 准备点火送入 C++ 引擎喵...")
+
                         NativeAudio.startAbAudioEngine(
                             afdA.parcelFileDescriptor.fd, afdA.startOffset, lenA,
                             afdB.parcelFileDescriptor.fd, afdB.startOffset, lenB
                         )
+                        android.util.Log.d("PlaybackManager", "✅ C++ AB 引擎安全启动喵！")
                     }
                 }
 
