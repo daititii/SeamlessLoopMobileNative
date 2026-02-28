@@ -22,8 +22,9 @@ enum class PlayMode {
 }
 
 class MainViewModel(
-    private val songDao: SongDao,
-    private val playlistDao: PlaylistDao
+    private val repository: com.cpu.seamlessloopmobile.data.MusicRepository,
+    private val songDao: com.cpu.seamlessloopmobile.model.SongDao,
+    private val playlistDao: com.cpu.seamlessloopmobile.model.PlaylistDao
 ) : ViewModel() {
 
     // --- 乐库数据喵 ---
@@ -157,11 +158,9 @@ class MainViewModel(
     }
 
     fun updateSongLoopPoints(song: Song, start: Long, end: Long) {
-        val newSong = song.copy(loopStart = start, loopEnd = end)
-        
-        viewModelScope.launch(Dispatchers.IO) {
-            songDao.insertOrUpdateSong(newSong)
-            updateSongInMemory(newSong)
+        viewModelScope.launch {
+            val updatedSong = repository.updateSongLoopPoints(song, start, end)
+            updateSongInMemory(updatedSong)
         }
     }
 
@@ -205,110 +204,26 @@ class MainViewModel(
         val folderPath = playlist.folderPath ?: return
         if (playlist.isFolderLinked == 0) return
         
-        // 如果莱芙已经在这儿忙着了，就不再重复开工喵！
         if (!syncingPlaylists.add(playlist.id)) return
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             try {
-                _syncStatus.postValue("正在搜索文件...")
-                // ... (后面逻辑保持原样，但在结束时清除锁定喵)
-            
-            // 1. 搜集文件
-            val uri = android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            val projection = arrayOf(
-                android.provider.MediaStore.Audio.Media._ID,
-                android.provider.MediaStore.Audio.Media.DISPLAY_NAME,
-                android.provider.MediaStore.Audio.Media.DATA
-            )
-            val selection = "${android.provider.MediaStore.Audio.Media.DATA} LIKE ?"
-            val selectionArgs = arrayOf("$folderPath/%")
-            
-            val cursor = context.contentResolver.query(uri, projection, selection, selectionArgs, null)
-            val audioItems = mutableListOf<Triple<Long, String, String>>()
-            
-            cursor?.use { 
-                val idCol = it.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media._ID)
-                val nameCol = it.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DISPLAY_NAME)
-                val dataCol = it.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DATA)
-                while (it.moveToNext()) {
-                    val filePath = it.getString(dataCol)
-                    if (java.io.File(filePath).parent == folderPath) {
-                        audioItems.add(Triple(it.getLong(idCol), it.getString(nameCol), filePath))
-                    }
+                _syncStatus.value = "正在搜索文件..."
+                
+                repository.syncFolderPlaylist(context, playlist) { progress ->
+                    _syncStatus.postValue(progress)
                 }
-            }
 
-            if (audioItems.isEmpty()) {
+                _syncStatus.postValue("同步完成喵！")
+                loadPlaylists() 
+                
+                val updatedSongs = withContext(Dispatchers.IO) {
+                    playlistDao.getSongsInPlaylist(playlist.id)
+                }
+                _currentPlaylist.postValue(updatedSongs)
+                
+                kotlinx.coroutines.delay(3000)
                 _syncStatus.postValue("")
-                return@launch
-            }
-
-            // 2. 准备 AB 配对
-            val nameMapInFolder = audioItems.associateBy { it.second.substringBeforeLast(".") }
-            val bSuffixes = arrayOf("_B", "_b", "_loop", "_Loop")
-            val aSuffixes = arrayOf("_A", "_a", "_intro", "_Intro")
-            val ignorePaths = mutableSetOf<String>()
-
-            for (item in audioItems) {
-                val nameNormal = item.second.substringBeforeLast(".")
-                for (i in bSuffixes.indices) {
-                    if (nameNormal.endsWith(bSuffixes[i])) {
-                        val baseName = nameNormal.substring(0, nameNormal.length - bSuffixes[i].length)
-                        if (nameMapInFolder.containsKey(baseName + aSuffixes[i])) {
-                            ignorePaths.add(item.third)
-                            break
-                        }
-                    }
-                }
-            }
-
-            val targetItems = audioItems.filter { it.third !in ignorePaths }
-            val total = targetItems.size
-
-            // 3. 先清空，开启实时增量模式喵！
-            playlistDao.clearPlaylist(playlist.id)
-
-            // 4. 开始精准测量 (JNI)
-            val dbSongs = songDao.getAllSongs().associateBy { "${it.fileName}|${it.totalSamples}" }
-            
-            targetItems.forEachIndexed { index, item ->
-                // 汇报进度给大人看喵！
-                _syncStatus.postValue("正在同步: ${index + 1}/$total")
-                
-                // 利用 ContentUri 获取 FD！
-                val accurateSamples = com.cpu.seamlessloopmobile.scanner.AudioScanner.getAccurateSampleCount(context, item.first)
-                
-                val dbSong = dbSongs["${item.second}|$accurateSamples"]
-                val song = Song(
-                    mediaId = item.first, // 必须要这个 ID，不然回放的时候找不到文件喵！
-                    fileName = item.second,
-                    filePath = item.third,
-                    totalSamples = accurateSamples,
-                    displayName = dbSong?.displayName ?: item.second.substringBeforeLast("."),
-                    loopStart = dbSong?.loopStart ?: 0L,
-                    loopEnd = dbSong?.loopEnd ?: accurateSamples,
-                    duration = (accurateSamples * 1000 / 44100),
-                    id = 0
-                )
-                
-                // 实时写入并关联喵！
-                val songId = songDao.insertOrUpdateSong(song)
-                playlistDao.addSongsToPlaylist(playlist.id, listOf(songId))
-                
-                // 每同步 3 首就让首页数字跳一下，不刷太快喵
-                if (index % 3 == 0 || index == total - 1) {
-                    loadPlaylists() 
-                }
-            }
-
-            _syncStatus.postValue("同步完成喵！")
-            
-            val updatedSongs = playlistDao.getSongsInPlaylist(playlist.id)
-            _currentPlaylist.postValue(updatedSongs)
-            
-            // 3秒后清除文字
-            kotlinx.coroutines.delay(3000)
-            _syncStatus.postValue("")
             } catch (e: Exception) {
                 e.printStackTrace()
                 _syncStatus.postValue("出错了喵：${e.message}")
@@ -317,6 +232,7 @@ class MainViewModel(
             }
         }
     }
+
 
     /**
      * 刷新所有歌单列表喵
@@ -333,52 +249,25 @@ class MainViewModel(
      * 它只管提取 MediaStore 基础信息，不做繁重的 JNI 探测，保证列表秒开喵！
      */
     fun scanLibrary(context: android.content.Context) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val scannedSongs = com.cpu.seamlessloopmobile.scanner.AudioScanner.scan(context)
-            _rawScannedSongs.postValue(scannedSongs)
-            
-            // 简单的按文件夹分组，不进行深度探测
-            val folderToSongsMap = scannedSongs.groupBy { java.io.File(it.filePath).parent ?: "Unknown" }
-            val dbSongs = songDao.getAllSongs().associateBy { it.fileName } 
-            
-            val updatedSongs = scannedSongs.map { song ->
-                val dbSong = dbSongs[song.fileName]
-                dbSong?.let { 
-                    song.copy(id = it.id, loopStart = it.loopStart, loopEnd = it.loopEnd, 
-                              totalSamples = it.totalSamples, displayName = it.displayName ?: song.displayName)
-                } ?: song
-            }
-
+        viewModelScope.launch {
+            val updatedSongs = repository.getInitialScannedSongs(context)
             _allSongs.postValue(updatedSongs)
+            _rawScannedSongs.postValue(updatedSongs) // 基础扫描结果喵
             
-            val folderList = folderToSongsMap.map { (path, songs) ->
-                val name = try { java.io.File(path).name } catch (e: Exception) { path }
-                com.cpu.seamlessloopmobile.model.Folder(name, path, songs.size, songs)
-            }.sortedBy { it.name }
-            
+            val folderList = withContext(Dispatchers.Default) {
+                updatedSongs.groupBy { java.io.File(it.filePath).parent ?: "Unknown" }
+                    .map { (path, songs) ->
+                        val name = try { java.io.File(path).name } catch (e: Exception) { path }
+                        com.cpu.seamlessloopmobile.model.Folder(name, path, songs.size, songs)
+                    }.sortedBy { it.name }
+            }
             _folders.postValue(folderList)
         }
     }
 
     fun findAbPair(song: Song): Pair<Song, Song>? {
         val songList = _rawScannedSongs.value ?: return null
-        val fileName = song.fileName.substringBeforeLast(".")
-        val aSuffixes = arrayOf("_A", "_a", "_intro", "_Intro")
-        val bSuffixes = arrayOf("_B", "_b", "_loop", "_Loop")
-
-        for (i in aSuffixes.indices) {
-            if (fileName.endsWith(aSuffixes[i])) {
-                val baseName = fileName.substring(0, fileName.length - aSuffixes[i].length)
-                val targetBName = baseName + bSuffixes[i]
-                
-                val partB = songList.find { 
-                    it.fileName.substringBeforeLast(".") == targetBName &&
-                    java.io.File(it.filePath).parent == java.io.File(song.filePath).parent
-                }
-                if (partB != null) return Pair(song, partB)
-            }
-        }
-        return null
+        return repository.findAbPair(song, songList)
     }
 
     // --- 播放顺序控制喵 ---
