@@ -231,4 +231,78 @@ class MusicRepository(
         songDao.insertOrUpdateSong(newSong)
         newSong
     }
+
+    /**
+     * 自动从数据库或系统的 MediaStore 补全缺失的 AB 对配对关系喵！
+     * 即使用户把歌扔进了文件夹还没有建歌单，也能瞬间找出它的灵魂伴侣喵！
+     */
+    suspend fun findAbPairRobust(context: Context, song: Song): Pair<Song, Song>? = withContext(Dispatchers.IO) {
+        val fileName = song.fileName.substringBeforeLast(".")
+        val aSuffixes = arrayOf("_A", "_a", "_intro", "_Intro")
+        val bSuffixes = arrayOf("_B", "_b", "_loop", "_Loop")
+
+        var bNameWithoutExt: String? = null
+        for (i in aSuffixes.indices) {
+            if (fileName.endsWith(aSuffixes[i])) {
+                val baseName = fileName.substring(0, fileName.length - aSuffixes[i].length)
+                bNameWithoutExt = baseName + bSuffixes[i]
+                break
+            }
+        }
+        
+        if (bNameWithoutExt == null) return@withContext null
+
+        val parentDir = File(song.filePath).parent ?: return@withContext null
+
+        // 1. 先尝试在数据库里找喵！
+        val dbSongs = songDao.getAllSongs()
+        val pB = dbSongs.find { 
+            it.fileName.substringBeforeLast(".") == bNameWithoutExt &&
+            File(it.filePath).parent == parentDir
+        }
+        if (pB != null) return@withContext Pair(song, pB)
+
+        // 2. 数据库没有，去 MediaStore 搜 (解决还没来得及加歌单就直接点听的情况喵)
+        var partB: Song? = null
+        try {
+            val uri = android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            val projection = arrayOf(
+                android.provider.MediaStore.Audio.Media._ID,
+                android.provider.MediaStore.Audio.Media.DISPLAY_NAME,
+                android.provider.MediaStore.Audio.Media.DATA
+            )
+            // 使用 LIKE 查询同一文件夹下的文件喵
+            val selection = "${android.provider.MediaStore.Audio.Media.DATA} LIKE ?"
+            val selectionArgs = arrayOf("$parentDir/%")
+            
+            context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media._ID)
+                val nameCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DISPLAY_NAME)
+                val dataCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DATA)
+                
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(nameCol)
+                    val path = cursor.getString(dataCol)
+                    if (name.substringBeforeLast(".") == bNameWithoutExt && File(path).parent == parentDir) {
+                        partB = Song(
+                            mediaId = cursor.getLong(idCol),
+                            fileName = name,
+                            filePath = path,
+                            totalSamples = 0,
+                            displayName = name.substringBeforeLast("."),
+                            loopStart = 0,
+                            loopEnd = 0,
+                            duration = 0,
+                            id = 0
+                        )
+                        break
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        
+        if (partB != null) Pair(song, partB!!) else null
+    }
 }

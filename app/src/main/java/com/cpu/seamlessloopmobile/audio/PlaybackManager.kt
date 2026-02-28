@@ -26,11 +26,13 @@ class PlaybackManager(
     var onPlaybackStatusChanged: ((isPlaying: Boolean, currentSong: Song?) -> Unit)? = null
     var onPlaybackError: ((String) -> Unit)? = null
 
-    fun updateMediaSessionState(song: Song, isPlaying: Boolean) {
+    fun updateMediaSessionState(song: Song, isPlaying: Boolean, isAbMode: Boolean = false) {
         val metadata = android.support.v4.media.MediaMetadataCompat.Builder()
             .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_TITLE, song.displayName ?: song.fileName)
             .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ARTIST, song.artist ?: "Unknown Artist")
             .putLong(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_DURATION, song.duration)
+            // 存入自定义标记，方便 UI 识别喵
+            .putString("is_ab_mode", if (isAbMode) "true" else "false")
             .build()
         mediaSession.setMetadata(metadata)
 
@@ -46,9 +48,14 @@ class PlaybackManager(
             .setState(
                 if (isPlaying) android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING 
                 else android.support.v4.media.session.PlaybackStateCompat.STATE_PAUSED,
-                NativeAudio.getCurrentPosition(), // 实时同步进度喵！
+                NativeAudio.getCurrentPosition(), 
                 1.0f
             )
+            // 通过 Bundle 传递更多秘密情报喵！
+            .setExtras(android.os.Bundle().apply {
+                putBoolean("is_ab_mode", isAbMode)
+            })
+            
         mediaSession.setPlaybackState(stateBuilder.build())
         
         onPlaybackStatusChanged?.invoke(isPlaying, song)
@@ -81,8 +88,7 @@ class PlaybackManager(
             } else song
 
             val abPair = withContext(Dispatchers.IO) {
-                val allSongs = repository.getAllSongs() 
-                repository.findAbPair(resolvedSong, allSongs)
+                repository.findAbPairRobust(context, resolvedSong)
             }
             if (abPair != null) {
                 // AB 模式下，也得帮 B 段歌曲确认一下身份令牌喵！
@@ -151,7 +157,7 @@ class PlaybackManager(
             NativeAudio.stopAudioEngine()
             
             try {
-                android.util.Log.d("PlaybackManager", "====== 准备启动 AB 循环喵！======")
+                android.util.Log.d("PlaybackManager", "====== 🚀 准备启动 AB 无缝合体模式喵！======")
                 android.util.Log.d("PlaybackManager", "🍒 A 段 (前奏): ${introSong.fileName} (ID=${introSong.mediaId})")
                 android.util.Log.d("PlaybackManager", "🍓 B 段 (循环): ${loopSong.fileName} (ID=${loopSong.mediaId})")
 
@@ -164,19 +170,16 @@ class PlaybackManager(
                         val lenB = if (afdB.declaredLength < 0) afdB.length else afdB.declaredLength
                         
                         android.util.Log.d("PlaybackManager", "⚖️ 测量完毕！A段长度: $lenA 字节, B段长度: $lenB 字节")
-                        android.util.Log.d("PlaybackManager", "🚀 (莱芙捂住耳朵) 准备点火送入 C++ 引擎喵...")
-
+                        
                         NativeAudio.startAbAudioEngine(
                             afdA.parcelFileDescriptor.fd, afdA.startOffset, lenA,
                             afdB.parcelFileDescriptor.fd, afdB.startOffset, lenB
                         )
-                        android.util.Log.d("PlaybackManager", "✅ C++ AB 引擎安全启动喵！")
+                        android.util.Log.d("PlaybackManager", "✅ C++ AB 引擎指令已送达喵！")
                     }
                 }
 
-                if (introSong.loopEnd > introSong.totalSamples) {
-                    NativeAudio.setLoopPoints(introSong.loopStart, introSong.loopEnd)
-                }
+                // 在 AB 模式下，底层会自动把 B 段作为循环主体喵
                 NativeAudio.setLooping(isSingleLoop)
 
                 if (startPosition > 0) {
@@ -187,16 +190,19 @@ class PlaybackManager(
                     NativeAudio.pauseAudioEngine()
                 }
 
-                val durationFrames = NativeAudio.getDuration()
-                var finalIntroSong = introSong
-                if (durationFrames > 0) {
-                    finalIntroSong = introSong.copy(duration = durationFrames * 1000 / 44100)
-                }
+                val totalFrames = NativeAudio.getDuration()
+                val totalDuration = totalFrames * 1000 / 44100
+                
+                android.util.Log.d("PlaybackManager", "📊 合体系统就绪！总帧数: $totalFrames, 总时长: $totalDuration ms")
+
+                val abTitle = (introSong.displayName ?: introSong.fileName.substringBeforeLast(".")) + " [AB Loop]"
+                val abSong = introSong.copy(displayName = abTitle, duration = totalDuration)
                 
                 withContext(Dispatchers.Main) {
-                    updateMediaSessionState(finalIntroSong, !startPaused)
+                    updateMediaSessionState(abSong, !startPaused, isAbMode = true)
                 }
             } catch (e: Exception) {
+                android.util.Log.e("PlaybackManager", "AB 启动失败喵: ${e.message}")
                 withContext(Dispatchers.Main) {
                     onPlaybackError?.invoke("AB 播放失败: ${e.message}")
                 }

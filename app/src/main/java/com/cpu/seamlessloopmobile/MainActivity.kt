@@ -259,6 +259,10 @@ class MainActivity : AppCompatActivity() {
             state?.let {
                 val isPlaying = it.state == android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING
                 viewModel.setPlaying(isPlaying)
+                
+                val isAbMode = it.extras?.getBoolean("is_ab_mode", false) ?: false
+                viewModel.setAbModePlaying(isAbMode)
+                
                 if (isPlaying) {
                     startProgressUpdater()
                     binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
@@ -271,8 +275,17 @@ class MainActivity : AppCompatActivity() {
         override fun onMetadataChanged(metadata: android.support.v4.media.MediaMetadataCompat?) {
             metadata?.let {
                 val title = it.getString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_TITLE)
+                val isAbMode = it.getString("is_ab_mode") == "true"
+                
                 binding.tvPlayingSongName.text = title ?: "未知歌曲"
-                // 以后还可以更新封面图喵
+                viewModel.setAbModePlaying(isAbMode)
+                
+                // 强制刷新一次总时长喵
+                val totalFrames = NativeAudio.getDuration()
+                val sampleRate = NativeAudio.getSampleRate().toLong()
+                if (totalFrames > 0) {
+                    binding.tvTotalTime.text = TimeUtils.formatTime(totalFrames, sampleRate)
+                }
             }
         }
     }
@@ -466,6 +479,10 @@ class MainActivity : AppCompatActivity() {
                     val sampleRate = NativeAudio.getSampleRate().toLong()
                     
                     if (totalFrames > 0) {
+                        if (isAbModePlaying && currentFrame % 100 == 0L) { // 每隔一会儿打印一下合体进度喵
+                            android.util.Log.d("MainActivity", "AB进度观察: $currentFrame / $totalFrames")
+                        }
+                        
                         // 防止 SeekBar 溢出（Int.MAX_VALUE 限制）
                         val maxValue = totalFrames.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                         val progressValue = currentFrame.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
