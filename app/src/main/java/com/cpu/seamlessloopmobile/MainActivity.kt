@@ -262,10 +262,13 @@ class MainActivity : AppCompatActivity() {
                         // 把它装好，并同步进听单喵，这样进度条和切歌逻辑才能跑起来喵！
                         binding.tvPlayingSongName.text = song.displayName ?: song.fileName
                         
+                        // 先指挥脑部进入暂停状态，防止观察者乱动喵
+                        viewModel.setPlaying(false)
+                        
                         // 先建立一个只包含这首歌的临时听单，防止切歌时崩溃喵
                         viewModel.updateCurrentPlaylist(listOf(song), 0)
                         
-                        // 直接恢复到那个进度，并默认处于暂停状态喵！
+                        // 直接恢复到那个进度，并下达“初始暂停”的死命令喵！
                         playbackManager.playSong(song, lastPos, startPaused = true)
                     }
                 }

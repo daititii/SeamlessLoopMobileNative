@@ -54,10 +54,10 @@ class PlaybackManager(
         // --- 莱芙的“自动合体”魔法 (仿电脑端) ---
         val abPair = viewModel.findAbPair(song)
         if (abPair != null) {
-            playAbSong(abPair.first, abPair.second)
+            playAbSong(abPair.first, abPair.second, startPosition, startPaused)
             return
         }
-
+        // ... (单曲逻辑保持不变喵)
         uiCallback.onPrePlayback("正在为您疯狂解码: ${song.displayName}...")
 
         coroutineScope.launch(Dispatchers.IO) {
@@ -100,12 +100,8 @@ class PlaybackManager(
                     viewModel.setAbModePlaying(false)
                     viewModel.setPlaying(!startPaused)
                     uiCallback.onPlaybackStarted(finalSong, false)
-                    // 只有真正在放才更新通知栏喵
                     if (!startPaused) {
                         playbackService?.updateNotification(finalSong, true)
-                    } else {
-                        // 初始恢复时刷新进度条显示，防止进度显示为 0
-                        // 这一步由 MainActivity 的观察者随后根据 startPosition 自动处理
                     }
                 }
             } catch (e: Exception) {
@@ -116,7 +112,7 @@ class PlaybackManager(
         }
     }
 
-    private fun playAbSong(introSong: Song, loopSong: Song) {
+    private fun playAbSong(introSong: Song, loopSong: Song, startPosition: Long = 0, startPaused: Boolean = false) {
         uiCallback.onPrePlayback("正在为您合成 AB 循环: ${introSong.displayName} + ${loopSong.displayName}")
 
         coroutineScope.launch(Dispatchers.IO) {
@@ -138,20 +134,22 @@ class PlaybackManager(
                     }
                 }
 
-                // AB 模式下，底层 loadAbAudioSource 已经默认设置了 [lenA, lenA + lenB] 的完美循环喵！
-                // 除非大人手动在弹窗里设置过特殊的跨越点，否则我们不应该用单文件的 loopEnd 去覆盖它喵。
-                // 如果大人之前保存过 AB 循环点（通常 loopEnd 会超过 A 段长度），我们才应用。
                 if (introSong.loopEnd > introSong.totalSamples) {
                     NativeAudio.setLoopPoints(introSong.loopStart, introSong.loopEnd)
                 }
                 NativeAudio.setLooping(viewModel.playMode.value == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP)
 
+                if (startPosition > 0) {
+                    NativeAudio.seekTo(startPosition)
+                }
+
+                if (startPaused) {
+                    NativeAudio.pauseAudioEngine()
+                }
+
                 val durationFrames = NativeAudio.getDuration()
                 var finalIntroSong = introSong
                 if (durationFrames > 0) {
-                    // AB 模式下，底层返回的是 A+B 的总长度！
-                    // 我们绝对不能把它写进 A 的 totalSamples 里存进数据库，那会破坏 A 自己的指纹并触发冲突喵！
-                    // 只要更新一下毫秒 duration 喂给进度条就可以了喵！
                     finalIntroSong = introSong.copy(duration = durationFrames * 1000 / 44100)
                     viewModel.updateSongInMemory(finalIntroSong)
                 }
@@ -159,9 +157,11 @@ class PlaybackManager(
                 withContext(Dispatchers.Main) {
                     viewModel.setCurrentAbIntroSong(finalIntroSong)
                     viewModel.setAbModePlaying(true)
-                    viewModel.setPlaying(true)
+                    viewModel.setPlaying(!startPaused)
                     uiCallback.onPlaybackStarted(finalIntroSong, true)
-                    playbackService?.updateNotification(finalIntroSong, true)
+                    if (!startPaused) {
+                        playbackService?.updateNotification(finalIntroSong, true)
+                    }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
