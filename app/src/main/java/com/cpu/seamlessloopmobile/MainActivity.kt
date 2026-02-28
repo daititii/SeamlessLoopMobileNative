@@ -286,8 +286,10 @@ class MainActivity : AppCompatActivity() {
 
         if (lastPath != null) {
             lifecycleScope.launch {
-                val song = repository.getSongByPath(lastPath)
-                if (song != null) {
+                val baseSong = repository.getSongByPath(lastPath)
+                if (baseSong != null) {
+                    // 同步令牌身份喵！
+                    val song = repository.resolveMediaId(this@MainActivity, baseSong)
                     withContext(Dispatchers.Main) {
                         // 把它装好，并同步进听单喵，这样进度条和切歌逻辑才能跑起来喵！
                         binding.tvPlayingSongName.text = song.displayName ?: song.fileName

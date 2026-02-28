@@ -43,6 +43,29 @@ class MusicRepository(
         playlistDao.getSongCountInPlaylist(playlistId)
     }
 
+    /**
+     * 应急修复：如果大人的歌曲 mediaId 丢了（比如 PC 导入或移动了位置），
+     * 莱芙会尝试通过路径去系统库里重新帮它找回身份令牌喵！
+     */
+    suspend fun resolveMediaId(context: Context, song: Song): Song = withContext(Dispatchers.IO) {
+        if (song.mediaId > 0) return@withContext song
+
+        val uri = android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(android.provider.MediaStore.Audio.Media._ID)
+        val selection = "${android.provider.MediaStore.Audio.Media.DATA} = ?"
+        val selectionArgs = arrayOf(song.filePath)
+
+        context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val newMediaId = cursor.getLong(cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media._ID))
+                val updatedSong = song.copy(mediaId = newMediaId)
+                songDao.insertOrUpdateSong(updatedSong)
+                return@withContext updatedSong
+            }
+        }
+        song
+    }
+
     suspend fun updateSong(song: Song) = withContext(Dispatchers.IO) {
         songDao.updateSong(song)
     }
@@ -77,13 +100,18 @@ class MusicRepository(
         scannedSongs.map { song ->
             val dbSong = dbSongs[song.fileName]
             dbSong?.let { 
-                song.copy(
+                val updatedSong = song.copy(
                     id = it.id, 
                     loopStart = it.loopStart, 
                     loopEnd = it.loopEnd, 
                     totalSamples = it.totalSamples, 
                     displayName = it.displayName ?: song.displayName
                 )
+                // 关键点：如果 mediaId 变了，同步回数据库喵！
+                if (it.mediaId != song.mediaId) {
+                    songDao.insertOrUpdateSong(updatedSong)
+                }
+                updatedSong
             } ?: song
         }
     }

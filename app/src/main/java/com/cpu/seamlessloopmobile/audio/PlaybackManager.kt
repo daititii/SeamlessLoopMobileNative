@@ -75,16 +75,26 @@ class PlaybackManager(
         // 或者我们可以让 Repository 负责寻找 AB 配对喵
         
         coroutineScope.launch {
+            // 安全第一喵！如果这是一首刚从 PC 导入、身份未知的歌，莱芙现场申请一个 ID 令牌！
+            val resolvedSong = if (song.mediaId <= 0) {
+                repository.resolveMediaId(context, song)
+            } else song
+
             val abPair = withContext(Dispatchers.IO) {
-                val allSongs = repository.getAllSongs() // 简单扫一下全库喵
-                repository.findAbPair(song, allSongs)
+                val allSongs = repository.getAllSongs() 
+                repository.findAbPair(resolvedSong, allSongs)
             }
             if (abPair != null) {
-                playAbSong(abPair.first, abPair.second, startPosition, startPaused, isSingleLoop)
+                // AB 模式下，也得帮 B 段歌曲确认一下身份令牌喵！
+                val resolvedB = if (abPair.second.mediaId <= 0) {
+                    repository.resolveMediaId(context, abPair.second)
+                } else abPair.second
+                
+                playAbSong(resolvedSong, resolvedB, startPosition, startPaused, isSingleLoop)
                 return@launch
             }
 
-            actuallyPlaySong(song, startPosition, startPaused, isSingleLoop)
+            actuallyPlaySong(resolvedSong, startPosition, startPaused, isSingleLoop)
         }
     }
 
