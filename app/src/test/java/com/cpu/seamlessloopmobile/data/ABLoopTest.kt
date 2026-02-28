@@ -50,4 +50,52 @@ class ABLoopTest {
         val pair = repository.findAbPair(introSong, allScannedSongs)
         assertNull("它们不在一个文件夹，不该组队喵！莱芙判案错误！", pair)
     }
+
+    @Test
+    fun testFindAbPairRobust_FallbackToMediaStore() = kotlinx.coroutines.runBlocking {
+        // 创建一个不存在数据库的 A 段歌曲
+        val folderPath = "/sdcard/music/game"
+        val introSong = Song(id = 1, fileName = "BGM_02_Intro.mp3", filePath = "$folderPath/BGM_02_Intro.mp3", totalSamples = 1000)
+
+        // 1. 设置伪造的数据库：返回空白，模拟用户还没把歌曲扫进播放列表的情况喵！
+        org.mockito.Mockito.`when`(fakeSongDao.getAllSongs()).thenReturn(emptyList())
+
+        // 2. 伪造安卓系统环境喵！
+        val mockContext = org.mockito.Mockito.mock(android.content.Context::class.java)
+        val mockResolver = org.mockito.Mockito.mock(android.content.ContentResolver::class.java)
+        val mockCursor = org.mockito.Mockito.mock(android.database.Cursor::class.java)
+
+        org.mockito.Mockito.`when`(mockContext.contentResolver).thenReturn(mockResolver)
+
+        // 当 MusicRepository 试图去 MediaStore 寻求帮助时，把我们伪造的 Cursor 递给它！
+        org.mockito.Mockito.`when`(mockResolver.query(
+            org.mockito.ArgumentMatchers.eq(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.isNull()
+        )).thenReturn(mockCursor)
+
+        // 模拟 Cursor 里的数据：先返回 true (有一条数据)，然后再返回 false (没数据了)
+        org.mockito.Mockito.`when`(mockCursor.moveToNext()).thenReturn(true, false)
+        
+        // 伪装列索引
+        org.mockito.Mockito.`when`(mockCursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media._ID)).thenReturn(0)
+        org.mockito.Mockito.`when`(mockCursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DISPLAY_NAME)).thenReturn(1)
+        org.mockito.Mockito.`when`(mockCursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DATA)).thenReturn(2)
+
+        // 伪装具体数据：这就是它要找的 B 段伴侣喵！
+        org.mockito.Mockito.`when`(mockCursor.getLong(0)).thenReturn(999L)
+        org.mockito.Mockito.`when`(mockCursor.getString(1)).thenReturn("BGM_02_Loop.mp3")
+        org.mockito.Mockito.`when`(mockCursor.getString(2)).thenReturn("$folderPath/BGM_02_Loop.mp3")
+
+        // 3. 执行终极查找考验！
+        val pair = repository.findAbPairRobust(mockContext, introSong)
+
+        // 4. 断言出奇迹！
+        assertNotNull("即使数据库装傻，莱芙也应该凭借系统搜索揪出伴侣喵！", pair)
+        assertEquals("找到的主体竟然不是原来的 A 段喵！", "BGM_02_Intro.mp3", pair?.first?.fileName)
+        assertEquals("找到的伴侣不是对的 B 段喵！", "BGM_02_Loop.mp3", pair?.second?.fileName)
+        assertEquals("分配的 MediaId 不对喵！", 999L, pair?.second?.mediaId)
+    }
 }
