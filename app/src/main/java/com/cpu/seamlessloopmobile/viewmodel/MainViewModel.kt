@@ -94,7 +94,7 @@ class MainViewModel(
         _isPlaying.value = !(_isPlaying.value ?: false)
     }
 
-    fun playNext(playbackManager: com.cpu.seamlessloopmobile.audio.PlaybackManager) {
+    fun playNext(playbackManager: com.cpu.seamlessloopmobile.audio.Playback) {
         val nextIndex = getNextIndex()
         if (nextIndex != -1) {
             val songs = _currentPlaylist.value ?: return
@@ -102,7 +102,7 @@ class MainViewModel(
         }
     }
 
-    fun playPrevious(playbackManager: com.cpu.seamlessloopmobile.audio.PlaybackManager) {
+    fun playPrevious(playbackManager: com.cpu.seamlessloopmobile.audio.Playback) {
         val prevIndex = getPrevIndex()
         if (prevIndex != -1) {
             val songs = _currentPlaylist.value ?: return

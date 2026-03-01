@@ -21,33 +21,63 @@ class PlaybackManager(
     private val coroutineScope: CoroutineScope,
     private val repository: MusicRepository,
     private val mediaSession: MediaSessionCompat
-) {
+) : Playback {
     // 专门给 Service 回调的钩子，用于通知 UI 更新
-    var onPlaybackStatusChanged: ((isPlaying: Boolean, currentSong: Song?) -> Unit)? = null
-    var onPlaybackError: ((String) -> Unit)? = null
+    override var onPlaybackStatusChanged: ((isPlaying: Boolean, currentSong: Song?) -> Unit)? = null
+    override var onPlaybackError: ((String) -> Unit)? = null
 
-    private var currentSong: Song? = null
+    override var currentSong: Song? = null
+        private set
+
     private var isAbMode = false
 
-    fun pause() {
+    override val isPlaying: Boolean
+        get() = mediaSession.controller.playbackState?.state == android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING
+
+    override val position: Long
+        get() = NativeAudio.getCurrentPosition()
+
+    override val duration: Long
+        get() = NativeAudio.getDuration()
+
+    override val sampleRate: Int
+        get() = NativeAudio.getSampleRate()
+
+    override fun pause() {
         NativeAudio.pauseAudioEngine()
         currentSong?.let {
             updateMediaSessionState(it, false, isAbMode)
         }
     }
 
-    fun resume() {
+    override fun resume() {
         NativeAudio.resumeAudioEngine()
         currentSong?.let {
             updateMediaSessionState(it, true, isAbMode)
         }
     }
 
-    fun stop() {
+    override fun stop() {
         NativeAudio.stopAudioEngine()
         currentSong = null
         isAbMode = false
         // 不在这里更新 Session，通常由 Service 处理销毁
+    }
+
+    override fun release() {
+        stop()
+        // 这里目前没什么特别好放的，以后如果有 ExoPlayer 就在这里销毁引擎喵
+    }
+
+    override fun seekTo(position: Long) {
+        NativeAudio.seekTo(position)
+        currentSong?.let {
+            updateMediaSessionState(it, isPlaying, isAbMode)
+        }
+    }
+
+    override fun setLooping(looping: Boolean) {
+        NativeAudio.setLooping(looping)
     }
 
     fun updateMediaSessionState(song: Song, isPlaying: Boolean, isAbMode: Boolean = false) {
@@ -89,7 +119,7 @@ class PlaybackManager(
         onPlaybackStatusChanged?.invoke(isPlaying, song)
     }
 
-    fun playFromMediaId(mediaId: Long, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) {
+    override fun playFromMediaId(mediaId: Long, startPosition: Long, startPaused: Boolean, isSingleLoop: Boolean) {
         coroutineScope.launch {
             val song = withContext(Dispatchers.IO) {
                  // 这里我们需要让 repository 支持通过 mediaId 找 Song 喵
@@ -104,7 +134,7 @@ class PlaybackManager(
         }
     }
 
-    fun playSong(song: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) {
+    override fun playSong(song: Song, startPosition: Long, startPaused: Boolean, isSingleLoop: Boolean) {
         // 先检查是否需要 AB 模式 (逻辑从 Activity 搬到了这里喵)
         // 注意：AB 模式的发现由于不再依赖 ViewModel，需要调用者提供同级歌曲列表
         // 或者我们可以让 Repository 负责寻找 AB 配对喵

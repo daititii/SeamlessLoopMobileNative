@@ -56,13 +56,13 @@ class MediaControlManager(
                     playbackService.playbackManager?.playFromMediaId(idLong)
                 }
                 override fun onSeekTo(pos: Long) {
-                    com.cpu.seamlessloopmobile.jni.NativeAudio.seekTo(pos)
+                    playbackService.playbackManager?.seekTo(pos)
                 }
                 override fun onCustomAction(action: String?, extras: android.os.Bundle?) {
                     if (action == "SET_PLAY_MODE") {
                         val modeOrdinal = extras?.getInt("play_mode") ?: return
                         val isSingleLoop = modeOrdinal == 1 // com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
-                        com.cpu.seamlessloopmobile.jni.NativeAudio.setLooping(isSingleLoop)
+                        playbackService.playbackManager?.setLooping(isSingleLoop)
                     }
                 }
             })

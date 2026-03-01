@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private var isSelectionControllerInitialized = false
     private lateinit var selectionController: com.cpu.seamlessloopmobile.ui.SelectionController
     private lateinit var mediaBrowser: MediaBrowserCompat
+    private var playbackService: com.cpu.seamlessloopmobile.audio.PlaybackService? = null
     
     // 专门抓捕耳机被拔掉瞬间的小广播喵！
     private val becomingNoisyReceiver = object : android.content.BroadcastReceiver() {
@@ -64,7 +65,7 @@ class MainActivity : AppCompatActivity() {
             // 增加一点安全防御，等一切准备好（binding 就绪）再响应喵
             if (intent?.action == android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY && ::binding.isInitialized) {
                 // 嘘！系统说现在声音可能外泄，我们要立刻暂停喵！
-                NativeAudio.pauseAudioEngine()
+                playbackService?.playbackManager?.pause()
                 viewModel.setPlaying(false)
                 binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
             }
@@ -227,10 +228,14 @@ class MainActivity : AppCompatActivity() {
         val serviceIntent = Intent(this, com.cpu.seamlessloopmobile.audio.PlaybackService::class.java)
         bindService(serviceIntent, object : android.content.ServiceConnection {
             override fun onServiceConnected(name: android.content.ComponentName?, service: android.os.IBinder?) {
+                val binder = service as com.cpu.seamlessloopmobile.audio.PlaybackService.PlaybackBinder
+                playbackService = binder.getService()
                 // 现在主要通过 MediaBrowser 通信，Binder 仅作极少数兼容喵
                 restoreLastPlayedSong()
             }
-            override fun onServiceDisconnected(name: android.content.ComponentName?) {}
+            override fun onServiceDisconnected(name: android.content.ComponentName?) {
+                playbackService = null
+            }
         }, BIND_AUTO_CREATE)
     }
 
@@ -281,8 +286,8 @@ class MainActivity : AppCompatActivity() {
                 viewModel.setAbModePlaying(isAbMode)
                 
                 // 强制刷新一次总时长喵
-                val totalFrames = NativeAudio.getDuration()
-                val sampleRate = NativeAudio.getSampleRate().toLong()
+                val totalFrames = playbackService?.playbackManager?.duration ?: 0L
+                val sampleRate = playbackService?.playbackManager?.sampleRate?.toLong() ?: 44100L
                 if (totalFrames > 0) {
                     binding.tvTotalTime.text = TimeUtils.formatTime(totalFrames, sampleRate)
                 }
@@ -352,7 +357,7 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().apply {
                 putString("last_song_path", song.filePath)
                 try {
-                    putLong("last_position", NativeAudio.getCurrentPosition())
+                    putLong("last_position", playbackService?.playbackManager?.position ?: 0L)
                 } catch (e: Exception) {
                     putLong("last_position", 0L)
                 }
@@ -369,14 +374,15 @@ class MainActivity : AppCompatActivity() {
             // 预防万一，如果没注册成功也不要崩掉喵
         }
         updateProgressJob?.cancel()
-        NativeAudio.stopAudioEngine()
+        // 既然已经有后台 Service 了，Activity 销毁时不该直接停掉引擎喵！
+        // 由 Service 自行根据播放状态决定生死喵。
     }
 
     private fun setupSeekBar() {
         binding.seekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
-                    val sampleRate = NativeAudio.getSampleRate().toLong()
+                    val sampleRate = playbackService?.playbackManager?.sampleRate?.toLong() ?: 44100L
                     binding.tvCurrentTime.text = TimeUtils.formatTime(progress.toLong(), sampleRate)
                 }
             }
@@ -474,9 +480,9 @@ class MainActivity : AppCompatActivity() {
             
             while (true) {
                 if (!isUserSeeking) {
-                    val currentFrame = NativeAudio.getCurrentPosition()
-                    val totalFrames = NativeAudio.getDuration()
-                    val sampleRate = NativeAudio.getSampleRate().toLong()
+                    val currentFrame = playbackService?.playbackManager?.position ?: 0L
+                    val totalFrames = playbackService?.playbackManager?.duration ?: 0L
+                    val sampleRate = playbackService?.playbackManager?.sampleRate?.toLong() ?: 44100L
                     
                     if (totalFrames > 0) {
                         if (isAbModePlaying && currentFrame % 100 == 0L) { // 每隔一会儿打印一下合体进度喵
@@ -495,7 +501,7 @@ class MainActivity : AppCompatActivity() {
 
                         if (isPlaying) {
                             // 同步底层的断线休眠状态（比如拔耳机强行中止了播放）
-                            if (!NativeAudio.isPlaying()) {
+                            if (playbackService?.playbackManager?.isPlaying == false) {
                                 viewModel.setPlaying(false)
                                 binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
                                 continue
@@ -527,7 +533,7 @@ class MainActivity : AppCompatActivity() {
                                 } else if (nextIndex != -1) {
                                     playSong(currentPlaylist[nextIndex])
                                 } else {
-                                    NativeAudio.stopAudioEngine()
+                                    playbackService?.playbackManager?.stop()
                                     viewModel.setPlaying(false)
                                     binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
                                 }

@@ -22,7 +22,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private val binder = PlaybackBinder()
     private val serviceScope = MainScope()
     private lateinit var repository: MusicRepository
-    var playbackManager: PlaybackManager? = null
+    var playbackManager: Playback? = null
     var mediaControlManager: MediaControlManager? = null
 
     inner class PlaybackBinder : android.os.Binder() {
