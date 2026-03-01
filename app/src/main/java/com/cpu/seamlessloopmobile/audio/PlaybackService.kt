@@ -124,7 +124,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
 
     fun updateNotification(song: Song, isPlaying: Boolean) {
         mediaControlManager?.updatePlaybackState(song, isPlaying)
-        val notification = mediaControlManager?.createNotification(song, isPlaying)
+        val notification = mediaControlManager?.notify?.createNotification(song, isPlaying)
         if (notification != null) {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
