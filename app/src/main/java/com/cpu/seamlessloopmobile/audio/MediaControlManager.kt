@@ -59,8 +59,8 @@ class MediaControlManager(
                     playbackService.playbackManager?.seekTo(pos)
                 }
                 override fun onCustomAction(action: String?, extras: android.os.Bundle?) {
-                    if (action == "SET_PLAY_MODE") {
-                        val modeOrdinal = extras?.getInt("play_mode") ?: return
+                    if (action == PlaybackCommand.ACTION_SET_PLAY_MODE) {
+                        val modeOrdinal = extras?.getInt(PlaybackCommand.EXTRA_PLAY_MODE) ?: return
                         val isSingleLoop = modeOrdinal == 1 // com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
                         playbackService.playbackManager?.setLooping(isSingleLoop)
                     }

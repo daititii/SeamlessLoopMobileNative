@@ -29,31 +29,34 @@ class PlaybackService : MediaBrowserServiceCompat() {
         fun getService(): PlaybackService = this@PlaybackService
     }
 
-    private lateinit var audioManager: android.media.AudioManager
+    private lateinit var audioFocusManager: AudioFocusManager
     private var wakeLock: android.os.PowerManager.WakeLock? = null
 
-    private val audioFocusChangeListener = android.media.AudioManager.OnAudioFocusChangeListener { focusChange ->
-        when (focusChange) {
-            android.media.AudioManager.AUDIOFOCUS_GAIN -> {
-                playbackManager?.resume()
-            }
-            android.media.AudioManager.AUDIOFOCUS_LOSS -> {
-                playbackManager?.pause()
-            }
-            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                playbackManager?.pause()
-            }
-            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // 暂时不调小声音，直接暂停喵
-                playbackManager?.pause()
-            }
+    private val audioFocusCallbacks = object : AudioFocusManager.Callbacks {
+        override fun onFocusGained() {
+            playbackManager?.resume()
+        }
+
+        override fun onFocusLost() {
+            playbackManager?.pause()
+        }
+
+        override fun onFocusLostTransient() {
+            playbackManager?.pause()
+        }
+
+        override fun onFocusDuck() {
+            // 暂时不调小声音，直接暂停喵
+            playbackManager?.pause()
         }
     }
 
     override fun onCreate() {
         super.onCreate()
         
-        audioManager = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+        audioFocusManager = AudioFocusManager(this).apply {
+            setCallbacks(audioFocusCallbacks)
+        }
         val powerManager = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
         wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "SeamlessLoop:PlaybackWakeLock")
 
@@ -106,23 +109,10 @@ class PlaybackService : MediaBrowserServiceCompat() {
 
     private fun handlePlaybackStateChange(isPlaying: Boolean, song: Song) {
         if (isPlaying) {
-            // 申请音频焦点喵！
-            val result = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                val focusRequest = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(android.media.AudioAttributes.Builder()
-                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build())
-                    .setAcceptsDelayedFocusGain(true)
-                    .setOnAudioFocusChangeListener(audioFocusChangeListener)
-                    .build()
-                audioManager.requestAudioFocus(focusRequest)
-            } else {
-                @Suppress("DEPRECATION")
-                audioManager.requestAudioFocus(audioFocusChangeListener, android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.AUDIOFOCUS_GAIN)
-            }
+            // 索要音频焦点喵！
+            val hasFocus = audioFocusManager.requestFocus()
 
-            if (result == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            if (hasFocus) {
                 if (wakeLock?.isHeld == false) wakeLock?.acquire(10 * 60 * 1000L /* 10 mins fallback */)
                 updateNotification(song, true)
             }
@@ -151,7 +141,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
 
     fun stopForegroundCompletely() {
         if (wakeLock?.isHeld == true) wakeLock?.release()
-        audioManager.abandonAudioFocus(audioFocusChangeListener)
+        audioFocusManager.abandonFocus()
         stopForeground(STOP_FOREGROUND_REMOVE or STOP_FOREGROUND_DETACH)
         stopSelf()
     }
