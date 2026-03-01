@@ -14,7 +14,6 @@ import androidx.lifecycle.ViewModelProvider
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModelFactory
 import com.cpu.seamlessloopmobile.viewmodel.PlayMode
-import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.utils.TimeUtils
 import com.cpu.seamlessloopmobile.dialogs.LoopSettingsDialog
 import com.cpu.seamlessloopmobile.model.Song

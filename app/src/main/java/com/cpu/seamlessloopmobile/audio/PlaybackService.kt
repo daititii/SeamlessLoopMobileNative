@@ -30,6 +30,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     }
 
     private lateinit var audioFocusManager: AudioFocusManager
+    private lateinit var headsetPlugReceiver: HeadsetPlugReceiver
     private var wakeLock: android.os.PowerManager.WakeLock? = null
 
     private val audioFocusCallbacks = object : AudioFocusManager.Callbacks {
@@ -57,6 +58,27 @@ class PlaybackService : MediaBrowserServiceCompat() {
         audioFocusManager = AudioFocusManager(this).apply {
             setCallbacks(audioFocusCallbacks)
         }
+        
+        headsetPlugReceiver = HeadsetPlugReceiver(object : HeadsetPlugReceiver.Callbacks {
+            override fun onHeadsetPlugged() {
+                // 如果 cpu 大人希望插入耳机自动播放，可以在这里调用 playbackManager?.resume() 喵！
+                // 为了安全，目前莱芙先什么都不做~
+            }
+
+            override fun onHeadsetUnplugged() {
+                // 耳机拔出，立刻暂停播放！
+                if (playbackManager?.isPlaying == true) {
+                    playbackManager?.pause()
+                }
+            }
+
+            override fun onBecomingNoisy() {
+                // 即将从耳机切换到外放，迅速暂停！
+                playbackManager?.pause()
+            }
+        })
+        headsetPlugReceiver.register(this)
+
         val powerManager = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
         wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "SeamlessLoop:PlaybackWakeLock")
 
@@ -148,6 +170,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
 
     override fun onDestroy() {
         if (wakeLock?.isHeld == true) wakeLock?.release()
+        headsetPlugReceiver.unregister(this)
         super.onDestroy()
         serviceScope.cancel() 
         mediaControlManager?.release()

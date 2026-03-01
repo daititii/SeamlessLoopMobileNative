@@ -88,27 +88,7 @@ class MainViewModel(
         _playMode.value = next
     }
 
-    // --- 外部媒体控制回调喵 ---
-    fun togglePlayPauseManual() {
-        // 通知 UI 层执行真正的播放/暂停操作喵
-        _isPlaying.value = !(_isPlaying.value ?: false)
-    }
 
-    fun playNext(playbackManager: com.cpu.seamlessloopmobile.audio.Playback) {
-        val nextIndex = getNextIndex()
-        if (nextIndex != -1) {
-            val songs = _currentPlaylist.value ?: return
-            playbackManager.playSong(songs[nextIndex])
-        }
-    }
-
-    fun playPrevious(playbackManager: com.cpu.seamlessloopmobile.audio.Playback) {
-        val prevIndex = getPrevIndex()
-        if (prevIndex != -1) {
-            val songs = _currentPlaylist.value ?: return
-            playbackManager.playSong(songs[prevIndex])
-        }
-    }
 
     fun updateCurrentPlaylist(songs: List<Song>, index: Int = -1) {
         _currentPlaylist.value = songs
