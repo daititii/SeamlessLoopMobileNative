@@ -7,8 +7,8 @@ interface SongDao {
     @Query("SELECT * FROM LoopPoints ORDER BY FileName ASC")
     suspend fun getAllSongs(): List<Song>
 
-    @Query("SELECT * FROM LoopPoints WHERE FileName = :name AND TotalSamples = :samples LIMIT 1")
-    suspend fun getSongByFingerprint(name: String, samples: Long): Song?
+    @Query("SELECT * FROM LoopPoints WHERE FileName = :name AND duration = :duration LIMIT 1")
+    suspend fun getSongByFingerprint(name: String, duration: Long): Song?
 
     @Query("SELECT * FROM LoopPoints WHERE FileName = :name")
     suspend fun getSongsByName(name: String): List<Song>
@@ -25,7 +25,7 @@ interface SongDao {
     @Transaction
     suspend fun insertOrUpdateSong(song: Song): Long {
         // 首先查找指纹，指纹才是歌曲的核心绑定（影响播放列表等喵）
-        val existingByFingerprint = getSongByFingerprint(song.fileName, song.totalSamples)
+        val existingByFingerprint = getSongByFingerprint(song.fileName, song.duration)
         val existingByPath = if (song.filePath.isNotBlank()) getSongByPath(song.filePath) else null
 
         // 场景 1：既找到了指纹，又找到了路径，而且它们不是同一首歌

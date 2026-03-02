@@ -18,10 +18,10 @@ class MusicScannerRepository(private val songDao: SongDao) {
      */
     suspend fun getInitialScannedSongs(context: Context): List<Song> = withContext(Dispatchers.IO) {
         val scannedSongs = AudioScanner.scan(context)
-        val dbSongs = songDao.getAllSongs().associateBy { it.fileName }
+        val dbSongs = songDao.getAllSongs().associateBy { "${it.fileName}_${it.duration}" }
         
         scannedSongs.map { song ->
-            val dbSong = dbSongs[song.fileName]
+            val dbSong = dbSongs["${song.fileName}_${song.duration}"]
             dbSong?.let { 
                 val updatedSong = song.copy(
                     id = it.id, 
