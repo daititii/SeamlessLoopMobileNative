@@ -112,7 +112,7 @@ class PlaylistRepository(
 
         targetItems.forEachIndexed { index, item ->
             onProgress("正在同步: ${index + 1}/$total")
-            val accurateSamples = AudioScanner.getAccurateSampleCount(context, item.first)
+            val (accurateSamples, sampleRate) = AudioScanner.getAccurateMetadata(context, item.first)
             val dbSong = dbSongs["${item.second}|$accurateSamples"]
             
             val song = Song(
@@ -123,7 +123,7 @@ class PlaylistRepository(
                 displayName = dbSong?.displayName ?: item.second.substringBeforeLast("."),
                 loopStart = dbSong?.loopStart ?: 0L,
                 loopEnd = dbSong?.loopEnd ?: accurateSamples,
-                duration = TimeUtils.samplesToMillis(accurateSamples, 44100L),
+                duration = TimeUtils.samplesToMillis(accurateSamples, sampleRate.toLong()),
                 id = 0
             )
             

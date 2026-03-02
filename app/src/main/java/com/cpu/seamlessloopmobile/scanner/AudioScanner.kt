@@ -74,20 +74,29 @@ object AudioScanner {
     }
 
     /**
-     * 实地测量！利用 C++ 底层解码器拿到绝对准确的采样数喵！
+     * 实地测量！利用 C++ 底层解码器拿到绝对准确的总采样数和采样率喵！
      */
-    fun getAccurateSampleCount(context: Context, mediaId: Long): Long {
+    fun getAccurateMetadata(context: Context, mediaId: Long): Pair<Long, Int> {
         return try {
             val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, mediaId)
             context.contentResolver.openAssetFileDescriptor(contentUri, "r")?.use { afd ->
-                com.cpu.seamlessloopmobile.jni.NativeAudio.getAudioFileDuration(
-                    afd.parcelFileDescriptor.fd, 
-                    afd.startOffset, 
-                    if (afd.declaredLength < 0) afd.length else afd.declaredLength
-                )
-            } ?: 0L
+                val fd = afd.parcelFileDescriptor.fd
+                val offset = afd.startOffset
+                val length = if (afd.declaredLength < 0) afd.length else afd.declaredLength
+                
+                val frames = com.cpu.seamlessloopmobile.jni.NativeAudio.getAudioFileDuration(fd, offset, length)
+                val sampleRate = com.cpu.seamlessloopmobile.jni.NativeAudio.getAudioFileSampleRate(fd, offset, length)
+                Pair(frames, sampleRate)
+            } ?: Pair(0L, 44100)
         } catch (e: Exception) {
-            0L
+            Pair(0L, 44100)
         }
+    }
+
+    /**
+     * 旧接口兼容：获取准确的总采样数喵！
+     */
+    fun getAccurateSampleCount(context: Context, mediaId: Long): Long {
+        return getAccurateMetadata(context, mediaId).first
     }
 }

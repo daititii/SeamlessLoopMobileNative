@@ -190,8 +190,9 @@ class PlaybackManager(
                 val durationFrames = NativeAudio.getDuration()
                 var finalSong = song
                 if (durationFrames > 0) {
+                    val actualSampleRate = NativeAudio.getSampleRate().let { if (it > 0) it else 44100 }
                     finalSong = song.copy(
-                        duration = durationFrames * 1000 / 44100,
+                        duration = durationFrames * 1000 / actualSampleRate,
                         totalSamples = if (song.totalSamples == 0L) durationFrames else song.totalSamples 
                     )
                     if (song.totalSamples == 0L && finalSong.id > 0) {
@@ -249,7 +250,8 @@ class PlaybackManager(
                 }
 
                 val totalFrames = NativeAudio.getDuration()
-                val totalDuration = totalFrames * 1000 / 44100
+                val actualSampleRate = NativeAudio.getSampleRate().let { if (it > 0) it else 44100 }
+                val totalDuration = totalFrames * 1000 / actualSampleRate
                 
                 android.util.Log.d("PlaybackManager", "📊 合体系统就绪！总帧数: $totalFrames, 总时长: $totalDuration ms")
 

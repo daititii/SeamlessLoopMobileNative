@@ -178,6 +178,22 @@ Java_com_cpu_seamlessloopmobile_jni_NativeAudio_getAudioFileDuration(
     return 0;
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_getAudioFileSampleRate(
+        JNIEnv* env,
+        jobject /* this */,
+        jint fd,
+        jlong offset,
+        jlong length) {
+    AudioDecoder scanner;
+    if (scanner.open(fd, offset, length)) {
+        jint sampleRate = scanner.getSampleRate();
+        scanner.close();
+        return sampleRate;
+    }
+    return 44100;
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_cpu_seamlessloopmobile_jni_NativeAudio_stringFromJNI(
         JNIEnv* env,

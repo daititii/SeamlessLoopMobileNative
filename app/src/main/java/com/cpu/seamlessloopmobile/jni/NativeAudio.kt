@@ -21,4 +21,6 @@ object NativeAudio {
     
     // 用于扫描阶段快速获取绝对准确的总采样数喵！
     external fun getAudioFileDuration(fd: Int, offset: Long, length: Long): Long
+    // 用于扫描阶段获取文件的实际采样率喵！
+    external fun getAudioFileSampleRate(fd: Int, offset: Long, length: Long): Int
 }
