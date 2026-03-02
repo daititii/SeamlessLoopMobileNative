@@ -529,6 +529,24 @@ void AudioEngine::resetFifo() {
 
 void AudioEngine::onErrorAfterClose(oboe::AudioStream *oboeStream, oboe::Result error) {
     LOGE("onErrorAfterClose: %s", oboe::convertToText(error));
-    // 莱芙报告：不再私自修改 mIsPlaying 状态喵！
-    // 所有的状态流转都由 Kotlin 指挥部通过 pause()/resume() 统一调度喵。
+    
+    // 如果是设备切换（比如插耳机），底层流就会断开
+    if (error == oboe::Result::ErrorDisconnected) {
+        if (mIsPlaying.load()) {
+            LOGD("Stream disconnected. Attempting to auto-restart in background...");
+            // 必须在独立的线程中重建流，这是 Oboe 官方的要求喵！
+            std::thread([this]() {
+                // 等待 150 毫秒：
+                // 如果是“拔出”耳机，Kotlin 的 onBecomingNoisy 广播可能在路上，
+                // 我们稍微等等。如果等完发现变为暂停了（mIsPlaying 变 false），就不重启了；
+                // 否则说明是“插入”耳机设备切换，我们自动帮大人续接音频喵！
+                std::this_thread::sleep_for(std::chrono::milliseconds(150));
+                
+                if (mIsPlaying.load()) {
+                    LOGD("Auto-resuming audio stream to fix Disconnected error!");
+                    resume();
+                }
+            }).detach();
+        }
+    }
 }
