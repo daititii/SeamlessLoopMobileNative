@@ -30,6 +30,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     }
 
     private lateinit var audioFocusManager: AudioFocusManager
+    private var wasPlayingBeforeUnplug = false
     private lateinit var headsetPlugReceiver: HeadsetPlugReceiver
     private var wakeLock: android.os.PowerManager.WakeLock? = null
 
@@ -61,20 +62,29 @@ class PlaybackService : MediaBrowserServiceCompat() {
         
         headsetPlugReceiver = HeadsetPlugReceiver(object : HeadsetPlugReceiver.Callbacks {
             override fun onHeadsetPlugged() {
-                // 如果 cpu 大人希望插入耳机自动播放，可以在这里调用 playbackManager?.resume() 喵！
-                // 为了安全，目前莱芙先什么都不做~
+                // 🎧 检测到耳机插回，如果刚才因为拔出而中断，就自动恢复播放
+                if (wasPlayingBeforeUnplug && playbackManager?.isPlaying == false) {
+                    android.util.Log.d("PlaybackService", "🔄 自动恢复播放喵！")
+                    playbackManager?.resume()
+                }
+                wasPlayingBeforeUnplug = false
             }
 
             override fun onHeadsetUnplugged() {
-                // 耳机拔出，立刻暂停播放！
+                // 🔌 耳机拔出，记住状态并暂停
+                // 修复：不要直接赋值 wasPlayingBeforeUnplug = x，防止被 BecomingNoisy 抢先导致状态变成 false
                 if (playbackManager?.isPlaying == true) {
+                    wasPlayingBeforeUnplug = true
                     playbackManager?.pause()
                 }
             }
 
             override fun onBecomingNoisy() {
-                // 即将从耳机切换到外放，迅速暂停！
-                playbackManager?.pause()
+                // ⚠️ 即将外放，强制暂停并记录状态
+                if (playbackManager?.isPlaying == true) {
+                    wasPlayingBeforeUnplug = true
+                    playbackManager?.pause()
+                }
             }
         })
         headsetPlugReceiver.register(this)

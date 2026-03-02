@@ -73,12 +73,27 @@ void AudioEngine::pause() {
 void AudioEngine::resume() {
     mIsPlaying = true;
     std::unique_lock<std::mutex> lock(mStreamMutex);
+    
+    // 如果流存在，尝试直接启动喵
     if (mStream) {
-        mStream->requestStart();
-    // 如果流不在了（比如拔耳机挂了没恢复），重新建一个！
-    } else {
-        lock.unlock(); // 解锁，以免在 start() 里发生死锁喵
-        start();
+        oboe::Result result = mStream->requestStart();
+        if (result == oboe::Result::OK) {
+            LOGD("resume: Stream started successfully");
+            return;
+        }
+        
+        LOGE("resume: Failed to start stream: %s, recreating...", oboe::convertToText(result));
+        // 彻底清理旧流，准备投胎喵！
+        mStream->requestStop();
+        mStream->close();
+        mStream.reset();
+    }
+    
+    // 如果走到这里，说明流没了或者坏了，需要重建喵
+    lock.unlock(); 
+    if (!start()) {
+        LOGE("resume: Failed to recreate stream");
+        mIsPlaying = false; // 实在救不回来了，只能认命喵
     }
 }
 
@@ -514,27 +529,6 @@ void AudioEngine::resetFifo() {
 
 void AudioEngine::onErrorAfterClose(oboe::AudioStream *oboeStream, oboe::Result error) {
     LOGE("onErrorAfterClose: %s", oboe::convertToText(error));
-    if (error == oboe::Result::ErrorDisconnected) {
-        // 耳机插拔会导致流中断，Oboe 会关闭流并调用这里。
-        // 大人要求：一拔插就直接暂停，绝不能继续咋咋呼呼地放音乐喵！
-        mIsPlaying = false;
-        
-        // 绝命危机解除：一定不能在 Oboe 内部回调线程里同步去 reset（销毁包含 delete），
-        // 自己删除自己会直接引发应用底层死锁和闪退！必须新开线程扔到后台去收拾残局喵！
-        std::thread([this]() {
-            // 等 Oboe 回调安然退场喵
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            
-            {
-                std::lock_guard<std::mutex> lock(mStreamMutex);
-                if (mStream) {
-                    // 彻底碾碎那个幽灵断流指针喵！
-                    mStream.reset();
-                }
-            }
-            
-            // 重新挖个新管道备用（因为 mIsPlaying 上面被拍成了 false，所以水不会流出来）
-            start();
-        }).detach();
-    }
+    // 莱芙报告：不再私自修改 mIsPlaying 状态喵！
+    // 所有的状态流转都由 Kotlin 指挥部通过 pause()/resume() 统一调度喵。
 }

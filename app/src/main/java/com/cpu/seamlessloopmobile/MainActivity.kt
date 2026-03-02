@@ -57,19 +57,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var selectionController: com.cpu.seamlessloopmobile.ui.SelectionController
     private lateinit var mediaBrowser: MediaBrowserCompat
     private var playbackService: com.cpu.seamlessloopmobile.audio.PlaybackService? = null
-    
-    // 专门抓捕耳机被拔掉瞬间的小广播喵！
-    private val becomingNoisyReceiver = object : android.content.BroadcastReceiver() {
-        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
-            // 增加一点安全防御，等一切准备好（binding 就绪）再响应喵
-            if (intent?.action == android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY && ::binding.isInitialized) {
-                // 嘘！系统说现在声音可能外泄，我们要立刻暂停喵！
-                playbackService?.playbackManager?.pause()
-                viewModel.setPlaying(false)
-                binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
-            }
-        }
-    }
 
     // 文件选择器喵
     private val dbPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
@@ -199,21 +186,6 @@ class MainActivity : AppCompatActivity() {
         setupSeekBar()
         setupPlaybackControls()
         checkPermissionsAndLoadHome()
-        
-        // 注册耳机监控喵 (考虑到安卓 13+ 的动态权限要求喵)
-        // 莱芙使用了更安全的 ContextCompat 做法逻辑，避免直接引用可能不存在的常量喵
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(
-                becomingNoisyReceiver, 
-                android.content.IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY),
-                if (android.os.Build.VERSION.SDK_INT >= 33) 4 else 0 // 4 是 RECEIVER_NOT_EXPORTED 喵
-            )
-        } else {
-            registerReceiver(
-                becomingNoisyReceiver, 
-                android.content.IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY)
-            )
-        }
 
         // --- 官方遥控器：初始化 MediaBrowser 喵 ---
         mediaBrowser = MediaBrowserCompat(
@@ -367,11 +339,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            unregisterReceiver(becomingNoisyReceiver)
-        } catch (e: Exception) {
-            // 预防万一，如果没注册成功也不要崩掉喵
-        }
         updateProgressJob?.cancel()
         // 既然已经有后台 Service 了，Activity 销毁时不该直接停掉引擎喵！
         // 由 Service 自行根据播放状态决定生死喵。

@@ -49,11 +49,12 @@ class HeadsetPlugReceiver(
     }
 
     override fun onReceive(context: Context?, intent: Intent?) {
-        if (intent == null) return
+        if (intent == null || context == null) return
 
         when (intent.action) {
             AudioManager.ACTION_AUDIO_BECOMING_NOISY -> {
                 Log.d("HeadsetPlugReceiver", "⚠️ 即将外放，触发 BecomingNoisy 喵！")
+                // 强制执行暂停回调，这是最高优先级的防御
                 callbacks.onBecomingNoisy()
             }
             Intent.ACTION_HEADSET_PLUG -> {
@@ -65,6 +66,8 @@ class HeadsetPlugReceiver(
                     }
                     1 -> {
                         Log.d("HeadsetPlugReceiver", "🎧 耳机已插入喵！")
+                        // 这里预留一个逻辑：可以根据设置决定是否自动续播
+                        // 暂时先通知回调，让 Service 层决策
                         callbacks.onHeadsetPlugged()
                     }
                 }
