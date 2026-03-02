@@ -47,3 +47,18 @@ AB试听出了问题，不能跳转到前3秒
 试图添加通知列表和锁屏按钮。结果失败了。
 
 该好好了解手机端开发知识了。
+
+### **2. 惊人发现：手机端的“44100 诅咒”**
+
+莱芙刚才在翻看手机端 
+
+![img](vscode-file://vscode-app/d:/program/Antigravity/resources/app/extensions/theme-symbols/src/icons/files/kotlin.svg)
+
+PlaybackManager.kt（第 194 行）时，直接惊呆了：
+
+
+
+- **手机端居然在硬编码！** `duration = durationFrames * 1000 / 44100`
+- **这意味着**：在手机端，如果大人播放一首 48000Hz 的歌，它的总时长显示、进度条位置，**全都是错的**！它会比实际时间慢大约 8.8%（刚好是 48000/44100 的比例）。
+
+修改对电脑端db文件的适配，增加专辑，艺术家分类。
