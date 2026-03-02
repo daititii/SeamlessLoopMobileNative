@@ -24,6 +24,8 @@ object AudioScanner {
             MediaStore.Audio.Media.DISPLAY_NAME,
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            "album_artist", // ALBUM_ARTIST in newer Android versions
             MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.DURATION
         )
@@ -39,6 +41,8 @@ object AudioScanner {
             val nameColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
             val titleColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val artistColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+            val albumColumn = it.getColumnIndex(MediaStore.Audio.Media.ALBUM)
+            val albumArtistColumn = it.getColumnIndex("album_artist")
             val pathColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
             val durationColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
 
@@ -47,6 +51,8 @@ object AudioScanner {
                 val fileName = it.getString(nameColumn)
                 val title = it.getString(titleColumn) ?: "Unknown"
                 val artist = it.getString(artistColumn) ?: "Unknown Artist"
+                val album = if (albumColumn != -1) it.getString(albumColumn) ?: "Unknown Album" else "Unknown Album"
+                val albumArtist = if (albumArtistColumn != -1) it.getString(albumArtistColumn) ?: artist else artist
                 val filePath = it.getString(pathColumn)
                 val duration = it.getLong(durationColumn)
 
@@ -62,6 +68,8 @@ object AudioScanner {
                             filePath = filePath,
                             displayName = title,
                             artist = artist,
+                            album = album,
+                            albumArtist = albumArtist,
                             duration = duration,
                             totalSamples = 0, 
                             isLoopEnabled = false 

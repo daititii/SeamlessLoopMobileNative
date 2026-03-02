@@ -50,7 +50,15 @@ data class Song(
 
     
     // 以下为安卓端 UI 展示需要的额外元数据
+    @ColumnInfo(name = "Artist")
     val artist: String? = "Unknown Artist",
+    
+    @ColumnInfo(name = "Album")
+    val album: String? = "Unknown Album",
+    
+    @ColumnInfo(name = "AlbumArtist")
+    val albumArtist: String? = "Unknown Artist",
+
     val duration: Long = 0,          // 毫秒级时长（用于列表进度显示）
     val isLoopEnabled: Boolean = true
 )
