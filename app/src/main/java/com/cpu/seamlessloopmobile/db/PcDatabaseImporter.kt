@@ -63,6 +63,7 @@ object PcDatabaseImporter {
                             loopStart = start,
                             loopEnd = end,
                             totalSamples = total,
+                            duration = total, // 暂时把总采样数当做时长占位，确保 (FileName, duration) 的唯一性喵！
                             mediaId = 0
                         )
                         pcData.add(dummySong)
