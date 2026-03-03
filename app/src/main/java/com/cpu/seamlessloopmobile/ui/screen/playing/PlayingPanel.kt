@@ -12,7 +12,6 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.foundation.pager.*
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,6 +24,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.cpu.seamlessloopmobile.model.Song
@@ -48,8 +50,8 @@ fun PlayingPanel(
     
     val playingSong = if (currentSongIndex in playlist.indices) playlist[currentSongIndex] else null
     
-    // 状态管理：使用 PagerState 实现水平滑动切换喵
-    val pagerState = rememberPagerState(initialPage = 1) { 2 } // 0: 调节页, 1: 主页
+    // 状态管理：使用 VerticalPagerState 实现纵向滑动切换喵
+    val pagerState = rememberPagerState(initialPage = 0) { 2 } // 0: 主页, 1: 调节页
 
     AnimatedVisibility(
         visible = isVisible && playingSong != null,
@@ -70,13 +72,13 @@ fun PlayingPanel(
                     )
                 )
         ) {
-            HorizontalPager(
+            VerticalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 when (page) {
-                    0 -> FineTunePage(songItem, viewModel) // 调节页喵
-                    1 -> MainInfoPage(songItem, viewModel, onPlayPause, onNext, onPrev, isPlaying, playMode) // 主页喵
+                    0 -> MainInfoPage(songItem, viewModel, onPlayPause, onNext, onPrev, isPlaying, playMode) // 主页喵
+                    1 -> FineTunePage(songItem, viewModel) // 调节页喵
                 }
             }
 
@@ -94,10 +96,10 @@ fun PlayingPanel(
                     Icon(Icons.Default.KeyboardArrowDown, contentDescription = "收起", tint = Color.White)
                 }
                 
-                // 页面指示器喵
-                Row(
-                    modifier = Modifier.align(Alignment.Center),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // 页面指示器改为纵向小点喵
+                Column(
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     repeat(2) { index ->
                         Box(
@@ -227,9 +229,9 @@ fun MainInfoPage(
                 Icon(Icons.Default.SkipNext, contentDescription = "下一首", tint = Color.White, modifier = Modifier.size(36.dp))
             }
             
-            // 提示大人可以右滑的图标喵
+            // 提示大人可以上滑的图标喵
             IconButton(onClick = { /* 只是占位喵 */ }) {
-                Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "微调", tint = Color.Gray.copy(alpha = 0.5f))
+                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "微调", tint = Color.Gray.copy(alpha = 0.5f))
             }
         }
         Spacer(modifier = Modifier.height(32.dp))
@@ -238,65 +240,44 @@ fun MainInfoPage(
 
 @Composable
 fun FineTunePage(song: Song, viewModel: MainViewModel) {
+    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .verticalScroll(scrollState)
+            .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(64.dp))
+        Spacer(modifier = Modifier.height(48.dp))
         
         Text(
-            "循环无缝微调喵",
-            style = MaterialTheme.typography.headlineSmall.copy(
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFFBB86FC)
-            )
+            "循环参数调节喵 (A-B)",
+            style = MaterialTheme.typography.titleMedium.copy(color = Color.LightGray)
         )
         
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // A-B 点核心调节区，现在空间很大喵！
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            verticalArrangement = Arrangement.SpaceEvenly
-        ) {
-            FineTuneSection(
-                label = "循环起点 (A)",
-                value = song.loopStart,
-                accentColor = Color(0xFF8FBBD9),
-                onValueChange = { newValue ->
-                    viewModel.updateSongLoopPoints(song, newValue, song.loopEnd)
-                    NativeAudio.setLoopPoints(newValue, song.loopEnd)
-                },
-                onAdjust = { deltaSamples ->
-                    val dur = NativeAudio.getDuration()
-                    val newStart = (song.loopStart + deltaSamples).coerceIn(0, if (song.loopEnd > 0) song.loopEnd else dur)
-                    viewModel.updateSongLoopPoints(song, newStart, song.loopEnd)
-                    NativeAudio.setLoopPoints(newStart, song.loopEnd)
-                }
-            )
+        // 起点 A
+        TuneSectionBox(
+            label = "循环起点 (A)",
+            samples = song.loopStart,
+            accentColor = Color(0xFF8FBBD9),
+            onValueChange = { onStartValueChange(song, it, viewModel) },
+            onAdjustMs = { onStartAdjustMs(song, it, viewModel) }
+        )
 
-            HorizontalDivider(color = Color.DarkGray, modifier = Modifier.padding(horizontal = 16.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-            FineTuneSection(
-                label = "循环终点 (B)",
-                value = song.loopEnd,
-                accentColor = Color(0xFFF398AF),
-                onValueChange = { newValue ->
-                    viewModel.updateSongLoopPoints(song, song.loopStart, newValue)
-                    NativeAudio.setLoopPoints(song.loopStart, newValue)
-                },
-                onAdjust = { deltaSamples ->
-                    val dur = NativeAudio.getDuration()
-                    val newEnd = (song.loopEnd + deltaSamples).coerceIn(song.loopStart, dur)
-                    viewModel.updateSongLoopPoints(song, song.loopStart, newEnd)
-                    NativeAudio.setLoopPoints(song.loopStart, newEnd)
-                }
-            )
-        }
+        // 终点 B
+        TuneSectionBox(
+            label = "循环终点 (B)",
+            samples = song.loopEnd,
+            accentColor = Color(0xFFF398AF),
+            onValueChange = { onEndValueChange(song, it, viewModel) },
+            onAdjustMs = { onEndAdjustMs(song, it, viewModel) }
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         Button(
             onClick = {
@@ -306,88 +287,135 @@ fun FineTunePage(song: Song, viewModel: MainViewModel) {
                 val seekPos = (actualEnd - (sampleRate * 3)).coerceIn(0, actualEnd)
                 NativeAudio.seekTo(seekPos)
             },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFBB86FC)),
-            shape = RoundedCornerShape(12.dp)
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF353545)),
+            shape = RoundedCornerShape(8.dp)
         ) {
-            Icon(Icons.Default.Hearing, contentDescription = null, tint = Color.Black)
+            Icon(Icons.Default.Hearing, contentDescription = null, tint = Color.White)
             Spacer(modifier = Modifier.size(8.dp))
-            Text("试听临界 3 秒喵！", color = Color.Black, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("最后 3 秒试听喵！", color = Color.White)
         }
         
-        Spacer(modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(64.dp))
     }
 }
 
 @Composable
-fun FineTuneSection(
+fun TuneSectionBox(
     label: String,
-    value: Long,
+    samples: Long,
     accentColor: Color,
     onValueChange: (Long) -> Unit,
-    onAdjust: (Long) -> Unit
+    onAdjustMs: (Double) -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(accentColor))
-            Spacer(modifier = Modifier.size(8.dp))
-            Text(label, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        }
-        
-        Text(
-            value.toString(),
-            color = accentColor,
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
+    val sampleRate = NativeAudio.getSampleRate()
+    val seconds = samples.toDouble() / sampleRate
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0xFF1E1E2E).copy(alpha = 0.5f),
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            BigTuneButton("现", onClick = { onValueChange(NativeAudio.getCurrentPosition()) })
+            Text(label, color = Color.White, fontSize = 14.sp)
             
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                val sampleRate = NativeAudio.getSampleRate()
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BigTuneButton("-1s", onClick = { onAdjust(-(sampleRate * 1.0).toLong()) })
-                    BigTuneButton("+1s", onClick = { onAdjust((sampleRate * 1.0).toLong()) })
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BigTuneButton("-10ms", onClick = { onAdjust(-(sampleRate * 0.01).toLong()) })
-                    BigTuneButton("+10ms", onClick = { onAdjust((sampleRate * 0.01).toLong()) })
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BigTuneButton("-1帧", onClick = { onAdjust(-1) })
-                    BigTuneButton("+1帧", onClick = { onAdjust(1) })
-                }
+            Text(
+                samples.toString(),
+                color = accentColor,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+
+            HorizontalDivider(thickness = 2.dp, color = accentColor, modifier = Modifier.fillMaxWidth(0.9f))
+            
+            Text(
+                String.format("%.3f", seconds),
+                color = Color.Gray,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 第一排: 最小/现/最大
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TuneGridButton("最小", modifier = Modifier.weight(1f)) { onValueChange(0) }
+                TuneGridButton("现在", modifier = Modifier.weight(1f)) { onValueChange(NativeAudio.getCurrentPosition()) }
+                TuneGridButton("最大", modifier = Modifier.weight(1f)) { onValueChange(NativeAudio.getDuration()) }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 第二排: 秒级调节
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TuneGridButton("-5s", modifier = Modifier.weight(1f)) { onAdjustMs(-5000.0) }
+                TuneGridButton("-1s", modifier = Modifier.weight(1f)) { onAdjustMs(-1000.0) }
+                TuneGridButton("+1s", modifier = Modifier.weight(1f)) { onAdjustMs(1000.0) }
+                TuneGridButton("+5s", modifier = Modifier.weight(1f)) { onAdjustMs(5000.0) }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 第三排: 毫秒级调节
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TuneGridButton("-0.1s", modifier = Modifier.weight(1f)) { onAdjustMs(-100.0) }
+                TuneGridButton("-0.01s", modifier = Modifier.weight(1f)) { onAdjustMs(-10.0) }
+                TuneGridButton("+0.01s", modifier = Modifier.weight(1f)) { onAdjustMs(10.0) }
+                TuneGridButton("+0.1s", modifier = Modifier.weight(1f)) { onAdjustMs(100.0) }
             }
         }
     }
 }
 
 @Composable
-fun BigTuneButton(text: String, onClick: () -> Unit) {
+fun TuneGridButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
-        modifier = Modifier
-            .height(48.dp)
-            .widthIn(min = 64.dp)
+        modifier = modifier
+            .height(36.dp)
             .clickable { onClick() },
-        color = Color(0xFF353545),
-        shape = RoundedCornerShape(8.dp)
+        color = Color(0xFF2D2D3D),
+        shape = RoundedCornerShape(6.dp)
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp)) {
-            Text(text, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Box(contentAlignment = Alignment.Center) {
+            Text(text, color = Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
 
+// 辅助逻辑函数喵
+private fun onStartValueChange(song: Song, newValue: Long, viewModel: MainViewModel) {
+    viewModel.updateSongLoopPoints(song, newValue, song.loopEnd)
+    NativeAudio.setLoopPoints(newValue, song.loopEnd)
+}
+
+private fun onStartAdjustMs(song: Song, deltaMs: Double, viewModel: MainViewModel) {
+    val sampleRate = NativeAudio.getSampleRate()
+    val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
+    val dur = NativeAudio.getDuration()
+    val newStart = (song.loopStart + deltaSamples).coerceIn(0, if (song.loopEnd > 0) song.loopEnd else dur)
+    onStartValueChange(song, newStart, viewModel)
+}
+
+private fun onEndValueChange(song: Song, newValue: Long, viewModel: MainViewModel) {
+    viewModel.updateSongLoopPoints(song, song.loopStart, newValue)
+    NativeAudio.setLoopPoints(song.loopStart, newValue)
+}
+
+private fun onEndAdjustMs(song: Song, deltaMs: Double, viewModel: MainViewModel) {
+    val sampleRate = NativeAudio.getSampleRate()
+    val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
+    val dur = NativeAudio.getDuration()
+    val newEnd = (song.loopEnd + deltaSamples).coerceIn(song.loopStart, dur)
+    onEndValueChange(song, newEnd, viewModel)
+}
+
 @Composable
 fun PlaybackProgressBar(song: Song) {
-    // 这里的进度需要从 NativeAudio 获取，可能需要一个本地的 frame 计数器喵
     var currentFrame by remember { mutableStateOf(0L) }
     val totalFrames = NativeAudio.getDuration()
     val sampleRate = NativeAudio.getSampleRate().toLong()
@@ -414,9 +442,12 @@ fun PlaybackProgressBar(song: Song) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(TimeUtils.formatTime(currentFrame, sampleRate), color = Color.Gray, fontSize = 12.sp)
-            Text(TimeUtils.formatTime(totalFrames, sampleRate), color = Color.Gray, fontSize = 12.sp)
+            val startTime = TimeUtils.formatTime(currentFrame, sampleRate)
+            val totalTime = TimeUtils.formatTime(totalFrames, sampleRate)
+            Text(startTime, color = Color.Gray, fontSize = 12.sp)
+            Text(totalTime, color = Color.Gray, fontSize = 12.sp)
         }
     }
 }
+
 
