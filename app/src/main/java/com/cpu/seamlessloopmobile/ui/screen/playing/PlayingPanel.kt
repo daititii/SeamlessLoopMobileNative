@@ -52,6 +52,12 @@ fun PlayingPanel(
     
     // 状态管理：使用 VerticalPagerState 实现纵向滑动切换喵
     val pagerState = rememberPagerState(initialPage = 0) { 2 } // 0: 主页, 1: 调节页
+    
+    // --- 编辑弹窗状态 ---
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editIsStart by remember { mutableStateOf(true) }
+    var editValueSamples by remember { mutableStateOf("") }
+    var editValueTime by remember { mutableStateOf("") }
 
     AnimatedVisibility(
         visible = isVisible && playingSong != null,
@@ -72,45 +78,166 @@ fun PlayingPanel(
                     )
                 )
         ) {
-            VerticalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                when (page) {
-                    0 -> MainInfoPage(songItem, viewModel, onPlayPause, onNext, onPrev, isPlaying, playMode) // 主页喵
-                    1 -> FineTunePage(songItem, viewModel) // 调节页喵
+            Column(modifier = Modifier.fillMaxSize()) {
+                // --- 顶部控制 (关闭按钮 & 指示器) ---
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier.align(Alignment.CenterStart)
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "收起", tint = Color.White)
+                    }
+                    
+                    // 页面指示器改为横向小点
+                    Row(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        repeat(2) { index ->
+                            Box(
+                                modifier = Modifier
+                                    .size(if (pagerState.currentPage == index) 8.dp else 4.dp)
+                                    .clip(CircleShape)
+                                    .background(if (pagerState.currentPage == index) Color(0xFFBB86FC) else Color.Gray)
+                            )
+                        }
+                    }
                 }
-            }
 
-            // --- 顶部控制 (关闭按钮 & 指示器) ---
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                IconButton(
-                    onClick = onClose,
-                    modifier = Modifier.align(Alignment.CenterStart)
-                ) {
-                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "收起", tint = Color.White)
+                // --- 分页内容 (权重 1 占据剩余空间) ---
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.weight(1f),
+                    beyondViewportPageCount = 1
+                ) { page ->
+                    when (page) {
+                        0 -> MainInfoPage(songItem, isPlaying) // 主页只剩封面和歌曲信息
+                        1 -> FineTunePage(songItem, viewModel) { isStart ->
+                            editIsStart = isStart
+                            editValueSamples = (if(isStart) songItem.loopStart else songItem.loopEnd).toString()
+                            val sr = NativeAudio.getSampleRate()
+                            editValueTime = String.format("%.3f", (if(isStart) songItem.loopStart else songItem.loopEnd).toDouble() / if(sr>0) sr else 44100)
+                            showEditDialog = true
+                        }
+                    }
                 }
-                
-                // 页面指示器改为纵向小点喵
+
+                // --- 固定在底部的进度条与控制部分 ---
                 Column(
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 24.dp, start = 24.dp, end = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    repeat(2) { index ->
-                        Box(
-                            modifier = Modifier
-                                .size(if (pagerState.currentPage == index) 10.dp else 6.dp)
-                                .clip(CircleShape)
-                                .background(if (pagerState.currentPage == index) Color(0xFFBB86FC) else Color.Gray)
-                        )
+                    // 1. 紧凑型进度条
+                    PlaybackProgressBar(songItem)
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 2. 紧凑型播放控制栏
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { viewModel.togglePlayMode() }) {
+                            val modeIcon = when(playMode) {
+                                com.cpu.seamlessloopmobile.viewmodel.PlayMode.LIST_LOOP -> Icons.Default.Repeat
+                                com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP -> Icons.Default.RepeatOne
+                                com.cpu.seamlessloopmobile.viewmodel.PlayMode.SHUFFLE -> Icons.Default.Shuffle
+                                else -> Icons.Default.Repeat
+                            }
+                            Icon(modeIcon, contentDescription = "播放模式", tint = Color(0xFFBB86FC), modifier = Modifier.size(24.dp))
+                        }
+                        
+                        IconButton(onClick = onPrev) {
+                            Icon(Icons.Default.SkipPrevious, contentDescription = "上一首", tint = Color.White, modifier = Modifier.size(32.dp))
+                        }
+
+                        FilledIconButton(
+                            onClick = onPlayPause,
+                            modifier = Modifier.size(64.dp),
+                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFFBB86FC))
+                        ) {
+                            Icon(
+                                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = "播放/暂停",
+                                modifier = Modifier.size(36.dp),
+                                tint = Color.Black
+                            )
+                        }
+
+                        IconButton(onClick = onNext) {
+                            Icon(Icons.Default.SkipNext, contentDescription = "下一首", tint = Color.White, modifier = Modifier.size(32.dp))
+                        }
+
+                        // 示例：可以放个音量或者别的，这里放个占位
+                        IconButton(onClick = { /* 更多控制 */ }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "更多", tint = Color.Gray, modifier = Modifier.size(24.dp))
+                        }
                     }
                 }
             }
+        }
+
+        // --- 简单的编辑弹窗喵 ---
+        if (showEditDialog) {
+            AlertDialog(
+                onDismissRequest = { showEditDialog = false },
+                title = { Text(if (editIsStart) "修改循环起点 (A)" else "修改循环终点 (B)", color = Color.White) },
+                text = {
+                    Column {
+                        OutlinedTextField(
+                            value = editValueSamples,
+                            onValueChange = { editValueSamples = it },
+                            label = { Text("采样数 (Samples)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = editValueTime,
+                            onValueChange = { editValueTime = it },
+                            label = { Text("时间 (Seconds)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val newSamples = editValueSamples.toLongOrNull()
+                        val newTime = editValueTime.toDoubleOrNull()
+                        val sr = NativeAudio.getSampleRate()
+                        
+                        // 优先按采样数改，如果采样数没变但时间变了，按时间改喵
+                        if (newSamples != null) {
+                            if (editIsStart) onStartValueChange(songItem, newSamples, viewModel)
+                            else onEndValueChange(songItem, newSamples, viewModel)
+                        } else if (newTime != null) {
+                            val calculatedSamples = (newTime * sr).toLong()
+                            if (editIsStart) onStartValueChange(songItem, calculatedSamples, viewModel)
+                            else onEndValueChange(songItem, calculatedSamples, viewModel)
+                        }
+                        showEditDialog = false
+                    }) {
+                        Text("确定", color = Color(0xFFBB86FC))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEditDialog = false }) {
+                        Text("取消", color = Color.Gray)
+                    }
+                },
+                containerColor = Color(0xFF1E1E2E)
+            )
         }
     }
 }
@@ -118,12 +245,7 @@ fun PlayingPanel(
 @Composable
 fun MainInfoPage(
     songItem: Song,
-    viewModel: MainViewModel,
-    onPlayPause: () -> Unit,
-    onNext: () -> Unit,
-    onPrev: () -> Unit,
-    isPlaying: Boolean,
-    playMode: com.cpu.seamlessloopmobile.viewmodel.PlayMode
+    isPlaying: Boolean
 ) {
     Column(
         modifier = Modifier
@@ -186,98 +308,56 @@ fun MainInfoPage(
         )
 
         Spacer(modifier = Modifier.weight(1f))
-
-        // --- 进度条 ---
-        PlaybackProgressBar(songItem)
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // --- 播放核心控制按钮 ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { viewModel.togglePlayMode() }) {
-                val modeIcon = when(playMode) {
-                    com.cpu.seamlessloopmobile.viewmodel.PlayMode.LIST_LOOP -> Icons.Default.Repeat
-                    com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP -> Icons.Default.RepeatOne
-                    com.cpu.seamlessloopmobile.viewmodel.PlayMode.SHUFFLE -> Icons.Default.Shuffle
-                    else -> Icons.Default.Repeat
-                }
-                Icon(modeIcon, contentDescription = "播放模式", tint = Color(0xFFBB86FC))
-            }
-            
-            IconButton(onClick = onPrev, modifier = Modifier.size(56.dp)) {
-                Icon(Icons.Default.SkipPrevious, contentDescription = "上一首", tint = Color.White, modifier = Modifier.size(36.dp))
-            }
-
-            FilledIconButton(
-                onClick = onPlayPause,
-                modifier = Modifier.size(80.dp),
-                colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFFBB86FC))
-            ) {
-                Icon(
-                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = "播放/暂停",
-                    modifier = Modifier.size(48.dp),
-                    tint = Color.Black
-                )
-            }
-
-            IconButton(onClick = onNext, modifier = Modifier.size(56.dp)) {
-                Icon(Icons.Default.SkipNext, contentDescription = "下一首", tint = Color.White, modifier = Modifier.size(36.dp))
-            }
-            
-            // 提示大人可以上滑的图标喵
-            IconButton(onClick = { /* 只是占位喵 */ }) {
-                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "微调", tint = Color.Gray.copy(alpha = 0.5f))
-            }
-        }
-        Spacer(modifier = Modifier.height(32.dp))
     }
 }
 
 @Composable
-fun FineTunePage(song: Song, viewModel: MainViewModel) {
-    val scrollState = rememberScrollState()
+fun FineTunePage(
+    song: Song, 
+    viewModel: MainViewModel,
+    onEditClick: (Boolean) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(16.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(48.dp))
-        
+        // 标题稍微写小点喵
         Text(
-            "循环参数调节喵 (A-B)",
-            style = MaterialTheme.typography.titleMedium.copy(color = Color.LightGray)
+            "循环参数调节 (A-B)",
+            style = MaterialTheme.typography.titleSmall.copy(color = Color.LightGray)
         )
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        // 起点 A
-        TuneSectionBox(
-            label = "循环起点 (A)",
-            samples = song.loopStart,
-            accentColor = Color(0xFF8FBBD9),
-            onValueChange = { onStartValueChange(song, it, viewModel) },
-            onAdjustMs = { onStartAdjustMs(song, it, viewModel) }
-        )
+        // 起点 A (使用 weight 1 分摊空间)
+        Box(modifier = Modifier.weight(1f)) {
+            TuneSectionBox(
+                label = "循环起点 (A)",
+                samples = song.loopStart,
+                accentColor = Color(0xFF8FBBD9),
+                onValueChange = { onStartValueChange(song, it, viewModel) },
+                onAdjustMs = { onStartAdjustMs(song, it, viewModel) },
+                onEditClick = { onEditClick(true) }
+            )
+        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        // 终点 B
-        TuneSectionBox(
-            label = "循环终点 (B)",
-            samples = song.loopEnd,
-            accentColor = Color(0xFFF398AF),
-            onValueChange = { onEndValueChange(song, it, viewModel) },
-            onAdjustMs = { onEndAdjustMs(song, it, viewModel) }
-        )
+        // 终点 B (使用 weight 1 分摊空间)
+        Box(modifier = Modifier.weight(1f)) {
+            TuneSectionBox(
+                label = "循环终点 (B)",
+                samples = song.loopEnd,
+                accentColor = Color(0xFFF398AF),
+                onValueChange = { onEndValueChange(song, it, viewModel) },
+                onAdjustMs = { onEndAdjustMs(song, it, viewModel) },
+                onEditClick = { onEditClick(false) }
+            )
+        }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         Button(
             onClick = {
@@ -287,16 +367,15 @@ fun FineTunePage(song: Song, viewModel: MainViewModel) {
                 val seekPos = (actualEnd - (sampleRate * 3)).coerceIn(0, actualEnd)
                 NativeAudio.seekTo(seekPos)
             },
-            modifier = Modifier.fillMaxWidth().height(50.dp),
+            modifier = Modifier.fillMaxWidth().height(40.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF353545)),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(0.dp)
         ) {
-            Icon(Icons.Default.Hearing, contentDescription = null, tint = Color.White)
-            Spacer(modifier = Modifier.size(8.dp))
-            Text("最后 3 秒试听喵！", color = Color.White)
+            Icon(Icons.Default.Hearing, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.size(4.dp))
+            Text("最后 3 秒试听", color = Color.White, fontSize = 13.sp)
         }
-        
-        Spacer(modifier = Modifier.height(64.dp))
     }
 }
 
@@ -306,7 +385,8 @@ fun TuneSectionBox(
     samples: Long,
     accentColor: Color,
     onValueChange: (Long) -> Unit,
-    onAdjustMs: (Double) -> Unit
+    onAdjustMs: (Double) -> Unit,
+    onEditClick: () -> Unit
 ) {
     val sampleRate = NativeAudio.getSampleRate()
     val seconds = samples.toDouble() / sampleRate
@@ -314,55 +394,76 @@ fun TuneSectionBox(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color(0xFF1E1E2E).copy(alpha = 0.5f),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Text(label, color = Color.White, fontSize = 14.sp)
-            
+            // 标签靠左侧喵
             Text(
-                samples.toString(),
-                color = accentColor,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(vertical = 4.dp)
+                label, 
+                color = Color.LightGray, 
+                fontSize = 11.sp, 
+                modifier = Modifier.align(Alignment.Start)
             )
-
-            HorizontalDivider(thickness = 2.dp, color = accentColor, modifier = Modifier.fillMaxWidth(0.9f))
             
-            Text(
-                String.format("%.3f", seconds),
-                color = Color.Gray,
-                fontSize = 14.sp,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
+            // 采样数与时间点击区域
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onEditClick() }
+                    .padding(vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    samples.toString(),
+                    color = accentColor,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Spacer(modifier = Modifier.height(6.dp)) // 增加间距喵！
+                
+                Text(
+                    String.format("%.3fs", seconds),
+                    color = Color.Gray,
+                    fontSize = 15.sp, // 比原来的 11.sp 大多了喵！
+                    fontWeight = FontWeight.Medium
+                )
+            }
 
+            HorizontalDivider(
+                thickness = 1.dp, 
+                color = accentColor.copy(alpha = 0.3f), 
+                modifier = Modifier.fillMaxWidth(0.5f)
+            )
+            
             Spacer(modifier = Modifier.height(8.dp))
 
             // 第一排: 最小/现/最大
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TuneGridButton("最小", modifier = Modifier.weight(1f)) { onValueChange(0) }
                 TuneGridButton("现在", modifier = Modifier.weight(1f)) { onValueChange(NativeAudio.getCurrentPosition()) }
                 TuneGridButton("最大", modifier = Modifier.weight(1f)) { onValueChange(NativeAudio.getDuration()) }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // 第二排: 秒级调节
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TuneGridButton("-5s", modifier = Modifier.weight(1f)) { onAdjustMs(-5000.0) }
                 TuneGridButton("-1s", modifier = Modifier.weight(1f)) { onAdjustMs(-1000.0) }
                 TuneGridButton("+1s", modifier = Modifier.weight(1f)) { onAdjustMs(1000.0) }
                 TuneGridButton("+5s", modifier = Modifier.weight(1f)) { onAdjustMs(5000.0) }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // 第三排: 毫秒级调节
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TuneGridButton("-0.1s", modifier = Modifier.weight(1f)) { onAdjustMs(-100.0) }
                 TuneGridButton("-0.01s", modifier = Modifier.weight(1f)) { onAdjustMs(-10.0) }
                 TuneGridButton("+0.01s", modifier = Modifier.weight(1f)) { onAdjustMs(10.0) }
@@ -376,13 +477,13 @@ fun TuneSectionBox(
 fun TuneGridButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
         modifier = modifier
-            .height(36.dp)
+            .height(30.dp)
             .clickable { onClick() },
         color = Color(0xFF2D2D3D),
-        shape = RoundedCornerShape(6.dp)
+        shape = RoundedCornerShape(4.dp)
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(text, color = Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Text(text, color = Color.LightGray, fontSize = 10.sp, fontWeight = FontWeight.Normal)
         }
     }
 }
@@ -414,40 +515,65 @@ private fun onEndAdjustMs(song: Song, deltaMs: Double, viewModel: MainViewModel)
     onEndValueChange(song, newEnd, viewModel)
 }
 
-@Composable
-fun PlaybackProgressBar(song: Song) {
-    var currentFrame by remember { mutableStateOf(0L) }
-    val totalFrames = NativeAudio.getDuration()
-    val sampleRate = NativeAudio.getSampleRate().toLong()
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    fun PlaybackProgressBar(song: Song) {
+        var currentFrame by remember { mutableStateOf(0L) }
+        val totalFrames = NativeAudio.getDuration()
+        val sampleRate = NativeAudio.getSampleRate().toLong()
 
-    LaunchedEffect(Unit) {
-        while(true) {
-            currentFrame = NativeAudio.getCurrentPosition()
-            kotlinx.coroutines.delay(100)
+        LaunchedEffect(Unit) {
+            while (true) {
+                currentFrame = NativeAudio.getCurrentPosition()
+                kotlinx.coroutines.delay(100)
+            }
         }
-    }
 
-    Column {
-        Slider(
-            value = currentFrame.toFloat(),
-            onValueChange = { NativeAudio.seekTo(it.toLong()) },
-            valueRange = 0f..totalFrames.toFloat().coerceAtLeast(1f),
-            colors = SliderDefaults.colors(
-                thumbColor = Color(0xFFBB86FC),
-                activeTrackColor = Color(0xFFBB86FC),
-                inactiveTrackColor = Color.DarkGray
+        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+            Slider(
+                value = currentFrame.toFloat(),
+                onValueChange = { NativeAudio.seekTo(it.toLong()) },
+                valueRange = 0f..totalFrames.toFloat().coerceAtLeast(1f),
+                modifier = Modifier.height(12.dp),
+                thumb = {},
+                track = { sliderState ->
+                    val fraction = if (sliderState.valueRange.endInclusive > sliderState.valueRange.start) {
+                        (sliderState.value - sliderState.valueRange.start) / (sliderState.valueRange.endInclusive - sliderState.valueRange.start)
+                    } else 0f
+                    
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        // 背景轨道喵
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp)
+                                .background(Color.Gray.copy(alpha = 0.3f))
+                        )
+                        // 进度轨道喵
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(fraction)
+                                .height(2.dp)
+                                .background(Color(0xFFBB86FC))
+                        )
+                    }
+                }
             )
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            val startTime = TimeUtils.formatTime(currentFrame, sampleRate)
-            val totalTime = TimeUtils.formatTime(totalFrames, sampleRate)
-            Text(startTime, color = Color.Gray, fontSize = 12.sp)
-            Text(totalTime, color = Color.Gray, fontSize = 12.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                val startTime = TimeUtils.formatTime(currentFrame, sampleRate)
+                val totalTime = TimeUtils.formatTime(totalFrames, sampleRate)
+                Text(startTime, color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Light)
+                Text(totalTime, color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Light)
+            }
         }
     }
-}
 
 
