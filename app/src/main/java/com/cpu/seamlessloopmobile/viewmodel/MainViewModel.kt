@@ -69,6 +69,11 @@ class MainViewModel(
     private val _playMode = MutableLiveData(PlayMode.SINGLE_LOOP)
     val playMode: LiveData<PlayMode> = _playMode
 
+    private val _isPlayingPanelVisible = MutableLiveData(false)
+    val isPlayingPanelVisible: LiveData<Boolean> = _isPlayingPanelVisible
+
+    fun setPlayingPanelVisible(value: Boolean) { _isPlayingPanelVisible.value = value }
+
     fun setExploringLocal(value: Boolean) { _isExploringLocal.value = value }
     fun setShowingFolders(value: Boolean) { _isShowingFolders.value = value }
     fun setInsidePlaylist(value: Boolean) { _isInsidePlaylist.value = value }

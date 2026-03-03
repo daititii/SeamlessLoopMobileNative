@@ -214,7 +214,28 @@ class LoopSettingsDialog(
             else onSamplesChanged(false, etEndSamples.text.toString())
         }
 
-        dialog.setOnDismissListener { dialogUpdateJob?.cancel() }
+        val owner = activity as? androidx.lifecycle.LifecycleOwner
+        val observer = androidx.lifecycle.Observer<Int> { index ->
+            val pl = viewModel.currentPlaylist.value ?: emptyList()
+            if (index in pl.indices) {
+                val newSong = pl[index]
+                if (song.filePath != newSong.filePath) {
+                    song = newSong
+                    // 切换歌曲时，清除焦点以强制刷新UI显示新歌曲的数值喵
+                    etStartSamples.clearFocus()
+                    etEndSamples.clearFocus()
+                    etStartTime.clearFocus()
+                    etEndTime.clearFocus()
+                    updateDisplay()
+                }
+            }
+        }
+        owner?.let { viewModel.currentSongIndex.observe(it, observer) }
+
+        dialog.setOnDismissListener { 
+            dialogUpdateJob?.cancel() 
+            owner?.let { viewModel.currentSongIndex.removeObserver(observer) }
+        }
         
         view.findViewById<Button>(R.id.btn_audition).setOnClickListener {
             forceSyncAll()

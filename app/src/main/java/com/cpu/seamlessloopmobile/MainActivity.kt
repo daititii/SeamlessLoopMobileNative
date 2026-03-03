@@ -27,6 +27,11 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.getValue
+import com.cpu.seamlessloopmobile.ui.screen.playing.PlayingPanel
+import android.view.View
 
 class MainActivity : AppCompatActivity() {
 
@@ -80,6 +85,45 @@ class MainActivity : AppCompatActivity() {
         
         // 设置 Toolbar 喵
         setSupportActionBar(binding.toolbar)
+
+        // 初始化 Compose 播放面板喵
+        binding.composeViewPlayingPanel.apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val isVisible by viewModel.isPlayingPanelVisible.observeAsState(false)
+                if (isVisible) {
+                    androidx.compose.ui.platform.LocalView.current.visibility = View.VISIBLE
+                    val controller = MediaControllerCompat.getMediaController(this@MainActivity)
+                    PlayingPanel(
+                        viewModel = viewModel,
+                        isVisible = isVisible,
+                        onClose = { viewModel.setPlayingPanelVisible(false) },
+                        onPlayPause = {
+                            val state = controller?.playbackState?.state
+                            if (state == android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING) {
+                                controller?.transportControls?.pause()
+                            } else {
+                                controller?.transportControls?.play()
+                            }
+                        },
+                        onNext = {
+                            val nextIndex = viewModel.getNextIndex()
+                            if (nextIndex != -1) {
+                                playSong(currentPlaylist[nextIndex])
+                            }
+                        },
+                        onPrev = {
+                            val prevIndex = viewModel.getPrevIndex()
+                            if (prevIndex != -1) {
+                                playSong(currentPlaylist[prevIndex])
+                            }
+                        }
+                    )
+                } else {
+                    androidx.compose.ui.platform.LocalView.current.visibility = View.GONE
+                }
+            }
+        }
 
         // 中间层同步：把 ViewModel 的状态同步给本地冗余变量 (过渡用喵)
         viewModel.allSongs.observe(this) { 
@@ -160,7 +204,9 @@ class MainActivity : AppCompatActivity() {
                     return
                 }
 
-                if (selectionController.isSelectionMode) {
+                if (viewModel.isPlayingPanelVisible.value == true) {
+                    viewModel.setPlayingPanelVisible(false)
+                } else if (selectionController.isSelectionMode) {
                     selectionController.exitSelectionMode()
                 } else if (selectionController.isPlaylistSelectionMode) {
                     selectionController.exitPlaylistSelectionMode()
@@ -254,6 +300,9 @@ class MainActivity : AppCompatActivity() {
                 val isAbMode = it.getString("is_ab_mode") == "true"
                 
                 binding.tvPlayingSongName.text = title ?: "未知歌曲"
+                binding.bottomPlayerBar.setOnClickListener {
+                    viewModel.setPlayingPanelVisible(true)
+                }
                 viewModel.setAbModePlaying(isAbMode)
                 
                 // 强制刷新一次总时长喵
@@ -390,11 +439,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (currentPlaylist.isNotEmpty()) {
-                if (currentSongIndex >= 0 && currentSongIndex < currentPlaylist.size) {
-                    showLoopSettingsDialog(currentPlaylist[currentSongIndex])
-                } else {
-                    Toast.makeText(this, "索引错乱喵(>_<)，请重新点歌", Toast.LENGTH_SHORT).show()
-                }
+                viewModel.setPlayingPanelVisible(true)
             } else {
                 Toast.makeText(this, "请先播放一首歌曲喵", Toast.LENGTH_SHORT).show()
             }
@@ -718,6 +763,7 @@ class MainActivity : AppCompatActivity() {
         }
         
         viewModel.updateSongIndex(currentSongIndex)
+        viewModel.setPlayingPanelVisible(true)
         
         // 官方遥控器：点火！
         MediaControllerCompat.getMediaController(this)?.transportControls
