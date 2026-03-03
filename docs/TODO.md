@@ -1,4 +1,4 @@
-手机端代码此电脑\cpurising\内部存储\Android\data\com.cpu.seamlessloopmobile\files\databases
+手机端db 文件：此电脑\cpurising\内部存储\Android\data\com.cpu.seamlessloopmobile\files\databases
 
 逻辑设置照搬原来电脑端
 
@@ -83,3 +83,13 @@ PlaybackManager.kt（第 194 行）时，直接惊呆了：
 filename的总采样数与电脑端相同吗？
 
 更新了初始扫描时的匹配逻辑。现在手机扫出来的歌曲（此时又是什么时候获取的，准确吗）会拿着“名字+时长”去数据库里寻找对应的循环点，确保不会把 A 的循环点错扣在 B 的头上
+
+又开始不能列表播放与随机播放（只能单曲循环），即使有歌曲循环点在末尾，歌曲播放到此处，就会快速向下滑动越过大量歌曲，然后停在某首歌曲
+
+手机端也要支持排行榜界面
+
+手机端的同步文件夹要注意
+
+手机端不能正确识别专辑，无法正确填入相应位置
+
+日文乱码的确大概率不能正确识别（R3），R10是例外
