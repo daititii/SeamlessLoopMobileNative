@@ -91,38 +91,39 @@ class MainActivity : AppCompatActivity() {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 val isVisible by viewModel.isPlayingPanelVisible.observeAsState(false)
-                if (isVisible) {
-                    androidx.compose.ui.platform.LocalView.current.visibility = View.VISIBLE
-                    val controller = MediaControllerCompat.getMediaController(this@MainActivity)
-                    PlayingPanel(
-                        viewModel = viewModel,
-                        isVisible = isVisible,
-                        onClose = { viewModel.setPlayingPanelVisible(false) },
-                        onPlayPause = {
-                            val state = controller?.playbackState?.state
-                            if (state == android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING) {
-                                controller?.transportControls?.pause()
-                            } else {
-                                controller?.transportControls?.play()
-                            }
-                        },
-                        onNext = {
-                            val nextIndex = viewModel.getNextIndex()
-                            if (nextIndex != -1) {
-                                playSong(currentPlaylist[nextIndex])
-                            }
-                        },
-                        onPrev = {
-                            val prevIndex = viewModel.getPrevIndex()
-                            if (prevIndex != -1) {
-                                playSong(currentPlaylist[prevIndex])
-                            }
+                val controller = MediaControllerCompat.getMediaController(this@MainActivity)
+                
+                PlayingPanel(
+                    viewModel = viewModel,
+                    isVisible = isVisible,
+                    onClose = { viewModel.setPlayingPanelVisible(false) },
+                    onPlayPause = {
+                        val state = controller?.playbackState?.state
+                        if (state == android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING) {
+                            controller?.transportControls?.pause()
+                        } else {
+                            controller?.transportControls?.play()
                         }
-                    )
-                } else {
-                    androidx.compose.ui.platform.LocalView.current.visibility = View.GONE
-                }
+                    },
+                    onNext = {
+                        val nextIndex = viewModel.getNextIndex()
+                        if (nextIndex != -1) {
+                            playSong(currentPlaylist[nextIndex])
+                        }
+                    },
+                    onPrev = {
+                        val prevIndex = viewModel.getPrevIndex()
+                        if (prevIndex != -1) {
+                            playSong(currentPlaylist[prevIndex])
+                        }
+                    }
+                )
             }
+        }
+
+        // 核心修复：直接通过 Activity 观察可见性，控制 View 的生杀大权喵！
+        viewModel.isPlayingPanelVisible.observe(this) { isVisible ->
+            binding.composeViewPlayingPanel.visibility = if (isVisible) View.VISIBLE else View.GONE
         }
 
         // 中间层同步：把 ViewModel 的状态同步给本地冗余变量 (过渡用喵)
@@ -464,6 +465,13 @@ class MainActivity : AppCompatActivity() {
         // 播放模式切换
         binding.btnPlayMode.setOnClickListener {
             viewModel.togglePlayMode()
+        }
+
+        // 点击底部播放栏整体打开详情页喵
+        binding.bottomPlayerBar.setOnClickListener {
+            if (currentPlaylist.isNotEmpty()) {
+                viewModel.setPlayingPanelVisible(true)
+            }
         }
     }
 
