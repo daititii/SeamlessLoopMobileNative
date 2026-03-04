@@ -60,56 +60,31 @@ class PlaylistRepository(
 
         // (此处包含原来的 sync 逻辑内容，暂略以保持代码块大小喵)
         // 1. 搜集文件
-        val uri = android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(
-            android.provider.MediaStore.Audio.Media._ID,
-            android.provider.MediaStore.Audio.Media.DISPLAY_NAME,
-            android.provider.MediaStore.Audio.Media.DATA,
-            android.provider.MediaStore.Audio.Media.DURATION
-        )
-        val selection = "${android.provider.MediaStore.Audio.Media.DATA} LIKE ?"
-        val selectionArgs = arrayOf("$folderPath/%")
+        val allScanned = AudioScanner.scan(context)
+        val scannedSongs = allScanned.filter { File(it.filePath).parent == folderPath }
         
-        val audioItems = mutableListOf<Triple<Long, String, String>>()
-        val itemDurations = mutableMapOf<String, Long>()
-        context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media._ID)
-            val nameCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DISPLAY_NAME)
-            val dataCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DATA)
-            val durationCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DURATION)
-            while (cursor.moveToNext()) {
-                val filePath = cursor.getString(dataCol)
-                if (File(filePath).parent == folderPath) {
-                    audioItems.add(Triple(cursor.getLong(idCol), cursor.getString(nameCol), filePath))
-                    // 顺便存一下毫秒时长，用于比对手机端指纹喵
-                    val ms = cursor.getLong(durationCol)
-                    itemDurations[filePath] = ms
-                }
-            }
-        }
-
-        if (audioItems.isEmpty()) return@withContext
+        if (scannedSongs.isEmpty()) return@withContext
 
         // 2. 移除 AB 配对中的 B 部分（因为我们需要它是逻辑上的一个条目喵）
-        val nameMapInFolder = audioItems.associateBy { it.second.substringBeforeLast(".") }
+        val nameMapInFolder = scannedSongs.associateBy { it.fileName.substringBeforeLast(".") }
         val bSuffixes = arrayOf("_B", "_b", "_loop", "_Loop")
         val aSuffixes = arrayOf("_A", "_a", "_intro", "_Intro")
         val ignorePaths = mutableSetOf<String>()
 
-        for (item in audioItems) {
-            val nameNormal = item.second.substringBeforeLast(".")
+        for (item in scannedSongs) {
+            val nameNormal = item.fileName.substringBeforeLast(".")
             for (i in bSuffixes.indices) {
                 if (nameNormal.endsWith(bSuffixes[i])) {
                     val baseName = nameNormal.substring(0, nameNormal.length - bSuffixes[i].length)
                     if (nameMapInFolder.containsKey(baseName + aSuffixes[i])) {
-                        ignorePaths.add(item.third)
+                        ignorePaths.add(item.filePath)
                         break
                     }
                 }
             }
         }
 
-        val targetItems = audioItems.filter { it.third !in ignorePaths }
+        val targetItems = scannedSongs.filter { it.filePath !in ignorePaths }
         val total = targetItems.size
 
         // 3. 清空并开始同步写库
@@ -119,23 +94,19 @@ class PlaylistRepository(
 
         targetItems.forEachIndexed { index, item ->
             onProgress("正在同步: ${index + 1}/$total")
-            val (accurateSamples, sampleRate) = AudioScanner.getAccurateMetadata(context, item.first)
-            val mediaStoreDuration = itemDurations[item.third] ?: 0L
+            val (accurateSamples, sampleRate) = AudioScanner.getAccurateMetadata(context, item.mediaId)
             
             // 优先查找手机端“指纹” (名称+毫秒时长)
-            val mobileSong = dbSongsByFingerprint["${item.second}|$mediaStoreDuration"]
+            val mobileSong = dbSongsByFingerprint["${item.fileName}|${item.duration}"]
             // 备选查找电脑端“指纹” (名称+总采样数)
-            val pcSong = dbSongsBySamples["${item.second}|$accurateSamples"]
+            val pcSong = dbSongsBySamples["${item.fileName}|$accurateSamples"]
             
-            val song = Song(
-                mediaId = item.first,
-                fileName = item.second,
-                filePath = item.third,
+            val song = item.copy(
                 totalSamples = accurateSamples,
-                displayName = pcSong?.displayName ?: mobileSong?.displayName ?: item.second.substringBeforeLast("."),
+                duration = item.duration, // 明确显式继承 duration 喵！
+                displayName = pcSong?.displayName ?: mobileSong?.displayName ?: item.displayName,
                 loopStart = pcSong?.loopStart ?: mobileSong?.loopStart ?: 0L,
                 loopEnd = pcSong?.loopEnd ?: mobileSong?.loopEnd ?: accurateSamples,
-                duration = mediaStoreDuration,
                 id = mobileSong?.id ?: pcSong?.id ?: 0
             )
             
