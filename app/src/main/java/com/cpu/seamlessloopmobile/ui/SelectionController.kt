@@ -223,7 +223,6 @@ class SelectionController(
                             }
                             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                             exitSelectionMode()
-                            uiCallback.onReloadHomeView()
                         }
                     }
                 }
@@ -248,7 +247,6 @@ class SelectionController(
                 }
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 exitSelectionMode()
-                uiCallback.onReloadHomeView()
             }
         }
     }
