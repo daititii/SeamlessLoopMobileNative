@@ -35,12 +35,17 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.getValue
 import com.cpu.seamlessloopmobile.ui.screen.playing.PlayingPanel
 import android.view.View
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.Modifier
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private lateinit var songAdapter: SongAdapter
-    private lateinit var libraryAdapter: LibraryAdapter
     
     private lateinit var viewModel: MainViewModel
     private lateinit var repository: com.cpu.seamlessloopmobile.data.MusicRepository
@@ -54,8 +59,6 @@ class MainActivity : AppCompatActivity() {
     private var isUserSeeking: Boolean = false
     private var currentAbIntroSong: Song? = null
     private var currentOpenPlaylist: Playlist? = null
-    private var isSelectionControllerInitialized = false
-    private lateinit var selectionController: com.cpu.seamlessloopmobile.ui.SelectionController
     private lateinit var mediaBrowserHelper: com.cpu.seamlessloopmobile.audio.MediaBrowserHelper
     private lateinit var progressUpdateHelper: com.cpu.seamlessloopmobile.ui.ProgressUpdateHelper
     private var playbackService: com.cpu.seamlessloopmobile.audio.PlaybackService? = null
@@ -135,15 +138,24 @@ class MainActivity : AppCompatActivity() {
         viewModel.uiState.observe(this) { state ->
             when (state) {
                 is com.cpu.seamlessloopmobile.viewmodel.MusicUiState.Home -> {
-                    renderHome()
+                    binding.toolbar.title = "Seamless Loop"
+                    binding.toolbar.navigationIcon = null
+                    displayedSongs = emptyList()
                 }
                 is com.cpu.seamlessloopmobile.viewmodel.MusicUiState.CategoryFolders -> {
-                    renderCategoryList(state.items, state.title)
+                    binding.toolbar.title = state.title
+                    binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
+                    binding.toolbar.setNavigationOnClickListener { viewModel.goBack() }
+                    displayedSongs = emptyList()
                 }
                 is com.cpu.seamlessloopmobile.viewmodel.MusicUiState.SongList -> {
-                    renderSongList(state.songs, state.title, state.type, state.originalItems)
+                    binding.toolbar.title = state.title
+                    binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
+                    binding.toolbar.setNavigationOnClickListener { viewModel.goBack() }
+                    displayedSongs = state.songs
                 }
             }
+            invalidateOptionsMenu()
         }
 
         viewModel.allSongs.observe(this) { allSongs = it }
@@ -153,11 +165,6 @@ class MainActivity : AppCompatActivity() {
 
         viewModel.currentPlaylist.observe(this) { 
             currentPlaylist = it
-            // 如果当前正在看具体的歌曲列表，同步一下显示内容喵
-            if (viewModel.uiState.value is com.cpu.seamlessloopmobile.viewmodel.MusicUiState.SongList) {
-                displayedSongs = it
-                songAdapter.updateSongs(it)
-            }
         }
 
 
@@ -171,11 +178,6 @@ class MainActivity : AppCompatActivity() {
         }
         viewModel.currentSongIndex.observe(this) { index ->
             currentSongIndex = index
-            if (index >= 0 && index < currentPlaylist.size) {
-                songAdapter.setPlayingSong(currentPlaylist[index].filePath)
-            } else {
-                songAdapter.setPlayingSong(null)
-            }
         }
         viewModel.isPlaying.observe(this) { playing ->
             isPlaying = playing 
@@ -188,11 +190,7 @@ class MainActivity : AppCompatActivity() {
         viewModel.isAbModePlaying.observe(this) { isAbModePlaying = it }
         viewModel.currentAbIntroSong.observe(this) { currentAbIntroSong = it }
         viewModel.currentOpenPlaylist.observe(this) { currentOpenPlaylist = it }
-        viewModel.playlists.observe(this) {
-            if (viewModel.uiState.value is com.cpu.seamlessloopmobile.viewmodel.MusicUiState.Home) {
-                renderHome()
-            }
-        }
+
         viewModel.playMode.observe(this) { mode ->
             updatePlayModeIcon(mode)
             // 循环模式的变更也应该通过遥控器传给后台喵
@@ -255,20 +253,8 @@ class MainActivity : AppCompatActivity() {
         // 设置返回键逻辑喵 (现代安卓做法)
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // 增加安全性检查：万一初始化还没跑完大人就按返回键了喵！
-                if (!isSelectionControllerInitialized) {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                    isEnabled = true
-                    return
-                }
-
                 if (viewModel.isPlayingPanelVisible.value == true) {
                     viewModel.setPlayingPanelVisible(false)
-                } else if (selectionController.isSelectionMode) {
-                    selectionController.exitSelectionMode()
-                } else if (selectionController.isPlaylistSelectionMode) {
-                    selectionController.exitPlaylistSelectionMode()
                 } else if (viewModel.goBack()) {
                     // 大脑已经成功回退，UI 也会自动响应喵！
                 } else {
@@ -279,7 +265,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        setupRecyclerView()
+        setupMainContent()
         setupSeekBar()
         setupPlaybackControls()
         checkPermissionsAndLoadHome()
@@ -469,182 +455,27 @@ private fun setupPlaybackControls() {
 
 
 
-    private fun setupRecyclerView() {
-        // 初始化歌曲列表适配器
-        songAdapter = SongAdapter(emptyList()) { song ->
-            playSong(song)
-        }
-        
-        songAdapter.setOnLongClickListener { song ->
-            selectionController.enterSelectionMode()
-            songAdapter.toggleSelection(song.filePath) // 顺便把长按这首也选上喵
-        }
-        
-        // 初始化主库列表适配器 (包含歌单和文件夹)
-        libraryAdapter = com.cpu.seamlessloopmobile.adapter.LibraryAdapter(
-            emptyList(),
-            onPlaylistClick = { playlist -> openPlaylist(playlist) },
-            onFolderClick = { folder -> openFolder(folder) },
-            onQuickActionClick = { title -> 
-                when (title) {
-                    "全部歌曲" -> viewModel.openSongList("全部歌曲", allSongs, com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.ALL_SONGS)
-                    "专辑" -> viewModel.openCategory("专辑", albums)
-                    "歌手" -> viewModel.openCategory("歌手", artists)
-                    "文件夹" -> viewModel.openCategory("文件夹", folders)
-                }
-            },
-            onPlaylistLongClick = { playlist -> selectionController.enterPlaylistSelectionMode(playlist) },
-            onFolderLongClick = { folder -> selectionController.showLinkFolderDialog(folder) }
-        )
-        libraryAdapter.setOnSelectionChangedListener { count ->
-            if (selectionController.isPlaylistSelectionMode) {
-                binding.toolbar.title = "已选择歌单: $count"
-                selectionController.updatePlaylistSelectionMenu()
-            }
-        }
-
-        binding.rvSongs.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
-        binding.rvSongs.itemAnimator = null // 取消列表刷新的闪烁动画喵！
-        // 默认显示主库（歌单+文件夹）
-        binding.rvSongs.adapter = libraryAdapter
-
-        songAdapter.setOnSelectionChangedListener { count ->
-            if (selectionController.isSelectionMode) {
-                selectionController.updateSelectionMenu(count)
-            }
-        }
-
-        // --- 初始化 SelectionController 喵 ---
-        selectionController = com.cpu.seamlessloopmobile.ui.SelectionController(
-            context = this,
-            toolbar = binding.toolbar,
-            songAdapter = songAdapter,
-            libraryAdapter = libraryAdapter,
-            repository = repository,
-            viewModel = viewModel,
-            coroutineScope = lifecycleScope,
-            uiCallback = object : com.cpu.seamlessloopmobile.ui.SelectionController.SelectionUiCallback {
-                override fun onExitSelection() {
-                    viewModel.goBack() // 简单粗暴，直接回退喵
-                    invalidateOptionsMenu()
-                }
-
-                override fun onExitPlaylistSelection() {
-                    viewModel.goBack()
-                }
-
-                override fun onReloadHomeView() {
-                    viewModel.openHome()
-                }
-
-                override fun onRefreshPlaylist(playlist: com.cpu.seamlessloopmobile.model.Playlist) {
-                    openPlaylist(playlist)
-                }
-
-                override val isInsidePlaylist: Boolean
-                    get() = viewModel.uiState.value is com.cpu.seamlessloopmobile.viewmodel.MusicUiState.SongList && (viewModel.uiState.value as com.cpu.seamlessloopmobile.viewmodel.MusicUiState.SongList).type == com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.PLAYLIST
-
-                override val currentOpenPlaylist: com.cpu.seamlessloopmobile.model.Playlist?
-                    get() = this@MainActivity.currentOpenPlaylist
-            }
-        )
-        isSelectionControllerInitialized = true
-    }
-
-
-    private fun openPlaylist(playlist: com.cpu.seamlessloopmobile.model.Playlist) {
-        viewModel.setCurrentOpenPlaylist(playlist)
-        lifecycleScope.launch(Dispatchers.Main) {
-            val songs = repository.getSongsInPlaylist(playlist.id)
-            if (playlist.isFolderLinked == 1 && songs.isEmpty()) {
-                viewModel.refreshFolderPlaylist(this@MainActivity, playlist)
-            }
-            viewModel.openSongList(playlist.name, songs, com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.PLAYLIST)
-        }
-    }
-
-    private fun openFolder(folder: com.cpu.seamlessloopmobile.model.Folder) {
-        val type = when {
-            folder.path.startsWith("album_") -> com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.ALBUM
-            folder.path.startsWith("artist_") -> com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.ARTIST
-            else -> com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.FOLDER
-        }
-        
-        val originalItems = when (type) {
-            com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.ALBUM -> albums
-            com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.ARTIST -> artists
-            else -> folders
-        }
-
-        viewModel.openSongList(folder.name, folder.songs, type, originalItems)
-    }
-
-    private fun renderHome() {
-        binding.rvSongs.adapter = libraryAdapter
-        binding.toolbar.title = "Seamless Loop"
-        binding.toolbar.navigationIcon = null
-        
-        lifecycleScope.launch(Dispatchers.Main) {
-            // 1. 从数据库读取歌单喵
-            val dbPlaylists = repository.getAllPlaylists()
-            val playlistWithCounts = dbPlaylists.map { playlist ->
-                var count = repository.getSongCountInPlaylist(playlist.id)
-                if (playlist.isFolderLinked == 1 && count == 0 && playlist.folderPath != null) {
-                    try {
-                        val folder = java.io.File(playlist.folderPath)
-                        val files = folder.listFiles { file ->
-                            val name = file.name.lowercase()
-                            name.endsWith(".wav") || name.endsWith(".mp3") || name.endsWith(".ogg")
-                        }
-                        count = files?.size ?: 0
-                    } catch (e: Exception) { /* 忽略错误喵 */ }
-                }
-                Pair(playlist, count)
-            }
-            
-            val localCount = repository.getAllSongs().size
-            val libraryItems = mutableListOf<com.cpu.seamlessloopmobile.model.LibraryItem>()
-            
-            libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header("分类"))
-            libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.QuickAction("全部歌曲", android.R.drawable.ic_media_play, localCount))
-            libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.QuickAction("专辑", android.R.drawable.ic_menu_gallery, albums.size))
-            libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.QuickAction("歌手", android.R.drawable.ic_menu_myplaces, artists.size))
-            libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.QuickAction("文件夹", android.R.drawable.ic_menu_save, folders.size))
-            
-            if (playlistWithCounts.isNotEmpty()) {
-                libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header("我的歌单"))
-                playlistWithCounts.forEach { (playlist, count) ->
-                    libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.PlaylistWrapper(playlist, count))
+    private fun setupMainContent() {
+        binding.composeViewMain.apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val darkTheme = isSystemInDarkTheme()
+                val colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()
+                
+                MaterialTheme(colorScheme = colorScheme) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background,
+                        contentColor = MaterialTheme.colorScheme.onBackground
+                    ) {
+                        com.cpu.seamlessloopmobile.ui.screen.MainScreen(
+                            viewModel = viewModel,
+                            playSong = { song -> playSong(song) }
+                        )
+                    }
                 }
             }
-            libraryAdapter.updateItems(libraryItems)
         }
-    }
-
-    private fun renderCategoryList(items: List<com.cpu.seamlessloopmobile.model.Folder>, title: String) {
-        binding.rvSongs.adapter = libraryAdapter
-        binding.toolbar.title = title
-        binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
-        binding.toolbar.setNavigationOnClickListener { viewModel.goBack() }
-        
-        val libraryItems = mutableListOf<com.cpu.seamlessloopmobile.model.LibraryItem>()
-        libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header(title))
-        items.forEach { folder ->
-            libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.FolderWrapper(folder))
-        }
-        libraryAdapter.updateItems(libraryItems)
-        invalidateOptionsMenu()
-    }
-
-    private fun renderSongList(songs: List<Song>, title: String, type: com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType, originalItems: List<com.cpu.seamlessloopmobile.model.Folder>?) {
-        displayedSongs = songs
-        songAdapter.updateSongs(songs)
-        binding.rvSongs.adapter = songAdapter
-        
-        binding.toolbar.title = title
-        binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
-        binding.toolbar.setNavigationOnClickListener { viewModel.goBack() }
-        invalidateOptionsMenu()
     }
 
 

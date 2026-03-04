@@ -68,5 +68,6 @@ PlaybackManager.kt（第 194 行）时，直接惊呆了：
 - [x] 添加歌曲到歌单后就会跳转到主页面（歌单页面）
 - [ ] 默认收藏的歌单可以更改
 - [ ] 不能识别BLUE ARCHIVE
+- [ ] 最新采用compose架构后，一系列多选功能消失
 - [ ] 尝试增加以下功能
   ![Screenshot_20260304_000223_remix.myplayer](TODO.assets/Screenshot_20260304_000223_remix.myplayer.jpg)
