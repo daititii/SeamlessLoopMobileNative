@@ -771,7 +771,6 @@ class MainActivity : AppCompatActivity() {
         }
         
         viewModel.updateSongIndex(currentSongIndex)
-        viewModel.setPlayingPanelVisible(true)
         
         // 官方遥控器：点火！
         MediaControllerCompat.getMediaController(this)?.transportControls
