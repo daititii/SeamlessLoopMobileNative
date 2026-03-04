@@ -89,8 +89,10 @@ class PlaylistRepository(
 
         // 3. 清空并开始同步写库
         playlistDao.clearPlaylist(playlist.id)
-        val dbSongsByFingerprint = songDao.getAllSongs().associateBy { "${it.fileName}|${it.duration}" }
-        val dbSongsBySamples = songDao.getAllSongs().filter { it.totalSamples > 0 }.associateBy { "${it.fileName}|${it.totalSamples}" }
+        val allDbSongs = songDao.getAllSongs()
+        val dbSongsByFingerprint = allDbSongs.associateBy { "${it.fileName}|${it.duration}" }
+        // 提取出所有来自PC端数据的记录喵，它们应该有 totalSamples > 0 
+        val pcDbSongs = allDbSongs.filter { it.totalSamples > 0 }
 
         targetItems.forEachIndexed { index, item ->
             onProgress("正在同步: ${index + 1}/$total")
@@ -98,8 +100,26 @@ class PlaylistRepository(
             
             // 优先查找手机端“指纹” (名称+毫秒时长)
             val mobileSong = dbSongsByFingerprint["${item.fileName}|${item.duration}"]
-            // 备选查找电脑端“指纹” (名称+总采样数)
-            val pcSong = dbSongsBySamples["${item.fileName}|$accurateSamples"]
+            
+            // 备选查找电脑端记录：兼顾手机和电脑MP3采样数的细微差异喵！
+            var pcSong: Song? = null
+            val itemNameBase = item.fileName.substringBeforeLast(".")
+            
+            // 第一步：先看有没有名字能包含或被包含的 PC 歌曲
+            val nameMatchedPcSongs = pcDbSongs.filter { pc ->
+                val pcNameBase = pc.fileName.substringBeforeLast(".")
+                itemNameBase.contains(pcNameBase, ignoreCase = true) || 
+                pcNameBase.contains(itemNameBase, ignoreCase = true)
+            }
+            
+            if (nameMatchedPcSongs.isNotEmpty()) {
+                // 第二步：在名字匹配的歌曲中，找一个采样数最接近的喵！
+                // 允许的最大误差为 10000 采样（对于44.1kHz大约0.2秒），足够包容MP3的首尾填充差异了
+                val closestSong = nameMatchedPcSongs.minByOrNull { Math.abs(it.totalSamples - accurateSamples) }
+                if (closestSong != null && Math.abs(closestSong.totalSamples - accurateSamples) < 10000) {
+                    pcSong = closestSong
+                }
+            }
             
             val song = item.copy(
                 totalSamples = accurateSamples,
@@ -111,7 +131,11 @@ class PlaylistRepository(
             )
             
             val songId = songDao.insertOrUpdateSong(song)
-            playlistDao.addSongsToPlaylist(playlist.id, listOf(songId))
+            if (songId > 0) {
+                playlistDao.addSongsToPlaylist(playlist.id, listOf(songId))
+            } else {
+                android.util.Log.e("PlaylistRepo", "插入歌曲失败喵: ${song.fileName}")
+            }
         }
     }
 }

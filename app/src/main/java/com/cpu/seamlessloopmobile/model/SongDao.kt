@@ -16,7 +16,7 @@ interface SongDao {
     @Query("SELECT * FROM LoopPoints WHERE FileName = :name")
     suspend fun getSongsByName(name: String): List<Song>
 
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSong(song: Song): Long
 
     @Update
