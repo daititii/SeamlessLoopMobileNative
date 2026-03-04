@@ -46,6 +46,10 @@ class MainActivity : AppCompatActivity() {
     private var rawScannedSongs: List<Song> = emptyList()
     private var allSongs: List<Song> = emptyList()
     private var folders: List<com.cpu.seamlessloopmobile.model.Folder> = emptyList()
+    private var albums: List<com.cpu.seamlessloopmobile.model.Folder> = emptyList()
+    private var artists: List<com.cpu.seamlessloopmobile.model.Folder> = emptyList()
+    private var currentCategoryItems: List<com.cpu.seamlessloopmobile.model.Folder> = emptyList()
+    private var currentCategoryTitle: String = ""
     private var isShowingFolders = false
     private var isExploringLocal = false
     private var isInsidePlaylist = false
@@ -135,8 +139,20 @@ class MainActivity : AppCompatActivity() {
         }
         viewModel.folders.observe(this) { 
             folders = it
-            if (isExploringLocal && isShowingFolders) {
-                showFolderList()
+            if (isExploringLocal && isShowingFolders && currentCategoryTitle == "文件夹") {
+                showCategoryList(folders, "文件夹")
+            }
+        }
+        viewModel.albums.observe(this) {
+            albums = it
+            if (isExploringLocal && isShowingFolders && currentCategoryTitle == "专辑") {
+                showCategoryList(albums, "专辑")
+            }
+        }
+        viewModel.artists.observe(this) {
+            artists = it
+            if (isExploringLocal && isShowingFolders && currentCategoryTitle == "歌手") {
+                showCategoryList(artists, "歌手")
             }
         }
         viewModel.isExploringLocal.observe(this) { isExploringLocal = it }
@@ -216,10 +232,15 @@ class MainActivity : AppCompatActivity() {
                     loadHomeView()
                 } else if (isExploringLocal) {
                     if (!isShowingFolders) {
-                        showFolderList() // 从歌曲列表回退到文件夹列表喵
+                        if (currentCategoryTitle == "全部歌曲") {
+                            isExploringLocal = false
+                            loadHomeView()
+                        } else {
+                            showCategoryList(currentCategoryItems, currentCategoryTitle) // 从歌曲列表回退到分类目录喵
+                        }
                     } else {
                         isExploringLocal = false
-                        loadHomeView() // 从文件夹列表回退到主页喵
+                        loadHomeView() // 从目录列表回退到主页喵
                     }
                 } else {
                     isEnabled = false // 关掉拦截，执行默认返回
@@ -584,8 +605,12 @@ class MainActivity : AppCompatActivity() {
             onPlaylistClick = { playlist -> openPlaylist(playlist) },
             onFolderClick = { folder -> openFolder(folder) },
             onQuickActionClick = { title -> 
-                if (title == "本地音乐") {
-                    enterLocalMusic()
+                when (title) {
+                    "全部歌曲" -> enterAllSongs()
+                    "专辑" -> showCategoryList(albums, "专辑")
+                    "歌手" -> showCategoryList(artists, "歌手")
+                    "文件夹" -> showCategoryList(folders, "文件夹")
+                    "本地音乐" -> enterLocalMusic()
                 }
             },
             onPlaylistLongClick = { playlist -> selectionController.enterPlaylistSelectionMode(playlist) },
@@ -625,12 +650,20 @@ class MainActivity : AppCompatActivity() {
                         currentOpenPlaylist?.let { openPlaylist(it) } ?: loadHomeView()
                     } else if (isShowingFolders || isExploringLocal) {
                         if (!isShowingFolders) {
-                             val currentFolder = folders.find { it.songs.any { s -> s.filePath == currentPlaylist.firstOrNull()?.filePath } }
-                             binding.toolbar.title = currentFolder?.name ?: "本地音乐"
-                             binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
-                             binding.toolbar.setNavigationOnClickListener { showFolderList() }
+                             if (currentCategoryTitle == "全部歌曲") {
+                                 binding.toolbar.title = "全部歌曲"
+                                 binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
+                                 binding.toolbar.setNavigationOnClickListener { 
+                                     isExploringLocal = false; loadHomeView() 
+                                 }
+                             } else {
+                                 val currentFolder = currentCategoryItems.find { it.songs.any { s -> s.filePath == currentPlaylist.firstOrNull()?.filePath } }
+                                 binding.toolbar.title = currentFolder?.name ?: "无名列表"
+                                 binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
+                                 binding.toolbar.setNavigationOnClickListener { showCategoryList(currentCategoryItems, currentCategoryTitle) }
+                             }
                         } else {
-                             showFolderList()
+                             showCategoryList(currentCategoryItems, currentCategoryTitle)
                         }
                     } else {
                         loadHomeView()
@@ -639,7 +672,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun onExitPlaylistSelection() {
-                    if (isExploringLocal) showFolderList() else loadHomeView()
+                    if (isExploringLocal) showCategoryList(currentCategoryItems, currentCategoryTitle) else loadHomeView()
                 }
 
                 override fun onReloadHomeView() {
@@ -708,7 +741,7 @@ class MainActivity : AppCompatActivity() {
         // 显示返回按钮
         binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
         binding.toolbar.setNavigationOnClickListener {
-            showFolderList()
+            showCategoryList(currentCategoryItems, currentCategoryTitle)
         }
     }
 
@@ -718,16 +751,40 @@ class MainActivity : AppCompatActivity() {
         if (folders.isEmpty()) {
             viewModel.scanLibrary(this) // 如果还没扫过，就扫一下喵
         } else {
-            showFolderList()
+            showCategoryList(folders, "文件夹")
+        }
+    }
+    
+    private fun enterAllSongs() {
+        viewModel.setShowingFolders(false)
+        viewModel.setExploringLocal(true)
+        viewModel.setInsidePlaylist(false)
+        currentCategoryTitle = "全部歌曲"
+        
+        if (allSongs.isEmpty()) {
+            viewModel.scanLibrary(this)
+        }
+        
+        displayedSongs = allSongs
+        songAdapter.updateSongs(allSongs)
+        binding.rvSongs.adapter = songAdapter
+        
+        binding.toolbar.title = "全部歌曲"
+        binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
+        binding.toolbar.setNavigationOnClickListener { 
+            isExploringLocal = false
+            loadHomeView() 
         }
     }
 
-    private fun showFolderList() {
+    private fun showCategoryList(items: List<com.cpu.seamlessloopmobile.model.Folder>, title: String) {
+        currentCategoryItems = items
+        currentCategoryTitle = title
         viewModel.setShowingFolders(true)
         viewModel.setExploringLocal(true)
         viewModel.setInsidePlaylist(false)
         binding.rvSongs.adapter = libraryAdapter
-        binding.toolbar.title = "本地音乐"
+        binding.toolbar.title = title
         binding.toolbar.setNavigationIcon(android.R.drawable.ic_menu_revert)
         binding.toolbar.setNavigationOnClickListener { 
             isExploringLocal = false
@@ -736,8 +793,8 @@ class MainActivity : AppCompatActivity() {
         
         // 同步 UI
         val libraryItems = mutableListOf<com.cpu.seamlessloopmobile.model.LibraryItem>()
-        libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header("本地目录"))
-        folders.forEach { folder ->
+        libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header(title))
+        items.forEach { folder ->
             libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.FolderWrapper(folder))
         }
         libraryAdapter.updateItems(libraryItems)
@@ -834,10 +891,26 @@ class MainActivity : AppCompatActivity() {
             val libraryItems = mutableListOf<com.cpu.seamlessloopmobile.model.LibraryItem>()
             
             // 核心功能键
+            libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.Header("分类"))
             libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.QuickAction(
-                "本地音乐", 
-                android.R.drawable.ic_menu_save, 
+                "全部歌曲", 
+                android.R.drawable.ic_media_play, 
                 localCount
+            ))
+            libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.QuickAction(
+                "专辑", 
+                android.R.drawable.ic_menu_gallery, 
+                albums.size
+            ))
+            libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.QuickAction(
+                "歌手", 
+                android.R.drawable.ic_menu_myplaces, 
+                artists.size
+            ))
+            libraryItems.add(com.cpu.seamlessloopmobile.model.LibraryItem.QuickAction(
+                "文件夹", 
+                android.R.drawable.ic_menu_save, 
+                folders.size
             ))
             
             if (playlistWithCounts.isNotEmpty()) {

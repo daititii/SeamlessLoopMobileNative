@@ -34,6 +34,12 @@ class MainViewModel(
     private val _folders = MutableLiveData<List<Folder>>(emptyList())
     val folders: LiveData<List<Folder>> = _folders
 
+    private val _albums = MutableLiveData<List<Folder>>(emptyList())
+    val albums: LiveData<List<Folder>> = _albums
+
+    private val _artists = MutableLiveData<List<Folder>>(emptyList())
+    val artists: LiveData<List<Folder>> = _artists
+
     private val _playlists = MutableLiveData<List<Playlist>>(emptyList())
     val playlists: LiveData<List<Playlist>> = _playlists
 
@@ -133,9 +139,21 @@ class MainViewModel(
                 val name = try { File(path).name } catch (e: Exception) { path }
                 Folder(name, path, folderSongs.size, folderSongs)
             }.sortedBy { it.name }
+            
+            val albumList = sortedSongs.groupBy { it.album ?: "Unknown Album" }
+                .map { (name, albumSongs) ->
+                    Folder(name, "album_$name", albumSongs.size, albumSongs)
+                }.sortedBy { it.name }
+
+            val artistList = sortedSongs.groupBy { it.artist ?: "Unknown Artist" }
+                .map { (name, artistSongs) ->
+                    Folder(name, "artist_$name", artistSongs.size, artistSongs)
+                }.sortedBy { it.name }
 
             _allSongs.postValue(songs)
             _folders.postValue(folderList)
+            _albums.postValue(albumList)
+            _artists.postValue(artistList)
         }
     }
 
@@ -242,6 +260,22 @@ class MainViewModel(
                     }.sortedBy { it.name }
             }
             _folders.postValue(folderList)
+            
+            val albumList = withContext(Dispatchers.Default) {
+                updatedSongs.groupBy { it.album ?: "Unknown Album" }
+                    .map { (name, songs) ->
+                        com.cpu.seamlessloopmobile.model.Folder(name, "album_$name", songs.size, songs)
+                    }.sortedBy { it.name }
+            }
+            _albums.postValue(albumList)
+
+            val artistList = withContext(Dispatchers.Default) {
+                updatedSongs.groupBy { it.artist ?: "Unknown Artist" }
+                    .map { (name, songs) ->
+                        com.cpu.seamlessloopmobile.model.Folder(name, "artist_$name", songs.size, songs)
+                    }.sortedBy { it.name }
+            }
+            _artists.postValue(artistList)
         }
     }
 
