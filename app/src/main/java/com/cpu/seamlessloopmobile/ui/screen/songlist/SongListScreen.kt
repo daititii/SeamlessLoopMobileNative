@@ -1,6 +1,7 @@
 package com.cpu.seamlessloopmobile.ui.screen.songlist
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,12 +15,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cpu.seamlessloopmobile.model.Song
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.ExperimentalFoundationApi
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SongListScreen(
     songs: List<Song>,
     currentPlayingSongPath: String?,
+    isSelectionMode: Boolean,
+    selectedItems: Set<String>,
     onPlaySong: (Song) -> Unit,
+    onToggleSelection: (Song) -> Unit,
     onShowMoreOptions: (Song) -> Unit
 ) {
     LazyColumn(
@@ -27,30 +34,57 @@ fun SongListScreen(
     ) {
         items(songs, key = { it.filePath }) { song ->
             val isPlaying = song.filePath == currentPlayingSongPath
+            val isSelected = selectedItems.contains(song.filePath)
+            
             SongListItem(
                 song = song,
                 isPlaying = isPlaying,
-                onClick = { onPlaySong(song) },
+                isSelected = isSelected,
+                isSelectionMode = isSelectionMode,
+                onClick = { 
+                    if (isSelectionMode) onToggleSelection(song)
+                    else onPlaySong(song)
+                },
+                onLongClick = { onToggleSelection(song) },
                 onMoreClick = { onShowMoreOptions(song) }
             )
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SongListItem(
     song: Song,
     isPlaying: Boolean,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onMoreClick: () -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+    Surface(
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) 
+                else Color.Transparent,
+        modifier = Modifier.fillMaxWidth()
     ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick
+                )
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() },
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
         Icon(
             imageVector = Icons.Default.MusicNote,
             contentDescription = null,
@@ -81,6 +115,7 @@ fun SongListItem(
                 contentDescription = "更多选项",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
         }
     }
 }

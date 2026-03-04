@@ -119,6 +119,32 @@ class MainViewModel(
     private val _isPlayingPanelVisible = MutableLiveData(false)
     val isPlayingPanelVisible: LiveData<Boolean> = _isPlayingPanelVisible
 
+    // --- 多选状态相关喵 ---
+    private val _isSelectionMode = MutableLiveData(false)
+    val isSelectionMode: LiveData<Boolean> = _isSelectionMode
+
+    private val _selectedItems = MutableLiveData<Set<String>>(emptySet())
+    val selectedItems: LiveData<Set<String>> = _selectedItems
+
+    fun setSelectionMode(enabled: Boolean) {
+        _isSelectionMode.value = enabled
+        if (!enabled) _selectedItems.value = emptySet()
+    }
+
+    fun toggleSelection(id: String) {
+        val current = _selectedItems.value ?: emptySet()
+        val next = if (current.contains(id)) current - id else current + id
+        _selectedItems.value = next
+        
+        // 如果全退出了，自动关闭多选模式喵
+        if (next.isEmpty()) _isSelectionMode.value = false
+    }
+
+    fun clearSelection() {
+        _selectedItems.value = emptySet()
+        _isSelectionMode.value = false
+    }
+
     fun setPlayingPanelVisible(value: Boolean) { _isPlayingPanelVisible.value = value }
 
     fun openHome() {

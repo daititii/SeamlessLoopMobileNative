@@ -255,6 +255,8 @@ class MainActivity : AppCompatActivity() {
             override fun handleOnBackPressed() {
                 if (viewModel.isPlayingPanelVisible.value == true) {
                     viewModel.setPlayingPanelVisible(false)
+                } else if (viewModel.isSelectionMode.value == true) {
+                    viewModel.clearSelection()
                 } else if (viewModel.goBack()) {
                     // 大脑已经成功回退，UI 也会自动响应喵！
                 } else {

@@ -16,6 +16,13 @@ import com.cpu.seamlessloopmobile.ui.screen.home.HomeScreen
 import com.cpu.seamlessloopmobile.ui.screen.songlist.SongListScreen
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import com.cpu.seamlessloopmobile.viewmodel.MusicUiState
+import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -24,6 +31,15 @@ fun MainScreen(
     playSong: (com.cpu.seamlessloopmobile.model.Song) -> Unit
 ) {
     val uiState by viewModel.uiState.observeAsState(MusicUiState.Home)
+    val allSongs by viewModel.allSongs.observeAsState(emptyList())
+    val folders by viewModel.folders.observeAsState(emptyList())
+    val albums by viewModel.albums.observeAsState(emptyList())
+    val artists by viewModel.artists.observeAsState(emptyList())
+    val playlists by viewModel.playlists.observeAsState(emptyList())
+    val currentSongIndex by viewModel.currentSongIndex.observeAsState(-1)
+    val currentPlaylist by viewModel.currentPlaylist.observeAsState(emptyList())
+    val isSelectionMode by viewModel.isSelectionMode.observeAsState(false)
+    val selectedItems by viewModel.selectedItems.observeAsState(emptySet())
 
     Box(modifier = Modifier.fillMaxSize()) {
         AnimatedContent(
@@ -35,25 +51,17 @@ fun MainScreen(
         ) { state ->
             when (state) {
                 is MusicUiState.Home -> {
-                    val localCount = viewModel.allSongs.value?.size ?: 0
-                    val folders = viewModel.folders.value ?: emptyList()
-                    val albums = viewModel.albums.value ?: emptyList()
-                    val artists = viewModel.artists.value ?: emptyList()
-                    val playlists = viewModel.playlists.value ?: emptyList()
-                    
                     // 暂时这里不处理带数量的歌单，简单适配一下喵
                     val playlistPairs = playlists.map { it to 0 }
 
                     HomeScreen(
-                        localCount = localCount,
+                        localCount = allSongs.size,
                         albumsCount = albums.size,
                         artistsCount = artists.size,
                         foldersCount = folders.size,
                         playlists = playlistPairs,
                         onOpenAllSongs = {
-                            viewModel.allSongs.value?.let { songs ->
-                                viewModel.openSongList("全部歌曲", songs, MusicUiState.ListType.ALL_SONGS)
-                            }
+                            viewModel.openSongList("全部歌曲", allSongs, MusicUiState.ListType.ALL_SONGS)
                         },
                         onOpenAlbums = {
                             viewModel.openCategory("专辑", albums)
@@ -73,33 +81,91 @@ fun MainScreen(
                     )
                 }
                 is MusicUiState.CategoryFolders -> {
+                    val itemsToShow = when (state.title) {
+                        "专辑" -> albums
+                        "歌手" -> artists
+                        "文件夹" -> folders
+                        else -> state.items
+                    }
                     CategoryScreen(
-                        items = state.items,
+                        items = itemsToShow,
                         onOpenFolder = { folder ->
                             val type = when {
                                 folder.path.startsWith("album_") -> MusicUiState.ListType.ALBUM
                                 folder.path.startsWith("artist_") -> MusicUiState.ListType.ARTIST
                                 else -> MusicUiState.ListType.FOLDER
                             }
-                            viewModel.openSongList(folder.name, folder.songs, type, state.items)
+                            viewModel.openSongList(folder.name, folder.songs, type, itemsToShow)
                         }
                     )
                 }
                 is MusicUiState.SongList -> {
-                    val currentPlayingPath = viewModel.currentSongIndex.value?.let { index ->
-                        viewModel.currentPlaylist.value?.getOrNull(index)?.filePath
+                    // 核心修复：如果数据更新了，我们要从最新的分类里捞数据，而不是死守着旧快照喵！
+                    val songsToShow = when (state.type) {
+                        MusicUiState.ListType.ALL_SONGS -> allSongs
+                        MusicUiState.ListType.FOLDER -> folders.find { it.name == state.title }?.songs ?: state.songs
+                        MusicUiState.ListType.ALBUM -> albums.find { it.name == state.title }?.songs ?: state.songs
+                        MusicUiState.ListType.ARTIST -> artists.find { it.name == state.title }?.songs ?: state.songs
+                        else -> state.songs // 歌单等暂时用快照，或者未来也支持动态加载喵
                     }
+
+                    val currentPlayingPath = currentPlaylist.getOrNull(currentSongIndex)?.filePath
                     
                     SongListScreen(
-                        songs = state.songs,
+                        songs = songsToShow,
                         currentPlayingSongPath = currentPlayingPath,
+                        isSelectionMode = isSelectionMode,
+                        selectedItems = selectedItems,
                         onPlaySong = { song ->
                             playSong(song)
+                        },
+                        onToggleSelection = { song ->
+                            if (!isSelectionMode) viewModel.setSelectionMode(true)
+                            viewModel.toggleSelection(song.filePath)
                         },
                         onShowMoreOptions = { song ->
                             // TODO 显示更多选项对话框
                         }
                     )
+                }
+            }
+        }
+
+        // --- 多选操作悬浮窗喵 ---
+        if (isSelectionMode) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp)
+            ) {
+                Surface(
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    tonalElevation = 8.dp,
+                    shadowElevation = 8.dp
+                ) {
+                    androidx.compose.foundation.layout.Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "已选 ${selectedItems.size} 项",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(end = 16.dp)
+                        )
+                        
+                        IconButton(onClick = { 
+                            // TODO: 批量添加到歌单
+                        }) {
+                            Icon(Icons.Default.PlaylistAdd, contentDescription = "添加到歌单")
+                        }
+                        
+                        IconButton(onClick = { 
+                            viewModel.clearSelection()
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "取消选择")
+                        }
+                    }
                 }
             }
         }
