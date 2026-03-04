@@ -20,6 +20,28 @@ enum class PlayMode {
     SHUFFLE     // 随机播放
 }
 
+/**
+ * 界面导航的大地图喵！
+ * 用密封类定义我们到底在看哪个页面，再也不用布尔值猜谜了喵。
+ */
+sealed class MusicUiState {
+    object Home : MusicUiState()
+    
+    // 一级分类展开（比如：看所有歌手、看所有专辑喵）
+    data class CategoryFolders(val title: String, val items: List<Folder>) : MusicUiState()
+    
+    // 二级歌曲列表（比如：点进某个歌手、点击某个歌单喵）
+    data class SongList(
+        val title: String, 
+        val songs: List<Song>, 
+        val type: ListType,
+        val originalItems: List<Folder>? = null // 回退时可能需要恢复的分类列表喵
+    ) : MusicUiState()
+    
+    enum class ListType { PLAYLIST, FOLDER, ALL_SONGS, ALBUM, ARTIST }
+}
+
+
 class MainViewModel(
     private val repository: MusicRepository
 ) : ViewModel() {
@@ -43,18 +65,37 @@ class MainViewModel(
     private val _playlists = MutableLiveData<List<Playlist>>(emptyList())
     val playlists: LiveData<List<Playlist>> = _playlists
 
-    // --- UI 状态喵 ---
-    private val _isExploringLocal = MutableLiveData(false)
-    val isExploringLocal: LiveData<Boolean> = _isExploringLocal
 
-    private val _isShowingFolders = MutableLiveData(false)
-    val isShowingFolders: LiveData<Boolean> = _isShowingFolders
-
-    private val _isInsidePlaylist = MutableLiveData(false)
-    val isInsidePlaylist: LiveData<Boolean> = _isInsidePlaylist
 
     private val _currentOpenPlaylist = MutableLiveData<Playlist?>(null)
     val currentOpenPlaylist: LiveData<Playlist?> = _currentOpenPlaylist
+
+    private val _uiState = MutableLiveData<MusicUiState>(MusicUiState.Home)
+    val uiState: LiveData<MusicUiState> = _uiState
+
+    private val navigationStack = mutableListOf<MusicUiState>(MusicUiState.Home)
+
+    fun navigateTo(state: MusicUiState) {
+        if (navigationStack.lastOrNull() == state) return
+        navigationStack.add(state)
+        _uiState.value = state
+    }
+
+    fun goBack(): Boolean {
+        if (navigationStack.size > 1) {
+            navigationStack.removeAt(navigationStack.size - 1)
+            _uiState.value = navigationStack.last()
+            return true
+        }
+        return false
+    }
+
+    fun resetToHome() {
+        navigationStack.clear()
+        navigationStack.add(MusicUiState.Home)
+        _uiState.value = MusicUiState.Home
+    }
+
 
     // --- 播放控制状态喵 ---
     private val _currentPlaylist = MutableLiveData<List<Song>>(emptyList())
@@ -80,14 +121,22 @@ class MainViewModel(
 
     fun setPlayingPanelVisible(value: Boolean) { _isPlayingPanelVisible.value = value }
 
-    fun setExploringLocal(value: Boolean) { _isExploringLocal.value = value }
-    fun setShowingFolders(value: Boolean) { _isShowingFolders.value = value }
-    fun setInsidePlaylist(value: Boolean) { _isInsidePlaylist.value = value }
+    fun openHome() {
+        resetToHome()
+    }
+
+    fun openCategory(title: String, items: List<Folder>) {
+        navigateTo(MusicUiState.CategoryFolders(title, items))
+    }
+
+    fun openSongList(title: String, songs: List<Song>, type: MusicUiState.ListType, originalItems: List<Folder>? = null) {
+        navigateTo(MusicUiState.SongList(title, songs, type, originalItems))
+    }
     fun setCurrentOpenPlaylist(playlist: Playlist?) { _currentOpenPlaylist.value = playlist }
-    fun setPlaying(value: Boolean) { _isPlaying.value = value }
-    fun setAbModePlaying(value: Boolean) { _isAbModePlaying.value = value }
-    fun setCurrentAbIntroSong(song: Song?) { _currentAbIntroSong.value = song }
-    fun setPlayMode(mode: PlayMode) { _playMode.value = mode }
+    fun setPlaying(value: Boolean) { _isPlaying.postValue(value) }
+    fun setAbModePlaying(value: Boolean) { _isAbModePlaying.postValue(value) }
+    fun setCurrentAbIntroSong(song: Song?) { _currentAbIntroSong.postValue(song) }
+    fun setPlayMode(mode: PlayMode) { _playMode.postValue(mode) }
 
     fun togglePlayMode() {
         val next = when (_playMode.value) {
