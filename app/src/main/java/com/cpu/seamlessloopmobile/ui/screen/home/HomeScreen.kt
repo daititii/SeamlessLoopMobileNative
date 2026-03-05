@@ -2,18 +2,24 @@ package com.cpu.seamlessloopmobile.ui.screen.home
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.CheckCircle
 import com.cpu.seamlessloopmobile.model.Playlist
 
 @Composable
@@ -27,16 +33,24 @@ fun HomeScreen(
     onOpenAlbums: () -> Unit,
     onOpenArtists: () -> Unit,
     onOpenFolders: () -> Unit,
-    onOpenPlaylist: (Playlist) -> Unit
+    onOpenPlaylist: (Playlist) -> Unit,
+    isSelectionMode: Boolean,
+    selectedPlaylists: Set<Int>,
+    onTogglePlaylistSelection: (Int) -> Unit
 ) {
-    LazyColumn(
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        contentPadding = PaddingValues(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        item {
-            SectionHeader(title = "分类")
+        item(span = { GridItemSpan(2) }) {
+            SectionHeader(title = "本地音乐库")
         }
+
         item {
-            HomeQuickActionItem(
+            CategoryCard(
                 iconId = android.R.drawable.ic_media_play,
                 title = "全部歌曲",
                 count = localCount,
@@ -44,7 +58,7 @@ fun HomeScreen(
             )
         }
         item {
-            HomeQuickActionItem(
+            CategoryCard(
                 iconId = android.R.drawable.ic_menu_gallery,
                 title = "专辑",
                 count = albumsCount,
@@ -52,7 +66,7 @@ fun HomeScreen(
             )
         }
         item {
-            HomeQuickActionItem(
+            CategoryCard(
                 iconId = android.R.drawable.ic_menu_myplaces,
                 title = "歌手",
                 count = artistsCount,
@@ -60,7 +74,7 @@ fun HomeScreen(
             )
         }
         item {
-            HomeQuickActionItem(
+            CategoryCard(
                 iconId = android.R.drawable.ic_menu_save,
                 title = "文件夹",
                 count = foldersCount,
@@ -68,24 +82,26 @@ fun HomeScreen(
             )
         }
 
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
         if (playlists.isNotEmpty()) {
-            item {
+            item(span = { GridItemSpan(2) }) {
+                Spacer(modifier = Modifier.height(8.dp))
                 SectionHeader(title = "我的歌单")
             }
             items(playlists) { (playlist, count) ->
-                PlaylistListItem(
+                val isSelected = selectedPlaylists.contains(playlist.id)
+                PlaylistCard(
                     playlist = playlist,
                     count = count,
-                    onClick = { onOpenPlaylist(playlist) }
+                    isSelected = isSelected,
+                    onClick = { 
+                        if (isSelectionMode) {
+                            onTogglePlaylistSelection(playlist.id)
+                        } else {
+                            onOpenPlaylist(playlist) 
+                        }
+                    },
+                    onLongClick = { onTogglePlaylistSelection(playlist.id) }
                 )
-            }
-        } else {
-            item {
-                SectionHeader(title = "暂无歌单")
             }
         }
     }
@@ -95,78 +111,117 @@ fun HomeScreen(
 fun SectionHeader(title: String) {
     Text(
         text = title,
-        fontSize = 14.sp,
+        fontSize = 16.sp,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        modifier = Modifier.padding(bottom = 4.dp, top = 8.dp)
     )
 }
 
 @Composable
-fun HomeQuickActionItem(
+fun CategoryCard(
+    modifier: Modifier = Modifier,
     iconId: Int,
     title: String,
     count: Int,
     onClick: () -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+    Surface(
+        modifier = modifier
+            .height(96.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
     ) {
-        Icon(
-            painter = painterResource(id = iconId),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(24.dp)
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    painter = painterResource(id = iconId),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "$count 首",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+            )
+        }
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun PlaylistListItem(
+fun PlaylistCard(
+    modifier: Modifier = Modifier,
     playlist: Playlist,
     count: Int,
-    onClick: () -> Unit
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+    Surface(
+        modifier = modifier
+            .height(96.dp)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        shape = RoundedCornerShape(16.dp),
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
     ) {
-        Icon(
-            imageVector = Icons.Default.QueueMusic,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(24.dp)
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.QueueMusic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = playlist.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = playlist.name,
-                style = MaterialTheme.typography.bodyLarge
+                text = "${count}首" + if(playlist.isFolderLinked == 1) " · 联动" else "",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.8f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
             )
-            val desc = if (playlist.isFolderLinked == 1) "联动文件夹" else "普通歌单"
-            Text(
-                text = "$count 首 · $desc",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        }
+        
+        if (isSelected) {
+            Box(modifier = Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.TopEnd) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
         }
     }
 }

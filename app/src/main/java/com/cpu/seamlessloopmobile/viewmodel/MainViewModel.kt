@@ -144,9 +144,19 @@ class MainViewModel(
     private val _selectedItems = MutableLiveData<Set<String>>(emptySet())
     val selectedItems: LiveData<Set<String>> = _selectedItems
 
+    private val _selectedPlaylists = MutableLiveData<Set<Int>>(emptySet())
+    val selectedPlaylists: LiveData<Set<Int>> = _selectedPlaylists
+
+    private val _selectedFolders = MutableLiveData<Set<Folder>>(emptySet())
+    val selectedFolders: LiveData<Set<Folder>> = _selectedFolders
+
     fun setSelectionMode(enabled: Boolean) {
         _isSelectionMode.value = enabled
-        if (!enabled) _selectedItems.value = emptySet()
+        if (!enabled) {
+            _selectedItems.value = emptySet()
+            _selectedPlaylists.value = emptySet()
+            _selectedFolders.value = emptySet()
+        }
     }
 
     fun toggleSelection(id: String) {
@@ -155,11 +165,42 @@ class MainViewModel(
         _selectedItems.value = next
         
         // 如果全退出了，自动关闭多选模式喵
-        if (next.isEmpty()) _isSelectionMode.value = false
+        if (next.isEmpty() && _selectedPlaylists.value.isNullOrEmpty() && _selectedFolders.value.isNullOrEmpty()) _isSelectionMode.value = false
+    }
+
+    fun togglePlaylistSelection(playlistId: Int) {
+        val current = _selectedPlaylists.value ?: emptySet()
+        val next = if (current.contains(playlistId)) current - playlistId else current + playlistId
+        _selectedPlaylists.value = next
+        
+        if (next.isEmpty() && _selectedItems.value.isNullOrEmpty() && _selectedFolders.value.isNullOrEmpty()) {
+            _isSelectionMode.value = false
+        } else {
+            _isSelectionMode.value = true
+        }
+    }
+
+    fun toggleFolderSelection(folder: Folder) {
+        val current = _selectedFolders.value ?: emptySet()
+        val isAlreadySelected = current.any { it.path == folder.path }
+        val next = if (isAlreadySelected) {
+            current.filter { it.path != folder.path }.toSet()
+        } else {
+            current + folder
+        }
+        _selectedFolders.value = next
+
+        if (next.isEmpty() && _selectedItems.value.isNullOrEmpty() && _selectedPlaylists.value.isNullOrEmpty()) {
+            _isSelectionMode.value = false
+        } else {
+            _isSelectionMode.value = true
+        }
     }
 
     fun clearSelection() {
         _selectedItems.value = emptySet()
+        _selectedPlaylists.value = emptySet()
+        _selectedFolders.value = emptySet()
         _isSelectionMode.value = false
     }
 
@@ -205,6 +246,73 @@ class MainViewModel(
             }
         }
     }
+
+    fun deletePlaylist(playlist: Playlist) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deletePlaylist(playlist)
+            withContext(Dispatchers.Main) {
+                refreshPlaylists()
+                // 如果当前正处于被删除的歌单详情页，则回退到主页喵
+                val currentState = _uiState.value
+                if (currentState is MusicUiState.SongList && currentState.type == MusicUiState.ListType.PLAYLIST && currentState.title == playlist.name) {
+                    goBack()
+                }
+            }
+        }
+    }
+
+    fun deleteSelectedPlaylists() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ids = _selectedPlaylists.value ?: return@launch
+            // 虽然是循环但也很快喵
+            ids.forEach { playlistId ->
+                val playlist = _playlists.value?.find { it.id == playlistId }
+                if (playlist != null) {
+                    repository.deletePlaylist(playlist)
+                }
+            }
+            withContext(Dispatchers.Main) {
+                clearSelection()
+                refreshPlaylists()
+            }
+        }
+    }
+
+    /**
+     * 将选中的每个文件夹都导入为独立的歌单喵 (1:1)
+     */
+    fun importSelectedFoldersIndividually() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val foldersToImport = _selectedFolders.value ?: return@launch
+            foldersToImport.forEach { folder ->
+                val playlistId = repository.insertPlaylist(Playlist(name = folder.name, folderPath = folder.path, isFolderLinked = 1))
+                val songIds = folder.songs.map { it.id }
+                repository.addSongsToPlaylist(playlistId.toInt(), songIds)
+            }
+            withContext(Dispatchers.Main) {
+                clearSelection()
+                refreshPlaylists()
+            }
+        }
+    }
+
+    /**
+     * 将选中的所有文件夹合并导入为一个歌单喵 (N:1)
+     */
+    fun importSelectedFoldersAsSinglePlaylist(name: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val foldersToImport = _selectedFolders.value ?: return@launch
+            val playlistId = repository.insertPlaylist(Playlist(name = name))
+            val allSongIds = foldersToImport.flatMap { it.songs }.map { it.id }.distinct()
+            repository.addSongsToPlaylist(playlistId.toInt(), allSongIds)
+            
+            withContext(Dispatchers.Main) {
+                clearSelection()
+                refreshPlaylists()
+            }
+        }
+    }
+
 
     fun setPlayingPanelVisible(value: Boolean) { _isPlayingPanelVisible.value = value }
 

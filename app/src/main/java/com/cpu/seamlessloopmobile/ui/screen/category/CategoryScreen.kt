@@ -12,36 +12,61 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.cpu.seamlessloopmobile.model.Folder
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.ui.graphics.Color
 
 @Composable
 fun CategoryScreen(
     items: List<Folder>,
-    onOpenFolder: (Folder) -> Unit
+    onOpenFolder: (Folder) -> Unit,
+    isSelectionMode: Boolean,
+    selectedFolders: Set<Folder>,
+    onToggleFolderSelection: (Folder) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize()
     ) {
         items(items) { folder ->
+            val isSelected = selectedFolders.any { it.path == folder.path }
             FolderListItem(
                 folder = folder,
-                onClick = { onOpenFolder(folder) }
+                isSelected = isSelected,
+                onClick = {
+                    if (isSelectionMode) {
+                        onToggleFolderSelection(folder)
+                    } else {
+                        onOpenFolder(folder)
+                    }
+                },
+                onLongClick = { onToggleFolderSelection(folder) }
             )
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FolderListItem(
     folder: Folder,
-    onClick: () -> Unit
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+    Surface(
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick
+                )
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
         Icon(
             imageVector = Icons.Default.Folder,
             contentDescription = null,
@@ -57,8 +82,18 @@ fun FolderListItem(
             Text(
                 text = "${folder.songs.size} 首歌曲",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        
+        if (isSelected) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
             )
         }
     }
+}
 }
