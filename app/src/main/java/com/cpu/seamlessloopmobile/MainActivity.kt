@@ -62,6 +62,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mediaBrowserHelper: com.cpu.seamlessloopmobile.audio.MediaBrowserHelper
     private lateinit var progressUpdateHelper: com.cpu.seamlessloopmobile.ui.ProgressUpdateHelper
     private var playbackService: com.cpu.seamlessloopmobile.audio.PlaybackService? = null
+    private var hasRestored = false
+
 
     // 缓存数据，回退时有用喵
     private var folders: List<com.cpu.seamlessloopmobile.model.Folder> = emptyList()
@@ -89,6 +91,9 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        val settingsManager = com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(this)
+        viewModel.initSettings(settingsManager)
         
         // 设置 Toolbar 喵
         setSupportActionBar(binding.toolbar)
@@ -223,10 +228,16 @@ class MainActivity : AppCompatActivity() {
 
         mediaBrowserHelper.playbackState.observe(this) { state ->
             state?.let {
+                it.errorMessage?.let { error ->
+                    Toast.makeText(this, error.toString(), Toast.LENGTH_SHORT).show()
+                }
                 val isPlaying = it.state == android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING
                 viewModel.setPlaying(isPlaying)
                 val isAbMode = it.extras?.getBoolean("is_ab_mode", false) ?: false
                 viewModel.setAbModePlaying(isAbMode)
+                
+                // 无论播没播，既然状态变了，我们就先同步一下进度条喵！
+                progressUpdateHelper.sync()
                 
                 if (isPlaying) {
                     progressUpdateHelper.start()
@@ -247,6 +258,14 @@ class MainActivity : AppCompatActivity() {
                 if (totalFrames > 0) {
                     binding.tvTotalTime.text = TimeUtils.formatTime(totalFrames, sampleRate)
                 }
+            }
+        }
+        
+        // --- 监听连接状态并尝试恢复喵 ---
+        mediaBrowserHelper.isConnected.observe(this) { connected ->
+            if (connected && !hasRestored) {
+                restoreLastPlayedSong(com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(this))
+                hasRestored = true
             }
         }
 
@@ -278,7 +297,6 @@ class MainActivity : AppCompatActivity() {
             override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
                 val binder = service as com.cpu.seamlessloopmobile.audio.PlaybackService.PlaybackBinder
                 playbackService = binder.getService()
-                restoreLastPlayedSong()
             }
             override fun onServiceDisconnected(name: ComponentName?) {
                 playbackService = null
@@ -293,68 +311,62 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        saveCurrentState()
+        // 这里可以做最后一次强行存档，确保进度最准喵
+        playbackService?.playbackManager?.let { pm ->
+            pm.currentSong?.let { song ->
+                val sm = com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(this)
+                sm.lastSongPath = song.filePath
+                sm.lastPosition = pm.position
+            }
+        }
         mediaBrowserHelper.disconnect()
         progressUpdateHelper.stop()
     }
 
-    private fun restoreLastPlayedSong() {
-        val prefs = getSharedPreferences("last_state", MODE_PRIVATE)
-        val lastPath = prefs.getString("last_song_path", null)
-        val lastPos = prefs.getLong("last_position", 0L)
+    private fun restoreLastPlayedSong(settings: com.cpu.seamlessloopmobile.data.SettingsManager) {
+        val lastPath = settings.lastSongPath
+        val lastPos = settings.lastPosition
+        val playlistPaths = settings.currentPlaylistPaths
+        val lastIndex = settings.currentSongIndex
 
         if (lastPath != null) {
             lifecycleScope.launch {
+                // 1. 尝试恢复整个播放队列喵！
+                val restoredPlaylist = withContext(Dispatchers.IO) {
+                    playlistPaths.mapNotNull { path -> repository.getSongByPath(path) }
+                }
+
+                // 2. 找到当前要放的那首歌喵
                 val baseSong = repository.getSongByPath(lastPath)
                 if (baseSong != null) {
-                    // 同步令牌身份喵！
                     val song = repository.resolveMediaId(this@MainActivity, baseSong)
                     withContext(Dispatchers.Main) {
-                        // 把它装好，并同步进听单喵，这样进度条和切歌逻辑才能跑起来喵！
                         binding.tvPlayingSongName.text = song.displayName ?: song.fileName
-                        
-                        // 先指挥脑部进入暂停状态，防止观察者乱动喵
                         viewModel.setPlaying(false)
                         
-                        // 先建立一个只包含这首歌的临时听单，防止切歌时崩溃喵
-                        viewModel.updateCurrentPlaylist(listOf(song), 0)
+                        // 3. 如果队列恢复成功就用队列，否则至少保住这一首歌喵
+                        if (restoredPlaylist.isNotEmpty()) {
+                            viewModel.updateCurrentPlaylist(restoredPlaylist, lastIndex)
+                        } else {
+                            viewModel.updateCurrentPlaylist(listOf(song), 0)
+                        }
                         
-                        // 直接恢复到那个进度，并下达“初始暂停”的死命令喵！
-                        // 注意：这里需要考虑 Service 是否已经由 MediaBrowser 连通喵
-                        val controller = android.support.v4.media.session.MediaControllerCompat.getMediaController(this@MainActivity)
-                        if (controller != null) {
+                        val controls = mediaBrowserHelper.getTransportControls()
+                        if (controls != null) {
                             val extras = android.os.Bundle().apply {
                                 putLong("start_pos", lastPos)
                                 putBoolean("start_paused", true)
+                                putBoolean("is_single_loop", viewModel.playMode.value == PlayMode.SINGLE_LOOP)
                             }
-                            controller.transportControls.playFromMediaId(song.mediaId.toString(), extras)
-                        } else {
-                            // TODO: 备选方案，或者等连通后再发喵
+                            controls.playFromMediaId(song.mediaId.toString(), extras)
                         }
+
                     }
                 }
             }
         }
     }
 
-    private fun saveCurrentState() {
-        val currentSong = if (currentSongIndex >= 0 && currentSongIndex < currentPlaylist.size) {
-            currentPlaylist[currentSongIndex]
-        } else null
-        
-        currentSong?.let { song ->
-            val prefs = getSharedPreferences("last_state", MODE_PRIVATE)
-            prefs.edit().apply {
-                putString("last_song_path", song.filePath)
-                try {
-                    putLong("last_position", playbackService?.playbackManager?.position ?: 0L)
-                } catch (e: Exception) {
-                    putLong("last_position", 0L)
-                }
-                apply()
-            }
-        }
-    }
 
     override fun onDestroy() {
         super.onDestroy()

@@ -51,7 +51,10 @@ class MediaControlManager(
                 }
                 override fun onPlayFromMediaId(mediaId: String?, extras: android.os.Bundle?) {
                     val idLong = mediaId?.toLongOrNull() ?: return
-                    playbackService.playbackManager?.playFromMediaId(idLong)
+                    val startPos = extras?.getLong("start_pos", 0L) ?: 0L
+                    val startPaused = extras?.getBoolean("start_paused", false) ?: false
+                    val isSingleLoop = extras?.getBoolean("is_single_loop", true) ?: true
+                    playbackService.playbackManager?.playFromMediaId(idLong, startPos, startPaused, isSingleLoop)
                 }
                 override fun onSeekTo(pos: Long) {
                     playbackService.playbackManager?.seekTo(pos)

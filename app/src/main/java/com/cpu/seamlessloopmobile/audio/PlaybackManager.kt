@@ -22,9 +22,13 @@ class PlaybackManager(
     private val repository: MusicRepository,
     private val mediaSession: MediaSessionCompat
 ) : Playback {
+    private val settingsManager = com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(context)
+    
     // 专门给 Service 回调的钩子，用于通知 UI 更新
     override var onPlaybackStatusChanged: ((isPlaying: Boolean, currentSong: Song?) -> Unit)? = null
-    override var onPlaybackError: ((String) -> Unit)? = null
+    override var onPlaybackError: ((String) -> Unit)? = { error ->
+        currentSong?.let { updateMediaSessionState(it, false, isAbMode, error) }
+    }
 
     override var currentSong: Song? = null
         private set
@@ -80,7 +84,7 @@ class PlaybackManager(
         NativeAudio.setLooping(looping)
     }
 
-    fun updateMediaSessionState(song: Song, isPlaying: Boolean, isAbMode: Boolean = false) {
+    fun updateMediaSessionState(song: Song, isPlaying: Boolean, isAbMode: Boolean = false, error: String? = null) {
         this.currentSong = song
         this.isAbMode = isAbMode
         
@@ -109,12 +113,22 @@ class PlaybackManager(
                 NativeAudio.getCurrentPosition(), 
                 1.0f
             )
-            // 通过 Bundle 传递更多秘密情报喵！
-            .setExtras(android.os.Bundle().apply {
-                putBoolean("is_ab_mode", isAbMode)
-            })
+        
+        error?.let {
+            stateBuilder.setErrorMessage(android.support.v4.media.session.PlaybackStateCompat.ERROR_CODE_APP_ERROR, it)
+        }
+        
+        // 通过 Bundle 传递更多秘密情报喵！
+        stateBuilder.setExtras(android.os.Bundle().apply {
+            putBoolean("is_ab_mode", isAbMode)
+        })
             
         mediaSession.setPlaybackState(stateBuilder.build())
+        
+        // 莱芙帮大人记下来喵！
+        settingsManager.lastSongPath = song.filePath
+        settingsManager.lastPosition = NativeAudio.getCurrentPosition()
+        settingsManager.isAbMode = isAbMode
         
         onPlaybackStatusChanged?.invoke(isPlaying, song)
     }
@@ -122,9 +136,16 @@ class PlaybackManager(
     override fun playFromMediaId(mediaId: Long, startPosition: Long, startPaused: Boolean, isSingleLoop: Boolean) {
         coroutineScope.launch {
             val song = withContext(Dispatchers.IO) {
-                 // 这里我们需要让 repository 支持通过 mediaId 找 Song 喵
-                 // 但目前 repository 主要是通过 path 找。莱芙先去补一个喵！
-                 repository.getAllSongs().find { it.mediaId == mediaId }
+                 // 1. 尝试通过 mediaId 找喵
+                 var s = repository.getAllSongs().find { it.mediaId == mediaId }
+                 if (s == null) {
+                     // 2. 兜底：如果 mediaId 变了（安卓常态），尝试用最近存过的路径拉回它喵！
+                     val lastPath = settingsManager.lastSongPath
+                     if (lastPath != null) {
+                         s = repository.getSongByPath(lastPath)
+                     }
+                 }
+                 s
             }
             song?.let { 
                 playSong(it, startPosition, startPaused, isSingleLoop)
@@ -163,7 +184,7 @@ class PlaybackManager(
     }
 
     private fun actuallyPlaySong(song: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) {
-
+        this.currentSong = song
         coroutineScope.launch(Dispatchers.IO) {
             NativeAudio.stopAudioEngine()
             
@@ -212,6 +233,7 @@ class PlaybackManager(
     }
 
     private fun playAbSong(introSong: Song, loopSong: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) {
+        this.currentSong = introSong
         coroutineScope.launch(Dispatchers.IO) {
             NativeAudio.stopAudioEngine()
             

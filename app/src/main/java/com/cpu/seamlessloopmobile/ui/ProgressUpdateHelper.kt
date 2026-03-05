@@ -71,6 +71,27 @@ class ProgressUpdateHelper(
         }
     }
 
+    /**
+     * 手动同步一次进度喵！
+     * 适合在暂停状态下（比如刚恢复播放进度时）调用。
+     */
+    fun sync() {
+        if (isUserSeeking()) return
+        val service = getPlaybackService()
+        val currentFrame = service?.playbackManager?.position ?: 0L
+        val totalFrames = service?.playbackManager?.duration ?: 0L
+        val sampleRate = service?.playbackManager?.sampleRate?.toLong() ?: 44100L
+        
+        if (totalFrames > 0) {
+            val maxValue = totalFrames.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            val progressValue = currentFrame.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            seekBar.max = maxValue
+            seekBar.progress = progressValue
+            tvCurrentTime.text = TimeUtils.formatTime(currentFrame, sampleRate)
+            tvTotalTime.text = TimeUtils.formatTime(totalFrames, sampleRate)
+        }
+    }
+
     fun stop() {
         updateJob?.cancel()
         updateJob = null

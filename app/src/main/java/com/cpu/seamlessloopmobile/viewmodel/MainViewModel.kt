@@ -45,6 +45,13 @@ sealed class MusicUiState {
 class MainViewModel(
     private val repository: MusicRepository
 ) : ViewModel() {
+    private var settingsManager: com.cpu.seamlessloopmobile.data.SettingsManager? = null
+
+    fun initSettings(manager: com.cpu.seamlessloopmobile.data.SettingsManager) {
+        this.settingsManager = manager
+        // 顺便从本本里恢复播放模式喵！
+        _playMode.value = manager.playMode
+    }
 
     // --- 乐库数据喵 ---
     private val _allSongs = MutableLiveData<List<Song>>()
@@ -162,7 +169,11 @@ class MainViewModel(
     fun setPlaying(value: Boolean) { _isPlaying.postValue(value) }
     fun setAbModePlaying(value: Boolean) { _isAbModePlaying.postValue(value) }
     fun setCurrentAbIntroSong(song: Song?) { _currentAbIntroSong.postValue(song) }
-    fun setPlayMode(mode: PlayMode) { _playMode.postValue(mode) }
+    fun setPlayMode(mode: PlayMode) { 
+        _playMode.postValue(mode) 
+        settingsManager?.playMode = mode
+    }
+
 
     fun togglePlayMode() {
         val next = when (_playMode.value) {
@@ -172,18 +183,27 @@ class MainViewModel(
             null -> PlayMode.LIST_LOOP
         }
         _playMode.value = next
+        settingsManager?.playMode = next
     }
+
 
 
 
     fun updateCurrentPlaylist(songs: List<Song>, index: Int = -1) {
         _currentPlaylist.value = songs
-        if (index != -1) _currentSongIndex.value = index
+        settingsManager?.currentPlaylistPaths = songs.map { it.filePath }
+        if (index != -1) {
+            _currentSongIndex.value = index
+            settingsManager?.currentSongIndex = index
+        }
     }
+
 
     fun updateSongIndex(index: Int) {
         _currentSongIndex.value = index
+        settingsManager?.currentSongIndex = index
     }
+
 
     // --- 逻辑操作喵 ---
 

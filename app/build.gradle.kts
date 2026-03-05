@@ -96,5 +96,6 @@ dependencies {
     implementation(libs.androidx.compose.runtime.livedata)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.gson)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
