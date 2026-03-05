@@ -20,7 +20,11 @@ class PlaylistRepository(
 ) {
 
     suspend fun getAllPlaylists(): List<Playlist> = withContext(Dispatchers.IO) {
-        playlistDao.getAllPlaylists()
+        playlistDao.getPlaylistsWithCounts().map { it.playlist }
+    }
+
+    suspend fun getPlaylistsWithCounts(): List<PlaylistDao.PlaylistWithCount> = withContext(Dispatchers.IO) {
+        playlistDao.getPlaylistsWithCounts()
     }
 
     suspend fun getSongsInPlaylist(playlistId: Int): List<Song> = withContext(Dispatchers.IO) {

@@ -50,7 +50,7 @@ PlaybackManager.kt（第 194 行）时，直接惊呆了：
 - [ ] 批量全选
 - [ ] 支持更多音乐格式
 - [ ] AB式
-- [ ] 后台播放，有时就退出。后台拔耳机必定死机。
+- [ ] 后台播放，有时就退出。熄屏后台拔耳机必定死机。
 - [x] 需要统一对艺术家、专辑的处理。不然两端无法通用。主要是电脑端的处理
 - [ ] 试图添加通知列表和锁屏按钮。结果失败了。
 - [ ] 该好好了解手机端开发知识了。
@@ -69,6 +69,7 @@ PlaybackManager.kt（第 194 行）时，直接惊呆了：
 - [ ] 默认收藏的歌单可以更改
 - [x] 不能识别BLUE ARCHIVE
 - [ ] 最新采用compose架构后，一系列多选功能消失。可以多选歌曲，但不能全选，选择后不能添加到歌单，不能创建歌单
+- [ ] 循环编辑页面进度条拖动不流畅
 - [ ] 对进一步的匹配什么时候发生？循环点匹配什么时候有
 - [ ] D:\seamless loop music\SeamlessLoopMobile\app\src\main\java\com\cpu\seamlessloopmobile\viewmodel\MainViewModel.kt以及
   D:\seamless loop music\SeamlessLoopMobile\app\src\main\java\com\cpu\seamlessloopmobile\MainActivity.kt

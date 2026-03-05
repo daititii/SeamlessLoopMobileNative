@@ -72,6 +72,9 @@ class MainViewModel(
     private val _playlists = MutableLiveData<List<Playlist>>(emptyList())
     val playlists: LiveData<List<Playlist>> = _playlists
 
+    private val _playlistsWithCounts = MutableLiveData<List<com.cpu.seamlessloopmobile.model.PlaylistDao.PlaylistWithCount>>(emptyList())
+    val playlistsWithCounts: LiveData<List<com.cpu.seamlessloopmobile.model.PlaylistDao.PlaylistWithCount>> = _playlistsWithCounts
+
 
 
     private val _currentOpenPlaylist = MutableLiveData<Playlist?>(null)
@@ -208,7 +211,16 @@ class MainViewModel(
     fun openSongList(title: String, songs: List<Song>, type: MusicUiState.ListType, originalItems: List<Folder>? = null) {
         navigateTo(MusicUiState.SongList(title, songs, type, originalItems))
     }
+    fun openPlaylist(playlist: Playlist) {
+        viewModelScope.launch {
+            _currentOpenPlaylist.value = playlist
+            val songs = repository.getSongsInPlaylist(playlist.id)
+            openSongList(playlist.name, songs, MusicUiState.ListType.PLAYLIST)
+        }
+    }
+
     fun setCurrentOpenPlaylist(playlist: Playlist?) { _currentOpenPlaylist.value = playlist }
+
     fun setPlaying(value: Boolean) { _isPlaying.postValue(value) }
     fun setAbModePlaying(value: Boolean) { _isAbModePlaying.postValue(value) }
     fun setCurrentAbIntroSong(song: Song?) { _currentAbIntroSong.postValue(song) }
@@ -252,8 +264,9 @@ class MainViewModel(
 
     fun refreshPlaylists() {
         viewModelScope.launch(Dispatchers.IO) {
-            val list = repository.getAllPlaylists()
-            _playlists.postValue(list)
+            val listWithCounts = repository.getPlaylistsWithCounts()
+            _playlistsWithCounts.postValue(listWithCounts)
+            _playlists.postValue(listWithCounts.map { it.playlist })
         }
     }
 
@@ -375,8 +388,9 @@ class MainViewModel(
      */
     fun loadPlaylists() {
         viewModelScope.launch(Dispatchers.IO) {
-            val list = repository.getAllPlaylists()
-            _playlists.postValue(list)
+            val listWithCounts = repository.getPlaylistsWithCounts()
+            _playlistsWithCounts.postValue(listWithCounts)
+            _playlists.postValue(listWithCounts.map { it.playlist })
         }
     }
 

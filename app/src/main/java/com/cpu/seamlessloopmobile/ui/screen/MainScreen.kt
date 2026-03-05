@@ -25,6 +25,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.*
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.items
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -37,6 +40,7 @@ fun MainScreen(
     val folders by viewModel.folders.observeAsState(emptyList())
     val albums by viewModel.albums.observeAsState(emptyList())
     val artists by viewModel.artists.observeAsState(emptyList())
+    val playlistsWithCounts by viewModel.playlistsWithCounts.observeAsState(emptyList())
     val playlists by viewModel.playlists.observeAsState(emptyList())
     val currentSongIndex by viewModel.currentSongIndex.observeAsState(-1)
     val currentPlaylist by viewModel.currentPlaylist.observeAsState(emptyList())
@@ -44,6 +48,7 @@ fun MainScreen(
     val selectedItems by viewModel.selectedItems.observeAsState(emptySet())
 
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var showAddToPlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
 
     // 计算当前页面展示的歌曲，用于“全选”喵
@@ -72,8 +77,8 @@ fun MainScreen(
         ) { state ->
             when (state) {
                 is MusicUiState.Home -> {
-                    // 暂时这里不处理带数量的歌单，简单适配一下喵
-                    val playlistPairs = playlists.map { it to 0 }
+                    // 使用带真实数量的歌单列表喵
+                    val playlistPairs = playlistsWithCounts.map { it.playlist to it.songCount }
 
                     HomeScreen(
                         localCount = allSongs.size,
@@ -94,10 +99,7 @@ fun MainScreen(
                             viewModel.openCategory("文件夹", folders)
                         },
                         onOpenPlaylist = { playlist ->
-                            // 暂时使用空列表，实际应当由 ViewModel 提供数据后再跳转
-                            // 这部分逻辑等替换 MainActivity 相关代码时再完善喵
-                            viewModel.setCurrentOpenPlaylist(playlist)
-                            viewModel.openSongList(playlist.name, emptyList(), MusicUiState.ListType.PLAYLIST)
+                            viewModel.openPlaylist(playlist)
                         }
                     )
                 }
@@ -176,9 +178,13 @@ fun MainScreen(
                         )
                         
                         IconButton(onClick = { 
-                            showCreatePlaylistDialog = true 
+                            if (playlists.isNotEmpty()) {
+                                showAddToPlaylistDialog = true
+                            } else {
+                                showCreatePlaylistDialog = true
+                            }
                         }) {
-                            Icon(Icons.Default.PlaylistAdd, contentDescription = "添加到新歌单")
+                            Icon(Icons.Default.PlaylistAdd, contentDescription = "添加到歌单")
                         }
 
                         IconButton(onClick = { 
@@ -223,6 +229,44 @@ fun MainScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showCreatePlaylistDialog = false }) {
+                        Text("取消")
+                    }
+                }
+            )
+        }
+
+        // --- 添加到现有歌单对话框喵 ---
+        if (showAddToPlaylistDialog) {
+            AlertDialog(
+                onDismissRequest = { showAddToPlaylistDialog = false },
+                title = { Text("添加到歌单") },
+                text = {
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        item {
+                            ListItem(
+                                headlineContent = { Text("新建歌单...") },
+                                leadingContent = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
+                                modifier = Modifier.clickable {
+                                    showAddToPlaylistDialog = false
+                                    showCreatePlaylistDialog = true
+                                }
+                            )
+                        }
+                        items(playlists) { playlist ->
+                            ListItem(
+                                headlineContent = { Text(playlist.name) },
+                                leadingContent = { Icon(Icons.Default.QueueMusic, contentDescription = null) },
+                                modifier = Modifier.clickable {
+                                    viewModel.addSelectedToPlaylist(playlist.id)
+                                    showAddToPlaylistDialog = false
+                                }
+                            )
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showAddToPlaylistDialog = false }) {
                         Text("取消")
                     }
                 }

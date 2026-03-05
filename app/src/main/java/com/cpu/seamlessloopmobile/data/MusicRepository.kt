@@ -40,6 +40,8 @@ class MusicRepository(
 
     suspend fun getAllPlaylists(): List<Playlist> = playlistRepository.getAllPlaylists()
 
+    suspend fun getPlaylistsWithCounts(): List<com.cpu.seamlessloopmobile.model.PlaylistDao.PlaylistWithCount> = playlistRepository.getPlaylistsWithCounts()
+
     suspend fun getSongsInPlaylist(playlistId: Int): List<Song> = playlistRepository.getSongsInPlaylist(playlistId)
 
     suspend fun insertPlaylist(playlist: Playlist): Long = playlistRepository.insertPlaylist(playlist)

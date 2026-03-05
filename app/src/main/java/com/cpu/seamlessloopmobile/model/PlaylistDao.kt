@@ -5,8 +5,17 @@ import androidx.room.*
 @Dao
 interface PlaylistDao {
     // --- 歌单管理 ---
-    @Query("SELECT * FROM Playlists ORDER BY SortOrder ASC, CreatedAt DESC")
-    suspend fun getAllPlaylists(): List<Playlist>
+    @Query("""
+        SELECT p.*, (SELECT COUNT(*) FROM PlaylistItems WHERE PlaylistId = p.Id) as songCount 
+        FROM Playlists p 
+        ORDER BY p.SortOrder ASC, p.CreatedAt DESC
+    """)
+    suspend fun getPlaylistsWithCounts(): List<PlaylistWithCount>
+
+    data class PlaylistWithCount(
+        @Embedded val playlist: Playlist,
+        val songCount: Int
+    )
 
     @Insert
     suspend fun insertPlaylist(playlist: Playlist): Long
