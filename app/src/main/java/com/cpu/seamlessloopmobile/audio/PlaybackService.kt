@@ -127,9 +127,22 @@ class PlaybackService : MediaBrowserServiceCompat() {
         mediaSession?.setCallback(object : MediaSessionCompat.Callback() {
             override fun onPlay() { playbackManager?.resume() }
             override fun onPause() { playbackManager?.pause() }
-            override fun onSkipToNext() { }
-            override fun onSkipToPrevious() { }
+            override fun onSkipToNext() {
+                // 这里可以通过自定义动作或者让 ViewModel 监听来处理喵
+                mediaSession?.sendSessionEvent("SKIP_NEXT", null)
+            }
+            override fun onSkipToPrevious() {
+                mediaSession?.sendSessionEvent("SKIP_PREV", null)
+            }
             override fun onSeekTo(pos: Long) { playbackManager?.seekTo(pos) }
+            override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
+                val idLong = mediaId?.toLongOrNull() ?: -1L
+                val startPos = extras?.getLong("start_pos") ?: 0L
+                val startPaused = extras?.getBoolean("start_paused") ?: false
+                val isSingleLoop = extras?.getBoolean("is_single_loop") ?: true
+                
+                playbackManager?.playFromMediaId(idLong, startPos, startPaused, isSingleLoop)
+            }
             override fun onStop() { stopForegroundCompletely() }
         })
     }

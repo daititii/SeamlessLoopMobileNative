@@ -16,6 +16,8 @@ import com.cpu.seamlessloopmobile.model.Song
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 /**
  * 核心媒体运营中心喵！
@@ -42,6 +44,9 @@ class MediaControlManager(private val context: Context) {
 
     private val _isConnected = MutableStateFlow(false)
     val isConnected = _isConnected.asStateFlow()
+
+    private val _sessionEvent = MutableSharedFlow<Pair<String, Bundle?>>(extraBufferCapacity = 1)
+    val sessionEvent = _sessionEvent.asSharedFlow()
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var positionUpdateJob: Job? = null
@@ -83,6 +88,12 @@ class MediaControlManager(private val context: Context) {
         override fun onMetadataChanged(metadata: MediaMetadataCompat?) {
             _metadata.value = metadata
             _totalDuration.value = playbackService?.playbackManager?.duration ?: 0L
+        }
+
+        override fun onSessionEvent(event: String?, extras: Bundle?) {
+            event?.let { 
+                scope.launch { _sessionEvent.emit(it to extras) }
+            }
         }
     }
 

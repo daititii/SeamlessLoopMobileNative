@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Collections
+import kotlinx.coroutines.flow.collect
 
 enum class PlayMode {
     LIST_LOOP,  // 列表循环
@@ -47,6 +48,17 @@ class MainViewModel(
     private val mediaControlManager: com.cpu.seamlessloopmobile.audio.MediaControlManager
 ) : ViewModel() {
     private var settingsManager: com.cpu.seamlessloopmobile.data.SettingsManager? = null
+
+    init {
+        viewModelScope.launch {
+            mediaControlManager.sessionEvent.collect { (event, _) ->
+                when (event) {
+                    "SKIP_NEXT" -> skipToNext()
+                    "SKIP_PREV" -> skipToPrevious()
+                }
+            }
+        }
+    }
     
     // --- 播放引擎状态流喵 ---
     val playbackState = mediaControlManager.playbackState
