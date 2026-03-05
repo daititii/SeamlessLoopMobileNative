@@ -30,8 +30,8 @@ object AudioScanner {
             MediaStore.Audio.Media.DURATION
         )
 
-        // 过滤条件：只找音乐类的，时长大于 10 秒的
-        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= 10000"
+        // 过滤条件：只找音乐类文件（移除原本 10 秒的时长限制，确保所有短曲目也能出现喵）
+        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
         val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
 
         val cursor = contentResolver.query(uri, projection, selection, null, sortOrder)
