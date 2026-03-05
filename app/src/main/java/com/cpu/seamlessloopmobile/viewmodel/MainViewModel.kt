@@ -152,6 +152,49 @@ class MainViewModel(
         _isSelectionMode.value = false
     }
 
+    fun selectAll(songs: List<Song>) {
+        _selectedItems.value = songs.map { it.filePath }.toSet()
+        _isSelectionMode.value = true
+    }
+
+    fun addSelectedToPlaylist(playlistId: Int) {
+        val selectedPaths = _selectedItems.value ?: return
+        if (selectedPaths.isEmpty()) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val songs = _allSongs.value ?: return@launch
+            val selectedSongIds = songs.filter { it.filePath in selectedPaths }.map { it.id }
+            
+            repository.addSongsToPlaylist(playlistId, selectedSongIds)
+            
+            withContext(Dispatchers.Main) {
+                clearSelection()
+                refreshPlaylists() // 刷新列表喵
+            }
+        }
+    }
+
+    fun createPlaylistWithSelected(name: String) {
+        val selectedPaths = _selectedItems.value ?: return
+        if (selectedPaths.isEmpty()) return
+
+        viewModelScope.launch {
+            val songs = _allSongs.value ?: return@launch
+            val selectedSongIds = songs.filter { it.filePath in selectedPaths }.map { it.id }
+
+            val newPlaylistId = withContext(Dispatchers.IO) {
+                val id = repository.insertPlaylist(Playlist(name = name))
+                repository.addSongsToPlaylist(id.toInt(), selectedSongIds)
+                id
+            }
+
+            withContext(Dispatchers.Main) {
+                clearSelection()
+                refreshPlaylists()
+            }
+        }
+    }
+
     fun setPlayingPanelVisible(value: Boolean) { _isPlayingPanelVisible.value = value }
 
     fun openHome() {

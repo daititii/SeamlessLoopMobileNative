@@ -13,7 +13,7 @@ import androidx.room.PrimaryKey
     tableName = "LoopPoints", // 电脑端表名
     indices = [
         Index(value = ["FilePath"]), // 移除 unique=true，允许同步时的空路径共存喵
-        Index(value = ["FileName", "duration"], unique = true) // 用文件名+时长作为手机端核心指纹
+        Index(value = ["FileName", "duration"]) // 用文件名+时长作为手机端核心指纹
     ]
 )
 data class Song(

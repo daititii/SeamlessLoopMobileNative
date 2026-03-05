@@ -18,23 +18,26 @@ class MusicScannerRepository(private val songDao: SongDao) {
      */
     suspend fun getInitialScannedSongs(context: Context): List<Song> = withContext(Dispatchers.IO) {
         val scannedSongs = AudioScanner.scan(context)
-        val dbSongs = songDao.getAllSongs().associateBy { "${it.fileName}_${it.duration}" }
+        val dbSongs = songDao.getAllSongs().associateBy { "${it.fileName}|${it.duration}" }
         
         scannedSongs.map { song ->
-            val dbSong = dbSongs["${song.fileName}_${song.duration}"]
-            dbSong?.let { 
+            val dbSong = dbSongs["${song.fileName}|${song.duration}"]
+            if (dbSong != null) {
                 val updatedSong = song.copy(
-                    id = it.id, 
-                    loopStart = it.loopStart, 
-                    loopEnd = it.loopEnd, 
-                    totalSamples = it.totalSamples, 
-                    displayName = it.displayName ?: song.displayName
+                    id = dbSong.id, 
+                    loopStart = dbSong.loopStart, 
+                    loopEnd = dbSong.loopEnd, 
+                    totalSamples = dbSong.totalSamples, 
+                    displayName = dbSong.displayName ?: song.displayName
                 )
-                if (it.mediaId != song.mediaId) {
-                    songDao.insertOrUpdateSong(updatedSong)
-                }
+                // 即使数据库里有，如果 mediaId 对不上（或者我们要更新持久化），也插一遍喵
+                songDao.insertOrUpdateSong(updatedSong)
                 updatedSong
-            } ?: song
+            } else {
+                // 如果是彻头彻尾的新歌，必须存进数据库，不然同步 PC 时它是“幽灵”喵！
+                val newId = songDao.insertOrUpdateSong(song)
+                song.copy(id = newId)
+            }
         }
     }
 

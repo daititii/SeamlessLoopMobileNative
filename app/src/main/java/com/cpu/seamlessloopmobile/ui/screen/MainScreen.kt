@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.SelectAll
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -40,6 +42,25 @@ fun MainScreen(
     val currentPlaylist by viewModel.currentPlaylist.observeAsState(emptyList())
     val isSelectionMode by viewModel.isSelectionMode.observeAsState(false)
     val selectedItems by viewModel.selectedItems.observeAsState(emptySet())
+
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var newPlaylistName by remember { mutableStateOf("") }
+
+    // 计算当前页面展示的歌曲，用于“全选”喵
+    val songsInCurrentPage = remember(uiState, allSongs, folders, albums, artists) {
+        when (val state = uiState) {
+            is MusicUiState.SongList -> {
+                when (state.type) {
+                    MusicUiState.ListType.ALL_SONGS -> allSongs
+                    MusicUiState.ListType.FOLDER -> folders.find { it.name == state.title }?.songs ?: state.songs
+                    MusicUiState.ListType.ALBUM -> albums.find { it.name == state.title }?.songs ?: state.songs
+                    MusicUiState.ListType.ARTIST -> artists.find { it.name == state.title }?.songs ?: state.songs
+                    else -> state.songs
+                }
+            }
+            else -> emptyList()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AnimatedContent(
@@ -155,9 +176,15 @@ fun MainScreen(
                         )
                         
                         IconButton(onClick = { 
-                            // TODO: 批量添加到歌单
+                            showCreatePlaylistDialog = true 
                         }) {
-                            Icon(Icons.Default.PlaylistAdd, contentDescription = "添加到歌单")
+                            Icon(Icons.Default.PlaylistAdd, contentDescription = "添加到新歌单")
+                        }
+
+                        IconButton(onClick = { 
+                            viewModel.selectAll(songsInCurrentPage)
+                        }) {
+                            Icon(Icons.Default.SelectAll, contentDescription = "全选")
                         }
                         
                         IconButton(onClick = { 
@@ -168,6 +195,38 @@ fun MainScreen(
                     }
                 }
             }
+        }
+
+        // --- 创建歌单对话框喵 ---
+        if (showCreatePlaylistDialog) {
+            AlertDialog(
+                onDismissRequest = { showCreatePlaylistDialog = false },
+                title = { Text("创建新歌单") },
+                text = {
+                    TextField(
+                        value = newPlaylistName,
+                        onValueChange = { newPlaylistName = it },
+                        placeholder = { Text("请输入歌单名称") },
+                        singleLine = true
+                    )
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        if (newPlaylistName.isNotBlank()) {
+                            viewModel.createPlaylistWithSelected(newPlaylistName)
+                            newPlaylistName = ""
+                            showCreatePlaylistDialog = false
+                        }
+                    }) {
+                        Text("确定")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCreatePlaylistDialog = false }) {
+                        Text("取消")
+                    }
+                }
+            )
         }
     }
 }

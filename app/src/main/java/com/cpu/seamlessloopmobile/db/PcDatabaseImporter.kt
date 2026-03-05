@@ -45,7 +45,9 @@ object PcDatabaseImporter {
                 val cursor = db.rawQuery("SELECT FileName, TotalSamples, LoopStart, LoopEnd, DisplayName FROM LoopPoints", null)
                 var syncCount = 0
 
-                val pcData = mutableListOf<Song>()
+                // 1. 获取本地所有歌曲并按文件名分组，极速查找喵！
+                val localSongs = songDao.getAllSongs()
+                val localSongsMap = localSongs.groupBy { it.fileName }
 
                 if (cursor.moveToFirst()) {
                     do {
@@ -55,27 +57,36 @@ object PcDatabaseImporter {
                         val end = cursor.getLong(3)
                         val name = cursor.getString(4)
 
-                        // 构造一个临时的 Song 对象用于存储数据喵
-                        val dummySong = Song(
-                            fileName = fileName,
-                            filePath = "", // 稍后匹配
-                            displayName = name,
-                            loopStart = start,
-                            loopEnd = end,
-                            totalSamples = total,
-                            duration = total, // 暂时把总采样数当做时长占位，确保 (FileName, duration) 的唯一性喵！
-                            mediaId = 0
-                        )
-                        pcData.add(dummySong)
+                        val candidates = localSongsMap[fileName]
+                        if (!candidates.isNullOrEmpty()) {
+                            // 2. 核心算法：双重时长验证喵
+                            // 假设是 44.1k 或 48k，算出预估毫秒时长
+                            val dur44 = (total / 44.1).toLong()
+                            val dur48 = (total / 48.0).toLong()
+                            val tolerance = 5000L // 允许 5 秒误差喵
+
+                            var matchedSong = candidates.find { 
+                                val phoneDur = it.duration
+                                Math.abs(phoneDur - dur44) <= tolerance || 
+                                Math.abs(phoneDur - dur48) <= tolerance 
+                            }
+                            
+                            // 兜底：如果没对上时长，但本地同名歌曲只有这一首，那就大胆地在一起吧喵！
+                            if (matchedSong == null && candidates.size == 1) {
+                                matchedSong = candidates[0]
+                            }
+
+                            if (matchedSong != null) {
+                                // 3. 抓到你了！只更新循环点，不准乱插队喵！
+                                songDao.updateLoopPoints(matchedSong.id, start, end, total)
+                                syncCount++
+                            }
+                        }
                     } while (cursor.moveToNext())
                 }
                 cursor.close()
                 db.close()
                 tempFile.delete()
-
-                // 3. 开始一锅端！
-                songDao.insertOrUpdateSongs(pcData)
-                syncCount = pcData.size
 
                 withContext(Dispatchers.Main) {
                     callback.onSuccess(syncCount)

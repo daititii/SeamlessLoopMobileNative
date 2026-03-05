@@ -98,7 +98,7 @@ class PlaylistRepository(
             onProgress("正在同步: ${index + 1}/$total")
             val (accurateSamples, sampleRate) = AudioScanner.getAccurateMetadata(context, item.mediaId)
             
-            // 优先查找手机端“指纹” (名称+毫秒时长)
+            // 优先查找手机端“指纹” (名称|毫秒时长)
             val mobileSong = dbSongsByFingerprint["${item.fileName}|${item.duration}"]
             
             // 备选查找电脑端记录：兼顾手机和电脑MP3采样数的细微差异喵！
@@ -108,6 +108,7 @@ class PlaylistRepository(
             // 第一步：先看有没有名字能包含或被包含的 PC 歌曲
             val nameMatchedPcSongs = pcDbSongs.filter { pc ->
                 val pcNameBase = pc.fileName.substringBeforeLast(".")
+                itemNameBase.equals(pcNameBase, ignoreCase = true) || 
                 itemNameBase.contains(pcNameBase, ignoreCase = true) || 
                 pcNameBase.contains(itemNameBase, ignoreCase = true)
             }
@@ -116,17 +117,17 @@ class PlaylistRepository(
                 // 第二步：在名字匹配的歌曲中，找一个采样数最接近的喵！
                 // 允许的最大误差为 10000 采样（对于44.1kHz大约0.2秒），足够包容MP3的首尾填充差异了
                 val closestSong = nameMatchedPcSongs.minByOrNull { Math.abs(it.totalSamples - accurateSamples) }
-                if (closestSong != null && Math.abs(closestSong.totalSamples - accurateSamples) < 10000) {
+                if (closestSong != null && (accurateSamples == 0L || Math.abs(closestSong.totalSamples - accurateSamples) < 20000)) {
                     pcSong = closestSong
                 }
             }
             
             val song = item.copy(
-                totalSamples = accurateSamples,
+                totalSamples = if (accurateSamples > 0) accurateSamples else (pcSong?.totalSamples ?: 0L),
                 duration = item.duration, // 明确显式继承 duration 喵！
                 displayName = pcSong?.displayName ?: mobileSong?.displayName ?: item.displayName,
                 loopStart = pcSong?.loopStart ?: mobileSong?.loopStart ?: 0L,
-                loopEnd = pcSong?.loopEnd ?: mobileSong?.loopEnd ?: accurateSamples,
+                loopEnd = pcSong?.loopEnd ?: mobileSong?.loopEnd ?: (if (accurateSamples > 0) accurateSamples else pcSong?.totalSamples ?: 0L),
                 id = mobileSong?.id ?: pcSong?.id ?: 0
             )
             
