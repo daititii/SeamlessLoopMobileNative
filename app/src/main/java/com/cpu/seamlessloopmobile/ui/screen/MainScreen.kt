@@ -226,6 +226,8 @@ fun MainScreen(
                             isSelectionMode = isSelectionMode,
                             selectedItems = selectedItems,
                             onPlaySong = { song ->
+                                val index = songsToShow.indexOf(song)
+                                viewModel.updateCurrentPlaylist(songsToShow, index)
                                 playSong(song)
                             },
                             onToggleSelection = { song ->

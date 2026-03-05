@@ -24,6 +24,23 @@ class PlaybackManager(
 ) : Playback {
     private val settingsManager = com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(context)
     
+    init {
+        // 初始化播放模式喵
+        val mode = settingsManager.playMode.ordinal
+        val state = mediaSession.controller.playbackState
+        val builder = if (state != null) {
+            android.support.v4.media.session.PlaybackStateCompat.Builder(state)
+        } else {
+            android.support.v4.media.session.PlaybackStateCompat.Builder()
+        }
+        
+        val newState = builder.setExtras(android.os.Bundle().apply { 
+                putInt("play_mode", mode)
+            })
+            .build()
+        mediaSession.setPlaybackState(newState)
+    }
+    
     // 专门给 Service 回调的钩子，用于通知 UI 更新
     override var onPlaybackStatusChanged: ((isPlaying: Boolean, currentSong: Song?) -> Unit)? = null
     override var onPlaybackError: ((String) -> Unit)? = { error ->
@@ -34,6 +51,13 @@ class PlaybackManager(
         private set
 
     private var isAbMode = false
+    private var currentPlaylist: List<Song> = emptyList()
+    private var currentPlaylistIndex: Int = -1
+
+    fun updatePlaylist(songs: List<Song>, initialIndex: Int) {
+        currentPlaylist = songs
+        currentPlaylistIndex = initialIndex
+    }
 
     override val isPlaying: Boolean
         get() = mediaSession.controller.playbackState?.state == android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING
@@ -119,9 +143,9 @@ class PlaybackManager(
         }
         
         // 通过 Bundle 传递更多秘密情报喵！
-        stateBuilder.setExtras(android.os.Bundle().apply {
-            putBoolean("is_ab_mode", isAbMode)
-        })
+        val extras = mediaSession.controller.playbackState?.extras ?: android.os.Bundle()
+        extras.putBoolean("is_ab_mode", isAbMode)
+        stateBuilder.setExtras(extras)
             
         mediaSession.setPlaybackState(stateBuilder.build())
         
@@ -133,8 +157,16 @@ class PlaybackManager(
         onPlaybackStatusChanged?.invoke(isPlaying, song)
     }
 
-    override fun playFromMediaId(mediaId: Long, startPosition: Long, startPaused: Boolean, isSingleLoop: Boolean) {
+    override fun playFromMediaId(mediaId: Long, startPosition: Long, startPaused: Boolean, isSingleLoop: Boolean, playlistPaths: Array<String>?) {
         coroutineScope.launch {
+            if (playlistPaths != null) {
+                val songs = withContext(Dispatchers.IO) {
+                    playlistPaths.mapNotNull { repository.getSongByPath(it) }
+                }
+                val index = songs.indexOfFirst { it.mediaId == mediaId }
+                updatePlaylist(songs, index)
+            }
+            
             val song = withContext(Dispatchers.IO) {
                  // 1. 尝试通过 mediaId 找喵
                  var s = repository.getAllSongs().find { it.mediaId == mediaId }
@@ -185,6 +217,11 @@ class PlaybackManager(
 
     private fun actuallyPlaySong(song: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) {
         this.currentSong = song
+        // 顺便校对下在当前列表里的位置喵
+        val index = currentPlaylist.indexOfFirst { it.filePath == song.filePath }
+        if (index != -1) {
+            currentPlaylistIndex = index
+        }
         coroutineScope.launch(Dispatchers.IO) {
             NativeAudio.stopAudioEngine()
             
@@ -289,6 +326,35 @@ class PlaybackManager(
                     onPlaybackError?.invoke("AB 播放失败: ${e.message}")
                 }
             }
+        }
+    }
+
+    override fun skipToNext(playMode: Int) {
+        if (currentPlaylist.isEmpty()) return
+        
+        // 0: LIST_LOOP, 1: SINGLE_LOOP, 2: SHUFFLE
+        val nextIndex = when (playMode) {
+            2 -> { // 随机喵
+                if (currentPlaylist.size <= 1) 0 
+                else (currentPlaylist.indices).random().let { 
+                    if (it == currentPlaylistIndex && currentPlaylist.size > 1) (it + 1) % currentPlaylist.size else it 
+                }
+            }
+            else -> (currentPlaylistIndex + 1) % currentPlaylist.size
+        }
+        
+        currentPlaylist.getOrNull(nextIndex)?.let {
+            currentPlaylistIndex = nextIndex
+            playSong(it, isSingleLoop = (playMode == 1))
+        }
+    }
+
+    override fun skipToPrevious(playMode: Int) {
+        if (currentPlaylist.isEmpty()) return
+        val prevIndex = if (currentPlaylistIndex <= 0) currentPlaylist.size - 1 else currentPlaylistIndex - 1
+        currentPlaylist.getOrNull(prevIndex)?.let {
+            currentPlaylistIndex = prevIndex
+            playSong(it, isSingleLoop = (playMode == 1))
         }
     }
 }

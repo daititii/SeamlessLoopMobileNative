@@ -50,14 +50,7 @@ class MainViewModel(
     private var settingsManager: com.cpu.seamlessloopmobile.data.SettingsManager? = null
 
     init {
-        viewModelScope.launch {
-            mediaControlManager.sessionEvent.collect { (event, _) ->
-                when (event) {
-                    "SKIP_NEXT" -> skipToNext()
-                    "SKIP_PREV" -> skipToPrevious()
-                }
-            }
-        }
+        // 播放逻辑已经搬到 Service 司令部了，ViewModel 现在只负责看戏和下令喵！
     }
     
     // --- 播放引擎状态流喵 ---
@@ -396,6 +389,7 @@ class MainViewModel(
             putLong("start_pos", startPosition)
             putBoolean("start_paused", startPaused)
             putBoolean("is_single_loop", _playMode.value == PlayMode.SINGLE_LOOP)
+            putStringArray("playlist_paths", list.map { it.filePath }.toTypedArray())
         }
         mediaControlManager.playFromMediaId(song.mediaId.toString(), bundle)
     }
@@ -408,8 +402,7 @@ class MainViewModel(
             PlayMode.SHUFFLE -> PlayMode.LIST_LOOP
             null -> PlayMode.LIST_LOOP
         }
-        _playMode.value = next
-        settingsManager?.playMode = next
+        setPlayMode(next)
     }
 
 

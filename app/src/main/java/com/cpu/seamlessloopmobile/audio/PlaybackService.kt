@@ -128,11 +128,12 @@ class PlaybackService : MediaBrowserServiceCompat() {
             override fun onPlay() { playbackManager?.resume() }
             override fun onPause() { playbackManager?.pause() }
             override fun onSkipToNext() {
-                // 这里可以通过自定义动作或者让 ViewModel 监听来处理喵
-                mediaSession?.sendSessionEvent("SKIP_NEXT", null)
+                val mode = mediaSession?.controller?.playbackState?.extras?.getInt("play_mode") ?: 0
+                playbackManager?.skipToNext(mode)
             }
             override fun onSkipToPrevious() {
-                mediaSession?.sendSessionEvent("SKIP_PREV", null)
+                val mode = mediaSession?.controller?.playbackState?.extras?.getInt("play_mode") ?: 0
+                playbackManager?.skipToPrevious(mode)
             }
             override fun onSeekTo(pos: Long) { playbackManager?.seekTo(pos) }
             override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
@@ -140,8 +141,26 @@ class PlaybackService : MediaBrowserServiceCompat() {
                 val startPos = extras?.getLong("start_pos") ?: 0L
                 val startPaused = extras?.getBoolean("start_paused") ?: false
                 val isSingleLoop = extras?.getBoolean("is_single_loop") ?: true
-                
-                playbackManager?.playFromMediaId(idLong, startPos, startPaused, isSingleLoop)
+                val playlistPaths = extras?.getStringArray("playlist_paths")
+
+                playbackManager?.playFromMediaId(idLong, startPos, startPaused, isSingleLoop, playlistPaths)
+            }
+
+            override fun onCustomAction(action: String?, extras: Bundle?) {
+                if (action == "SET_PLAY_MODE") {
+                    val mode = extras?.getInt("play_mode") ?: 0
+                    val state = mediaSession?.controller?.playbackState
+                    val builder = if (state != null) {
+                        android.support.v4.media.session.PlaybackStateCompat.Builder(state)
+                    } else {
+                        android.support.v4.media.session.PlaybackStateCompat.Builder()
+                    }
+                    val newState = builder.setExtras(android.os.Bundle().apply { 
+                            putInt("play_mode", mode)
+                        })
+                        .build()
+                    mediaSession?.setPlaybackState(newState)
+                }
             }
             override fun onStop() { stopForegroundCompletely() }
         })
