@@ -43,9 +43,17 @@ sealed class MusicUiState {
 
 
 class MainViewModel(
-    private val repository: MusicRepository
+    private val repository: MusicRepository,
+    private val mediaControlManager: com.cpu.seamlessloopmobile.audio.MediaControlManager
 ) : ViewModel() {
     private var settingsManager: com.cpu.seamlessloopmobile.data.SettingsManager? = null
+    
+    // --- 播放引擎状态流喵 ---
+    val playbackState = mediaControlManager.playbackState
+    val metadata = mediaControlManager.metadata
+    val currentPosition = mediaControlManager.currentPosition
+    val totalDuration = mediaControlManager.totalDuration
+    val isConnected = mediaControlManager.isConnected
 
     fun initSettings(manager: com.cpu.seamlessloopmobile.data.SettingsManager) {
         this.settingsManager = manager
@@ -227,6 +235,49 @@ class MainViewModel(
     fun setPlayMode(mode: PlayMode) { 
         _playMode.postValue(mode) 
         settingsManager?.playMode = mode
+        
+        // 同时发给遥控器喵
+        val bundle = android.os.Bundle().apply {
+            putInt("play_mode", mode.ordinal)
+        }
+        mediaControlManager.sendCustomAction("SET_PLAY_MODE", bundle)
+    }
+
+    // --- 媒体控制中转喵 ---
+    fun connectMedia() = mediaControlManager.connect()
+    fun disconnectMedia() = mediaControlManager.disconnect()
+    
+    fun play() = mediaControlManager.play()
+    fun pause() = mediaControlManager.pause()
+    fun skipToNext() {
+        val next = getNextIndex()
+        if (next != -1) {
+            _currentPlaylist.value?.getOrNull(next)?.let { playSong(it) }
+        }
+    }
+    fun skipToPrevious() {
+        val prev = getPrevIndex()
+        if (prev != -1) {
+            _currentPlaylist.value?.getOrNull(prev)?.let { playSong(it) }
+        }
+    }
+    fun seekTo(pos: Long) = mediaControlManager.seekTo(pos)
+
+    fun playSong(song: Song, startPosition: Long = 0, startPaused: Boolean = false) {
+        // 更新记录喵
+        val list = _currentPlaylist.value ?: emptyList()
+        val index = list.indexOfFirst { it.filePath == song.filePath }
+        if (index != -1) {
+            _currentSongIndex.postValue(index)
+            settingsManager?.currentSongIndex = index
+        }
+        
+        val bundle = android.os.Bundle().apply {
+            putLong("start_pos", startPosition)
+            putBoolean("start_paused", startPaused)
+            putBoolean("is_single_loop", _playMode.value == PlayMode.SINGLE_LOOP)
+        }
+        mediaControlManager.playFromMediaId(song.mediaId.toString(), bundle)
     }
 
 

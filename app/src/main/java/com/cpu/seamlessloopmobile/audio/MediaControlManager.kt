@@ -1,109 +1,158 @@
 package com.cpu.seamlessloopmobile.audio
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
-import android.os.Build
+import android.content.ServiceConnection
+import android.os.Bundle
+import android.os.IBinder
+import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaMetadataCompat
-import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.MediaControllerCompat
 import android.support.v4.media.session.PlaybackStateCompat
-import androidx.core.app.NotificationCompat
-import androidx.media.session.MediaButtonReceiver
-import com.cpu.seamlessloopmobile.MainActivity
-import com.cpu.seamlessloopmobile.R
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
 import com.cpu.seamlessloopmobile.model.Song
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * 掌管多媒体控制权的大管家喵！
- * 负责让大人在锁屏、通知栏甚至耳机线控上都能随心所欲控制播放。
+ * 核心媒体运营中心喵！
+ * 负责统一调度 MediaBrowser、MediaController 和后台 Service。
+ * 它会把复杂的媒体会话逻辑封装成 UI 只需要订阅的数据流喵。
  */
-class MediaControlManager(
-    private val context: Context,
-    private val playbackService: PlaybackService
-) {
-    private val mediaSession: MediaSessionCompat
-    private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    val notify: Notify
+class MediaControlManager(private val context: Context) {
 
-    fun getSession() = mediaSession
+    private var mediaBrowser: MediaBrowserCompat? = null
+    private var mediaController: MediaControllerCompat? = null
+    private var playbackService: PlaybackService? = null
 
-    init {
-        mediaSession = MediaSessionCompat(context, "SeamlessLoopMediaSession").apply {
-            setCallback(object : MediaSessionCompat.Callback() {
-                override fun onPlay() {
-                    playbackService.playbackManager?.resume()
-                }
-                override fun onPause() {
-                    playbackService.playbackManager?.pause()
-                }
-                override fun onStop() {
-                    playbackService.playbackManager?.stop()
-                    playbackService.stopForegroundCompletely()
-                }
-                override fun onSkipToNext() {
-                    // TODO: 真正的切歌逻辑需要 Service 持有当前的 Playlist 喵！
-                }
-                override fun onSkipToPrevious() {
-                }
-                override fun onPlayFromMediaId(mediaId: String?, extras: android.os.Bundle?) {
-                    val idLong = mediaId?.toLongOrNull() ?: return
-                    val startPos = extras?.getLong("start_pos", 0L) ?: 0L
-                    val startPaused = extras?.getBoolean("start_paused", false) ?: false
-                    val isSingleLoop = extras?.getBoolean("is_single_loop", true) ?: true
-                    playbackService.playbackManager?.playFromMediaId(idLong, startPos, startPaused, isSingleLoop)
-                }
-                override fun onSeekTo(pos: Long) {
-                    playbackService.playbackManager?.seekTo(pos)
-                }
-                override fun onCustomAction(action: String?, extras: android.os.Bundle?) {
-                    if (action == PlaybackCommand.ACTION_SET_PLAY_MODE) {
-                        val modeOrdinal = extras?.getInt(PlaybackCommand.EXTRA_PLAY_MODE) ?: return
-                        val isSingleLoop = modeOrdinal == 1 // com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
-                        playbackService.playbackManager?.setLooping(isSingleLoop)
-                    }
-                }
-            })
-            setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS)
-            isActive = true
+    private val _playbackState = MutableStateFlow<PlaybackStateCompat?>(null)
+    val playbackState = _playbackState.asStateFlow()
+
+    private val _metadata = MutableStateFlow<MediaMetadataCompat?>(null)
+    val metadata = _metadata.asStateFlow()
+
+    private val _currentPosition = MutableStateFlow(0L)
+    val currentPosition = _currentPosition.asStateFlow()
+
+    private val _totalDuration = MutableStateFlow(0L)
+    val totalDuration = _totalDuration.asStateFlow()
+
+    private val _isConnected = MutableStateFlow(false)
+    val isConnected = _isConnected.asStateFlow()
+
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var positionUpdateJob: Job? = null
+
+    private val connectionCallback = object : MediaBrowserCompat.ConnectionCallback() {
+        override fun onConnected() {
+            val token = mediaBrowser?.sessionToken ?: return
+            mediaController = MediaControllerCompat(context, token)
+            mediaController?.registerCallback(controllerCallback)
+            
+            _playbackState.value = mediaController?.playbackState
+            _metadata.value = mediaController?.metadata
+            _isConnected.value = true
+            
+            startPositionUpdates()
         }
+
+        override fun onConnectionSuspended() {
+            _isConnected.value = false
+            stopPositionUpdates()
+        }
+
+        override fun onConnectionFailed() {
+            _isConnected.value = false
+            stopPositionUpdates()
+        }
+    }
+
+    private val controllerCallback = object : MediaControllerCompat.Callback() {
+        override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
+            _playbackState.value = state
+            if (state?.state == PlaybackStateCompat.STATE_PLAYING) {
+                startPositionUpdates()
+            } else {
+                stopPositionUpdates()
+            }
+        }
+
+        override fun onMetadataChanged(metadata: MediaMetadataCompat?) {
+            _metadata.value = metadata
+            _totalDuration.value = playbackService?.playbackManager?.duration ?: 0L
+        }
+    }
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val binder = service as PlaybackService.PlaybackBinder
+            playbackService = binder.getService()
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            playbackService = null
+        }
+    }
+
+    fun connect() {
+        if (mediaBrowser == null) {
+            mediaBrowser = MediaBrowserCompat(
+                context,
+                ComponentName(context, PlaybackService::class.java),
+                connectionCallback,
+                null
+            )
+        }
+        mediaBrowser?.connect()
         
-        notify = NotifyImpl(context, mediaSession, notificationManager)
+        val intent = Intent(context, PlaybackService::class.java)
+        context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
-
-    fun updatePlaybackState(song: Song, isPlaying: Boolean) {
-        val metadata = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, song.displayName ?: song.fileName)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, song.artist ?: "Unknown Artist")
-            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, song.duration)
-            .build()
-        mediaSession.setMetadata(metadata)
-
-        val stateBuilder = PlaybackStateCompat.Builder()
-            .setActions(
-                PlaybackStateCompat.ACTION_PLAY or
-                PlaybackStateCompat.ACTION_PAUSE or
-                PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                PlaybackStateCompat.ACTION_STOP
-            )
-            .setState(
-                if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
-                PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
-                1.0f
-            )
-        mediaSession.setPlaybackState(stateBuilder.build())
-
-        notify.show(song, isPlaying)
+    fun disconnect() {
+        mediaBrowser?.disconnect()
+        mediaController?.unregisterCallback(controllerCallback)
+        try {
+            context.unbindService(serviceConnection)
+        } catch (e: Exception) { }
+        _isConnected.value = false
+        stopPositionUpdates()
     }
 
-    fun release() {
-        mediaSession.release()
-        notify.cancel()
+    private fun startPositionUpdates() {
+        positionUpdateJob?.cancel()
+        positionUpdateJob = scope.launch {
+            while (isActive) {
+                playbackService?.playbackManager?.let { pm ->
+                    _currentPosition.value = pm.position
+                    _totalDuration.value = pm.duration
+                }
+                delay(100)
+            }
+        }
+    }
+
+    private fun stopPositionUpdates() {
+        positionUpdateJob?.cancel()
+        positionUpdateJob = null
+    }
+
+    // --- 遥控器指令集喵 ---
+
+    fun play() = mediaController?.transportControls?.play()
+    fun pause() = mediaController?.transportControls?.pause()
+    fun skipToNext() = mediaController?.transportControls?.skipToNext()
+    fun skipToPrevious() = mediaController?.transportControls?.skipToPrevious()
+    fun seekTo(pos: Long) = mediaController?.transportControls?.seekTo(pos)
+
+    fun playFromMediaId(mediaId: String, extras: Bundle?) {
+        mediaController?.transportControls?.playFromMediaId(mediaId, extras)
+    }
+
+    fun sendCustomAction(action: String, args: Bundle?) {
+        mediaController?.transportControls?.sendCustomAction(action, args)
     }
 }

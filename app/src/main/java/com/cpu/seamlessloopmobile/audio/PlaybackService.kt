@@ -24,6 +24,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private lateinit var repository: MusicRepository
     var playbackManager: Playback? = null
     var mediaControlManager: MediaControlManager? = null
+    private var mediaSession: MediaSessionCompat? = null
+    private var notify: Notify? = null
 
     inner class PlaybackBinder : android.os.Binder() {
         fun getService(): PlaybackService = this@PlaybackService
@@ -95,23 +97,41 @@ class PlaybackService : MediaBrowserServiceCompat() {
         val database = AppDatabase.getDatabase(this)
         repository = MusicRepository(database.songDao(), database.playlistDao())
 
-        mediaControlManager = MediaControlManager(context = this, playbackService = this)
+        // 初始化媒体会话喵！
+        mediaSession = MediaSessionCompat(this, "SeamlessLoopService").apply {
+            setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS)
+            isActive = true
+        }
+        
+        setSessionToken(mediaSession?.sessionToken)
 
-        mediaControlManager?.getSession()?.let { session ->
-            sessionToken = session.sessionToken
-            playbackManager = PlaybackManager(
-                context = this,
-                coroutineScope = serviceScope,
-                repository = repository,
-                mediaSession = session
-            ).apply {
-                onPlaybackStatusChanged = { isPlaying, song ->
-                    if (song != null) {
-                        handlePlaybackStateChange(isPlaying, song)
-                    }
+        notify = NotifyImpl(
+            context = this,
+            mediaSession = mediaSession!!,
+            notificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        )
+
+        playbackManager = PlaybackManager(
+            context = this,
+            coroutineScope = serviceScope,
+            repository = repository,
+            mediaSession = mediaSession!!
+        ).apply {
+            onPlaybackStatusChanged = { isPlaying, song ->
+                if (song != null) {
+                    handlePlaybackStateChange(isPlaying, song)
                 }
             }
         }
+
+        mediaSession?.setCallback(object : MediaSessionCompat.Callback() {
+            override fun onPlay() { playbackManager?.resume() }
+            override fun onPause() { playbackManager?.pause() }
+            override fun onSkipToNext() { }
+            override fun onSkipToPrevious() { }
+            override fun onSeekTo(pos: Long) { playbackManager?.seekTo(pos) }
+            override fun onStop() { stopForegroundCompletely() }
+        })
     }
 
     // --- MediaBrowserServiceCompat 必须实现的接口喵 ---
@@ -133,7 +153,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        mediaControlManager?.getSession()?.let { session ->
+        mediaSession?.let { session ->
             MediaButtonReceiver.handleIntent(session, intent)
         }
         return START_STICKY
@@ -155,8 +175,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     }
 
     fun updateNotification(song: Song, isPlaying: Boolean) {
-        mediaControlManager?.updatePlaybackState(song, isPlaying)
-        val notification = mediaControlManager?.notify?.createNotification(song, isPlaying)
+        val notification = notify?.createNotification(song, isPlaying)
         if (notification != null) {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
@@ -174,15 +193,16 @@ class PlaybackService : MediaBrowserServiceCompat() {
     fun stopForegroundCompletely() {
         if (wakeLock?.isHeld == true) wakeLock?.release()
         audioFocusManager.abandonFocus()
-        stopForeground(STOP_FOREGROUND_REMOVE or STOP_FOREGROUND_DETACH)
+        playbackManager?.stop()
+        stopForeground(true)
         stopSelf()
     }
 
     override fun onDestroy() {
         if (wakeLock?.isHeld == true) wakeLock?.release()
         headsetPlugReceiver.unregister(this)
+        mediaSession?.release()
         super.onDestroy()
         serviceScope.cancel() 
-        mediaControlManager?.release()
     }
 }

@@ -71,8 +71,8 @@ PlaybackManager.kt（第 194 行）时，直接惊呆了：
 - [ ] 最新采用compose架构后，一系列多选功能消失。可以多选歌曲，但不能全选，选择后不能添加到歌单，不能创建歌单
 - [ ] 循环编辑页面进度条拖动不流畅
 - [ ] 对进一步的匹配什么时候发生？循环点匹配什么时候有
-- [ ] D:\seamless loop music\SeamlessLoopMobile\app\src\main\java\com\cpu\seamlessloopmobile\viewmodel\MainViewModel.kt以及
-  D:\seamless loop music\SeamlessLoopMobile\app\src\main\java\com\cpu\seamlessloopmobile\MainActivity.kt
+- [ ] D:\seamless loop music\SeamlessLoopMobile\app\src\main\java\com\cpu\seamlessloopmobile\viewmodel\MainViewModel.kt太大了
+- [ ] D:\seamless loop music\SeamlessLoopMobile\app\src\main\java\com\cpu\seamlessloopmobile\MainActivity.kt
   太大了
 - [ ] 尝试增加以下功能
   ![Screenshot_20260304_000223_remix.myplayer](TODO.assets/Screenshot_20260304_000223_remix.myplayer.jpg)
