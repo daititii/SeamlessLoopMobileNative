@@ -126,6 +126,35 @@ class PlaybackService : MediaBrowserServiceCompat() {
         }
 
         mediaSession?.setCallback(object : MediaSessionCompat.Callback() {
+            private var clickCount = 0
+            private var clickTimerJob: kotlinx.coroutines.Job? = null
+
+            override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
+                val keyEvent = mediaButtonEvent?.getParcelableExtra<android.view.KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                if (keyEvent != null) {
+                    val keyCode = keyEvent.keyCode
+                    if (keyCode == android.view.KeyEvent.KEYCODE_HEADSETHOOK || 
+                        keyCode == android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
+                        if (keyEvent.action == android.view.KeyEvent.ACTION_DOWN && keyEvent.repeatCount == 0) {
+                            clickCount++
+                            clickTimerJob?.cancel()
+                            clickTimerJob = serviceScope.launch {
+                                kotlinx.coroutines.delay(400) // 400ms 的连击等待时间喵
+                                when (clickCount) {
+                                    1 -> if (playbackManager?.isPlaying == true) onPause() else onPlay()
+                                    2 -> onSkipToNext()
+                                    3 -> onSkipToPrevious()
+                                    else -> if (clickCount > 3) onSkipToPrevious()
+                                }
+                                clickCount = 0
+                            }
+                        }
+                        return true // 必须整个吞下这个按键事件喵！
+                    }
+                }
+                return super.onMediaButtonEvent(mediaButtonEvent)
+            }
+
             override fun onPlay() { playbackManager?.resume() }
             override fun onPause() { playbackManager?.pause() }
             override fun onSkipToNext() {
