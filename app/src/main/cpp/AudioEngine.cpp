@@ -112,6 +112,11 @@ void AudioEngine::loadAudioSource(int fd, int64_t offset, int64_t length) {
         mCurrentReadFrame = 0;
         mLoopStartFrame = 0;
         mLoopEndFrame = mActiveDecoder->getTotalFrames();
+        
+        // --- 核心修复：补全用户循环点初值喵！ ---
+        mUserLoopStart = 0;
+        mUserLoopEnd = mLoopEndFrame.load();
+        
         mIsLooping = true;
         mIsPlaying = true; // 加载新歌时默认处于播放状态喵！
         mIsAbMode = false;

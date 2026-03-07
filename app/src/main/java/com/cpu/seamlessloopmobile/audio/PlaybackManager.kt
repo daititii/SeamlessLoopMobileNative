@@ -199,17 +199,41 @@ class PlaybackManager(
             _state.value = AudioPlayState.PREPARING
             NativeAudio.stopAudioEngine()
             
+            // --- 核心修复：防止内存对象过时喵！ ---
+            // 莱芙在正式闭眼播放前，先去数据库里确认一下这首歌最新的“灵魂参数”喵
+            var latestSong = repository.getSongByPath(song.filePath)
+            android.util.Log.d("PlaybackManager", "🔍 第一次数据库查询(通过路径): ${if (latestSong != null) "成功" else "失败"}")
+            
+            // 如果通过路径没找到，但歌曲有有效ID，尝试通过ID找喵
+            if (latestSong == null && song.id > 0) {
+                latestSong = repository.getSongById(song.id)
+                android.util.Log.d("PlaybackManager", "🔍 第二次数据库查询(通过ID ${song.id}): ${if (latestSong != null) "成功" else "失败"}")
+            }
+            
+            // 如果还是没找到，使用原对象喵
+            latestSong = latestSong ?: song
+            android.util.Log.d("PlaybackManager", "🚀 准备开播：${latestSong.fileName}, 最终循环点: [${latestSong.loopStart}-${latestSong.loopEnd}]")
+            android.util.Log.d("PlaybackManager", "📊 原内存对象循环点: [${song.loopStart}-${song.loopEnd}], 路径: ${song.filePath}, ID: ${song.id}")
+            android.util.Log.d("PlaybackManager", "📊 数据库歌曲循环点: [${latestSong.loopStart}-${latestSong.loopEnd}], ID: ${latestSong.id}")
+            android.util.Log.d("PlaybackManager", "🔍 数据库查询最终结果: ${if (latestSong == song) "未找到更新数据" else "已从数据库更新"}, 路径匹配: ${song.filePath == latestSong.filePath}")
+
             try {
-                val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, song.mediaId)
+                val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, latestSong.mediaId)
                 context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
                     val actualLength = if (afd.declaredLength < 0) afd.length else afd.declaredLength
                     NativeAudio.startAudioEngine(afd.parcelFileDescriptor.fd, afd.startOffset, actualLength)
                 }
 
-                if (song.loopEnd > 0) {
-                    NativeAudio.setLoopPoints(song.loopStart, song.loopEnd)
+                if (latestSong.loopEnd > latestSong.loopStart) {
+                    android.util.Log.d("PlaybackManager", "🎯 设置循环点: [${latestSong.loopStart}-${latestSong.loopEnd}], end > start = ${latestSong.loopEnd > latestSong.loopStart}")
+                    NativeAudio.setLoopPoints(latestSong.loopStart, latestSong.loopEnd)
+                } else {
+                    android.util.Log.d("PlaybackManager", "⚠️ 未设置循环点: loopEnd=${latestSong.loopEnd} <= loopStart=${latestSong.loopStart} (需要 end > start)")
                 }
-                NativeAudio.setLooping(isSingleLoop)
+                // 如果歌曲本身有预设循环点，或者处于单曲循环模式，就让引擎开启循环喵！
+                val shouldLoop = isSingleLoop || (latestSong.loopEnd > latestSong.loopStart)
+                android.util.Log.d("PlaybackManager", "🔁 设置循环模式: isSingleLoop=$isSingleLoop, shouldLoop=$shouldLoop")
+                NativeAudio.setLooping(shouldLoop)
 
                 if (startPosition > 0) {
                     NativeAudio.seekTo(startPosition)

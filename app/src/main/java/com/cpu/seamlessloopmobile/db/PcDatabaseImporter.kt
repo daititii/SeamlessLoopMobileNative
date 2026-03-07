@@ -59,19 +59,24 @@ object PcDatabaseImporter {
 
                         val candidates = localSongsMap[fileName]
                         if (!candidates.isNullOrEmpty()) {
-                            // 2. 核心算法：双重时长验证喵
-                            // 假设是 44.1k 或 48k，算出预估毫秒时长
-                            val dur44 = (total / 44.1).toLong()
-                            val dur48 = (total / 48.0).toLong()
-                            val tolerance = 5000L // 允许 5 秒误差喵
+                            // 2. 核心算法：三重身份验证喵 (指纹优先 + 宽容时长)
+                            // 优先通过 PC 端的 TotalSamples 指纹来认亲喵！
+                            var matchedSong = candidates.find { it.totalSamples == total && total > 0 }
 
-                            var matchedSong = candidates.find { 
-                                val phoneDur = it.duration
-                                Math.abs(phoneDur - dur44) <= tolerance || 
-                                Math.abs(phoneDur - dur48) <= tolerance 
+                            if (matchedSong == null) {
+                                // 假设是 44.1k 或 48k，算出预估毫秒时长
+                                val dur44 = (total / 44.1).toLong()
+                                val dur48 = (total / 48.0).toLong()
+                                val tolerance = 2000L // 遵命！容差已按大人指示缩小到 2 秒喵！
+
+                                matchedSong = candidates.find { 
+                                    val phoneDur = it.duration
+                                    Math.abs(phoneDur - dur44) <= tolerance || 
+                                    Math.abs(phoneDur - dur48) <= tolerance 
+                                }
                             }
                             
-                            // 兜底：如果没对上时长，但本地同名歌曲只有这一首，那就大胆地在一起吧喵！
+                            // 兜底：如果没对上时长，但本地同名歌曲只有这一首，那也一定是它没跑了喵！
                             if (matchedSong == null && candidates.size == 1) {
                                 matchedSong = candidates[0]
                             }

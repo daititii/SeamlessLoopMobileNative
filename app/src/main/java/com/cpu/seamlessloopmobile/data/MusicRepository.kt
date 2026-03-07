@@ -27,6 +27,8 @@ class MusicRepository(
     suspend fun getAllSongs(): List<Song> = songRepository.getAllSongs()
 
     suspend fun getSongByPath(path: String): Song? = songRepository.getSongByPath(path)
+    
+    suspend fun getSongById(id: Long): Song? = songRepository.getSongById(id)
 
     suspend fun updateSong(song: Song) = songRepository.updateSong(song)
 

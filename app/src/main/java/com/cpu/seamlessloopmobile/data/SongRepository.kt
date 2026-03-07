@@ -19,6 +19,10 @@ class SongRepository(private val songDao: SongDao) {
         songDao.getSongByPath(path)
     }
 
+    suspend fun getSongById(id: Long): Song? = withContext(Dispatchers.IO) {
+        songDao.getSongById(id)
+    }
+
     suspend fun updateSong(song: Song) = withContext(Dispatchers.IO) {
         songDao.updateSong(song)
     }

@@ -16,6 +16,9 @@ interface SongDao {
     @Query("SELECT * FROM LoopPoints WHERE FileName = :name")
     suspend fun getSongsByName(name: String): List<Song>
 
+    @Query("SELECT * FROM LoopPoints WHERE Id = :id LIMIT 1")
+    suspend fun getSongById(id: Long): Song?
+
     @Query("UPDATE LoopPoints SET LoopStart = :start, LoopEnd = :end, TotalSamples = :total WHERE Id = :songId")
     suspend fun updateLoopPoints(songId: Long, start: Long, end: Long, total: Long)
 
