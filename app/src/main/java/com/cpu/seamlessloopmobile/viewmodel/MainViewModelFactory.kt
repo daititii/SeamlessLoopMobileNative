@@ -5,15 +5,17 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.model.SongDao
+import com.cpu.seamlessloopmobile.model.PlayQueueDao
 
 class MainViewModelFactory(
     private val songDao: SongDao,
     private val playlistDao: PlaylistDao,
+    private val playQueueDao: PlayQueueDao,
     private val context: android.content.Context
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(MainViewModel::class.java)) {
-            val repository = com.cpu.seamlessloopmobile.data.MusicRepository(songDao, playlistDao)
+            val repository = com.cpu.seamlessloopmobile.data.MusicRepository(songDao, playlistDao, playQueueDao)
             val mediaControl = com.cpu.seamlessloopmobile.audio.MediaControlManager(context.applicationContext)
             
             @Suppress("UNCHECKED_CAST")

@@ -20,7 +20,6 @@ class SettingsManager(context: Context) {
         private const val KEY_LAST_POSITION = "last_position"
         private const val KEY_PLAY_MODE = "play_mode"
         private const val KEY_IS_AB_MODE = "is_ab_mode"
-        private const val KEY_CURRENT_PLAYLIST_PATHS = "current_playlist_paths"
         private const val KEY_CURRENT_SONG_INDEX = "current_song_index"
         
         @Volatile
@@ -58,19 +57,6 @@ class SettingsManager(context: Context) {
         get() = prefs.getInt(KEY_CURRENT_SONG_INDEX, -1)
         set(value) = prefs.edit().putInt(KEY_CURRENT_SONG_INDEX, value).apply()
 
-    // --- 播放队列持久化喵 ---
-
-    var currentPlaylistPaths: List<String>
-        get() {
-            val json = prefs.getString(KEY_CURRENT_PLAYLIST_PATHS, null) ?: return emptyList()
-            val type = object : TypeToken<List<String>>() {}.type
-            return try { gson.fromJson(json, type) } catch (e: Exception) { emptyList() }
-        }
-        set(value) {
-            val json = gson.toJson(value)
-            prefs.edit().putString(KEY_CURRENT_PLAYLIST_PATHS, json).apply()
-        }
-
     /**
      * 一键记录所有关键状态喵！
      */
@@ -87,7 +73,6 @@ class SettingsManager(context: Context) {
             putLong(KEY_LAST_POSITION, position)
             putString(KEY_PLAY_MODE, mode.name)
             putBoolean(KEY_IS_AB_MODE, isAb)
-            putString(KEY_CURRENT_PLAYLIST_PATHS, gson.toJson(playlist))
             putInt(KEY_CURRENT_SONG_INDEX, index)
             apply()
         }

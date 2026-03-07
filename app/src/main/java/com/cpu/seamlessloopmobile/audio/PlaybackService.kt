@@ -96,7 +96,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "SeamlessLoop:PlaybackWakeLock")
 
         val database = AppDatabase.getDatabase(this)
-        repository = MusicRepository(database.songDao(), database.playlistDao())
+        repository = MusicRepository(database.songDao(), database.playlistDao(), database.playQueueDao())
 
         // 初始化媒体会话喵！
         mediaSession = MediaSessionCompat(this, "SeamlessLoopService").apply {
@@ -124,6 +124,9 @@ class PlaybackService : MediaBrowserServiceCompat() {
                 }
             }
         }
+
+        // 莱芙帮大人找回上次的记忆喵！
+        restoreLastSession()
 
         mediaSession?.setCallback(object : MediaSessionCompat.Callback() {
             private var clickCount = 0
@@ -162,6 +165,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
                 queueManager.playMode = mode
                 queueManager.getNextSong()?.let { 
                     playbackManager?.play(it, 0, false)
+                    // 别忘了帮大人偷偷改一下小本本喵！
+                    com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(this@PlaybackService).currentSongIndex = queueManager.currentIndex
                 }
             }
             override fun onSkipToPrevious() {
@@ -169,6 +174,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
                 queueManager.playMode = mode
                 queueManager.getPreviousSong()?.let { 
                     playbackManager?.play(it, 0, false)
+                    // 这里也要同步记下来喵！
+                    com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(this@PlaybackService).currentSongIndex = queueManager.currentIndex
                 }
             }
             override fun onSeekTo(pos: Long) { playbackManager?.seekTo(pos) }
@@ -197,6 +204,11 @@ class PlaybackService : MediaBrowserServiceCompat() {
                             playbackManager?.playSong(songToPlay, startPos, startPaused, isSingleLoop)
                         }
                     }
+                    
+                    // 记在小本本和新库上，下次重开就不怕忘了喵！
+                    val settingsManager = com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(this@PlaybackService)
+                    settingsManager.currentSongIndex = queueManager.currentIndex
+                    repository.replacePlayQueue(queueManager.currentPlaylistSnapshot.map { it.id })
                 }
             }
 
@@ -282,6 +294,35 @@ class PlaybackService : MediaBrowserServiceCompat() {
         playbackManager?.stop()
         stopForeground(true)
         stopSelf()
+    }
+
+    /**
+     * 去小本本上找找上次还没放完的歌和列表喵！
+     */
+    private fun restoreLastSession() {
+        val settingsManager = com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(this)
+        val lastPath = settingsManager.lastSongPath ?: return
+        // 进度就算了喵，大人说下次播放从头开始！
+        val lastIndex = settingsManager.currentSongIndex
+
+        serviceScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            // 1. 恢复播放队列喵
+            val songs = repository.getPlayQueueSongs()
+            if (songs.isNotEmpty()) {
+                queueManager.updatePlaylist(songs, if (lastIndex in songs.indices) lastIndex else 0)
+                android.util.Log.d("PlaybackService", "📚 列表已从数据库找回，共 ${songs.size} 首歌喵！")
+            }
+
+            // 2. 把上次正放着的那首歌找出来候命喵
+            val songToPrepare = repository.getSongByPath(lastPath)
+            if (songToPrepare != null) {
+                // 如果是 AB 模式，我们也尽量记一下（不过目前 AB 初始化还有点小纠结，先保持单曲加载喵）
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.util.Log.d("PlaybackService", "📖 记忆恢复：将 ${songToPrepare.fileName} 加载到引擎中，进度清零从头开始喵！")
+                    playbackManager?.playSong(songToPrepare, 0L, startPaused = true)
+                }
+            }
+        }
     }
 
     override fun onDestroy() {

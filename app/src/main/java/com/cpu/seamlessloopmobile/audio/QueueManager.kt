@@ -12,6 +12,9 @@ class QueueManager {
     var playMode: Int = 0 
     
     private var currentPlaylist: List<Song> = emptyList()
+    val currentPlaylistSnapshot: List<Song>
+        get() = currentPlaylist.toList()
+        
     var currentIndex: Int = -1
         private set
 

@@ -14,7 +14,8 @@ import com.cpu.seamlessloopmobile.model.SongDao
  */
 class MusicRepository(
     private val songDao: SongDao,
-    private val playlistDao: PlaylistDao
+    private val playlistDao: PlaylistDao,
+    private val playQueueDao: com.cpu.seamlessloopmobile.model.PlayQueueDao
 ) {
 
     // 内部持有的子干将们
@@ -68,4 +69,10 @@ class MusicRepository(
 
     suspend fun findAbPairRobust(context: Context, song: Song): Pair<Song, Song>? = 
         musicScannerRepository.findAbPairRobust(context, song)
+
+    // --- 播放队列状态持久化转发 ---
+    
+    suspend fun getPlayQueueSongs(): List<Song> = playQueueDao.getPlayQueueSongs()
+    
+    suspend fun replacePlayQueue(songIds: List<Long>) = playQueueDao.replacePlayQueue(songIds)
 }

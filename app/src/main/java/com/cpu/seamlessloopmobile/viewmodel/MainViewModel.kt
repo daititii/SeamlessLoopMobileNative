@@ -130,6 +130,23 @@ class MainViewModel(
 
     fun initSettings(manager: com.cpu.seamlessloopmobile.data.SettingsManager) {
         this.settingsManager = manager
+        // 莱芙顺便帮 UI 界面把名单也请回来喵！
+        restorePlaybackSession()
+    }
+
+    private fun restorePlaybackSession() {
+        val manager = settingsManager ?: return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val songs = repository.getPlayQueueSongs()
+            if (songs.isNotEmpty()) {
+                withContext(Dispatchers.Main) {
+                    _currentPlaylist.value = songs
+                    _currentSongIndex.value = manager.currentSongIndex
+                    android.util.Log.d("MainViewModel", "🏠 UI 层记忆由数据库恢复：已载入 ${songs.size} 首歌，当前序号 ${manager.currentSongIndex} 喵！")
+                }
+            }
+        }
     }
 
     // --- 数据代理层 (对接 UI 和子模块) ---

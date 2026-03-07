@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
 
         // 初始化
         val database = com.cpu.seamlessloopmobile.db.AppDatabase.getDatabase(this)
-        val factory = MainViewModelFactory(database.songDao(), database.playlistDao(), this)
+        val factory = MainViewModelFactory(database.songDao(), database.playlistDao(), database.playQueueDao(), this)
         viewModel = ViewModelProvider(this, factory)[MainViewModel::class.java]
 
         val settingsManager = SettingsManager.getInstance(this)

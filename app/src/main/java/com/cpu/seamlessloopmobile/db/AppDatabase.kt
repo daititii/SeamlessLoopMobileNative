@@ -10,14 +10,17 @@ import com.cpu.seamlessloopmobile.model.Playlist
 import com.cpu.seamlessloopmobile.model.PlaylistItem
 import com.cpu.seamlessloopmobile.model.PlaylistFolder
 import com.cpu.seamlessloopmobile.model.PlaylistDao
+import com.cpu.seamlessloopmobile.model.PlayQueueItem
+import com.cpu.seamlessloopmobile.model.PlayQueueDao
 
 import androidx.room.TypeConverters
 
-@Database(entities = [Song::class, Playlist::class, PlaylistItem::class, PlaylistFolder::class], version = 6, exportSchema = false)
+@Database(entities = [Song::class, Playlist::class, PlaylistItem::class, PlaylistFolder::class, PlayQueueItem::class], version = 7, exportSchema = false)
 @TypeConverters(DateConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun songDao(): SongDao
     abstract fun playlistDao(): PlaylistDao
+    abstract fun playQueueDao(): PlayQueueDao
 
     companion object {
         @Volatile
