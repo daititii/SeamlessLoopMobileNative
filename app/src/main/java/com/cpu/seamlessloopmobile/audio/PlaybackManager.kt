@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * 听觉中枢：负责处理音频文件的加载、解码启动以及数据库时长采集。
@@ -21,8 +22,12 @@ class PlaybackManager(
     private val coroutineScope: CoroutineScope,
     private val repository: MusicRepository,
     private val mediaSession: MediaSessionCompat
-) : Playback {
+) : Playback, IMultiPlayer {
     private val settingsManager = com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(context)
+    
+    // 状态机核心喵！
+    private val _state = kotlinx.coroutines.flow.MutableStateFlow(AudioPlayState.IDLE)
+    override val state = _state.asStateFlow()
     
     init {
         // 初始化播放模式喵
@@ -44,6 +49,7 @@ class PlaybackManager(
     // 专门给 Service 回调的钩子，用于通知 UI 更新
     override var onPlaybackStatusChanged: ((isPlaying: Boolean, currentSong: Song?) -> Unit)? = null
     override var onPlaybackError: ((String) -> Unit)? = { error ->
+        _state.value = AudioPlayState.ERROR
         currentSong?.let { updateMediaSessionState(it, false, isAbMode, error) }
     }
 
@@ -73,6 +79,7 @@ class PlaybackManager(
 
     override fun pause() {
         NativeAudio.pauseAudioEngine()
+        _state.value = AudioPlayState.PAUSED
         currentSong?.let {
             updateMediaSessionState(it, false, isAbMode)
         }
@@ -80,6 +87,7 @@ class PlaybackManager(
 
     override fun resume() {
         NativeAudio.resumeAudioEngine()
+        _state.value = AudioPlayState.PLAYING
         currentSong?.let {
             updateMediaSessionState(it, true, isAbMode)
         }
@@ -87,6 +95,7 @@ class PlaybackManager(
 
     override fun stop() {
         NativeAudio.stopAudioEngine()
+        _state.value = AudioPlayState.IDLE
         currentSong = null
         isAbMode = false
         // 不在这里更新 Session，通常由 Service 处理销毁
@@ -187,6 +196,10 @@ class PlaybackManager(
         }
     }
 
+    override fun play(song: Song, startPos: Long, startPaused: Boolean) {
+        playSong(song, startPos, startPaused)
+    }
+
     override fun playSong(song: Song, startPosition: Long, startPaused: Boolean, isSingleLoop: Boolean) {
         // 先检查是否需要 AB 模式 (逻辑从 Activity 搬到了这里喵)
         // 注意：AB 模式的发现由于不再依赖 ViewModel，需要调用者提供同级歌曲列表
@@ -223,6 +236,7 @@ class PlaybackManager(
             currentPlaylistIndex = index
         }
         coroutineScope.launch(Dispatchers.IO) {
+            _state.value = AudioPlayState.PREPARING
             NativeAudio.stopAudioEngine()
             
             try {
@@ -259,6 +273,7 @@ class PlaybackManager(
                 }
 
                 withContext(Dispatchers.Main) {
+                    _state.value = if (startPaused) AudioPlayState.PAUSED else AudioPlayState.PLAYING
                     updateMediaSessionState(finalSong, !startPaused)
                 }
             } catch (e: Exception) {
@@ -272,6 +287,7 @@ class PlaybackManager(
     private fun playAbSong(introSong: Song, loopSong: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) {
         this.currentSong = introSong
         coroutineScope.launch(Dispatchers.IO) {
+            _state.value = AudioPlayState.PREPARING
             NativeAudio.stopAudioEngine()
             
             try {
@@ -318,6 +334,7 @@ class PlaybackManager(
                 val abSong = introSong.copy(displayName = abTitle, duration = totalDuration)
                 
                 withContext(Dispatchers.Main) {
+                    _state.value = if (startPaused) AudioPlayState.PAUSED else AudioPlayState.PLAYING
                     updateMediaSessionState(abSong, !startPaused, isAbMode = true)
                 }
             } catch (e: Exception) {

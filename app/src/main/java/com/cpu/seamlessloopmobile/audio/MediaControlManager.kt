@@ -33,6 +33,9 @@ class MediaControlManager(private val context: Context) {
     private val _playbackState = MutableStateFlow<PlaybackStateCompat?>(null)
     val playbackState = _playbackState.asStateFlow()
 
+    private val _audioPlayState = MutableStateFlow(AudioPlayState.IDLE)
+    val audioPlayState = _audioPlayState.asStateFlow()
+
     private val _metadata = MutableStateFlow<MediaMetadataCompat?>(null)
     val metadata = _metadata.asStateFlow()
 
@@ -100,7 +103,15 @@ class MediaControlManager(private val context: Context) {
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as PlaybackService.PlaybackBinder
-            playbackService = binder.getService()
+            val s = binder.getService()
+            playbackService = s
+            
+            // 订阅内核状态机喵！
+            scope.launch {
+                s.playbackManager?.state?.collect { newState ->
+                    _audioPlayState.value = newState
+                }
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {

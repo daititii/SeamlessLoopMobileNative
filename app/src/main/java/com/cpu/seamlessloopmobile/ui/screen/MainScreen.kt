@@ -61,6 +61,7 @@ fun MainScreen(
     val selectedItems by viewModel.selectedItems.observeAsState(emptySet())
     val selectedPlaylists by viewModel.selectedPlaylists.observeAsState(emptySet())
     val playbackState by viewModel.playbackState.collectAsState()
+    val audioPlayState by viewModel.audioPlayState.collectAsState()
     val isPlayingPanelVisible by viewModel.isPlayingPanelVisible.observeAsState(false)
     val syncStatus by viewModel.syncStatus.observeAsState("")
     val selectedFolders by viewModel.selectedFolders.observeAsState(emptySet())
@@ -325,7 +326,7 @@ fun MainScreen(
                     viewModel = viewModel,
                     isVisible = true,
                     onClose = { viewModel.setPlayingPanelVisible(false) },
-                    onPlayPause = { if (playbackState?.state == PlaybackStateCompat.STATE_PLAYING) viewModel.pause() else viewModel.play() },
+                    onPlayPause = { if (audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PLAYING) viewModel.pause() else viewModel.play() },
                     onNext = { viewModel.skipToNext() },
                     onPrev = { viewModel.skipToPrevious() }
                 )

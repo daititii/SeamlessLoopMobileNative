@@ -29,9 +29,12 @@ fun MiniPlayer(
     val metadata by viewModel.metadata.collectAsState()
     val currentPosition by viewModel.currentPosition.collectAsState()
     val totalDuration by viewModel.totalDuration.collectAsState()
+    val audioPlayState by viewModel.audioPlayState.collectAsState()
     val playMode by viewModel.playMode.observeAsState(PlayMode.LIST_LOOP)
     
-    val isPlaying = playbackState?.state == PlaybackStateCompat.STATE_PLAYING
+    val isPlaying = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PLAYING
+    val isPreparing = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PREPARING
+    val isError = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.ERROR
     val title = metadata?.description?.title ?: "未在播放"
     
     // 采样率暂定 44100，实际可从 PM 获取喵
@@ -86,15 +89,28 @@ fun MiniPlayer(
             }
 
             IconButton(
-                onClick = { if (isPlaying) viewModel.pause() else viewModel.play() },
-                modifier = Modifier.size(48.dp)
+                onClick = { 
+                    if (isError) { /* 可以在这里加个重试或重置逻辑喵 */ }
+                    else if (isPlaying) viewModel.pause() 
+                    else viewModel.play() 
+                },
+                modifier = Modifier.size(48.dp),
+                enabled = !isPreparing
             ) {
-                Icon(
-                    if (isPlaying) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
-                    contentDescription = "播放/暂停",
-                    modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                if (isPreparing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        strokeWidth = 3.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
+                        contentDescription = "播放/暂停",
+                        modifier = Modifier.size(40.dp),
+                        tint = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
             IconButton(onClick = { viewModel.skipToNext() }) {

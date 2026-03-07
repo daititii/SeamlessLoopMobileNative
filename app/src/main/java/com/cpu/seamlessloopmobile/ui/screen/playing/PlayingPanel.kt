@@ -45,7 +45,10 @@ fun PlayingPanel(
 ) {
     val currentSongIndex by viewModel.currentSongIndex.observeAsState(-1)
     val playlist by viewModel.currentPlaylist.observeAsState(emptyList())
-    val isPlaying by viewModel.isPlaying.observeAsState(false)
+    val audioPlayState by viewModel.audioPlayState.collectAsState()
+    val isPlaying = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PLAYING
+    val isPreparing = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PREPARING
+    val isError = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.ERROR
     val playMode by viewModel.playMode.observeAsState(com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP)
     
     val playingSong = if (currentSongIndex in playlist.indices) playlist[currentSongIndex] else null
@@ -160,16 +163,28 @@ fun PlayingPanel(
                         }
 
                         FilledIconButton(
-                            onClick = onPlayPause,
+                            onClick = { if (!isPreparing) onPlayPause() },
                             modifier = Modifier.size(64.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFFBB86FC))
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = if (isError) MaterialTheme.colorScheme.error else Color(0xFFBB86FC),
+                                disabledContainerColor = Color(0xFFBB86FC).copy(alpha = 0.5f)
+                            ),
+                            enabled = !isPreparing
                         ) {
-                            Icon(
-                                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = "播放/暂停",
-                                modifier = Modifier.size(36.dp),
-                                tint = Color.Black
-                            )
+                            if (isPreparing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(28.dp),
+                                    strokeWidth = 3.dp,
+                                    color = Color.Black
+                                )
+                            } else {
+                                Icon(
+                                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = "播放/暂停",
+                                    modifier = Modifier.size(36.dp),
+                                    tint = Color.Black
+                                )
+                            }
                         }
 
                         IconButton(onClick = onNext) {

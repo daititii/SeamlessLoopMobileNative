@@ -59,6 +59,7 @@ class MainViewModel(
     val currentPosition = mediaControlManager.currentPosition
     val totalDuration = mediaControlManager.totalDuration
     val isConnected = mediaControlManager.isConnected
+    val audioPlayState = mediaControlManager.audioPlayState
 
     fun initSettings(manager: com.cpu.seamlessloopmobile.data.SettingsManager) {
         this.settingsManager = manager

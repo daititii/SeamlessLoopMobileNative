@@ -33,7 +33,12 @@ interface Playback {
     val sampleRate: Int
 
     /**
-     * 状态改变时的联络暗号
+     * 播放器的当前状态流喵，供 UI 订阅
+     */
+    val state: kotlinx.coroutines.flow.StateFlow<AudioPlayState>
+
+    /**
+     * 状态改变时的联络暗号 (保留旧的回调以便兼容，但建议改用 state 流)
      */
     var onPlaybackStatusChanged: ((isPlaying: Boolean, currentSong: Song?) -> Unit)?
 
