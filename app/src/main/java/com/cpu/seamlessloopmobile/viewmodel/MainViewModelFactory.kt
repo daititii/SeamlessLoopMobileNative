@@ -14,8 +14,13 @@ class MainViewModelFactory(
         if (modelClass.isAssignableFrom(MainViewModel::class.java)) {
             val repository = com.cpu.seamlessloopmobile.data.MusicRepository(songDao, playlistDao)
             val mediaControl = com.cpu.seamlessloopmobile.audio.MediaControlManager(context.applicationContext)
+            
+            val libraryVM = LibraryViewModel(repository)
+            val selectionVM = SelectionViewModel()
+            val playlistVM = PlaylistViewModel(repository)
+            
             @Suppress("UNCHECKED_CAST")
-            return MainViewModel(repository, mediaControl) as T
+            return MainViewModel(repository, libraryVM, selectionVM, playlistVM, mediaControl) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
