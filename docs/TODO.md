@@ -59,10 +59,10 @@ PlaybackManager.kt（第 194 行）时，直接惊呆了：
 - [ ] 还要注意应用会阻止录音，说是录音设备，会不会是USB调试的原因？
 - [ ] 专辑/艺术家封面及分类 - 数据库同步已实现，但UI展示和分类功能待完善
 - [ ] 蓝牙/有线耳机按键控制 - MediaControlManager已实现媒体按钮，但耳机物理按键支持需要进一步测试
-- [ ] 批量全选 - SelectionViewModel.selectAll()已实现，但UI集成需要完善
+- [x] 批量全选 - SelectionViewModel.selectAll()已实现，但UI集成需要完善
 - [ ] 支持更多音乐格式 - AudioDecoder通过Android MediaExtractor支持MP3/WAV/OGG/AAC等格式，但某些边缘格式可能不支持
 - [ ] AB式 - 已通过MusicScannerRepository.findAbPair实现AB对检测，但AB播放界面可能不完整
-- [ ] 后台播放，有时就退出。熄屏后台拔耳机必定死机 - HeadsetPlugReceiver已实现，但稳定性待验证
+- [x] 后台播放，有时就退出。熄屏后台拔耳机必定死机 - HeadsetPlugReceiver已实现，但稳定性待验证
 - [ ] 试图添加通知列表和锁屏按钮。结果失败了。 - NotifyImpl已实现通知，锁屏按钮可见性已设置，但可能不完整
 - [ ] 修改对电脑端db文件的适配，增加专辑，艺术家分类 - PcDatabaseImporter仅同步循环点，需要扩展以处理专辑/艺术家信息
 - [ ] 是否可以支持多个文件夹导入，或是怎么处理的 - 文件夹扫描已支持，但批量导入逻辑待优化

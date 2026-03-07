@@ -101,8 +101,8 @@ fun MainScreen(
         }
     }
 
-    Scaffold(
-
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
         topBar = {
             val titleStr = when (val state = uiState) {
                 is MusicUiState.Home -> "Seamless Loop"
@@ -320,17 +320,7 @@ fun MainScreen(
                 }
             }
 
-            // --- 全屏详情面板作为 Overlay 喵 ---
-            if (isPlayingPanelVisible) {
-                PlayingPanel(
-                    viewModel = viewModel,
-                    isVisible = true,
-                    onClose = { viewModel.setPlayingPanelVisible(false) },
-                    onPlayPause = { if (audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PLAYING) viewModel.pause() else viewModel.play() },
-                    onNext = { viewModel.skipToNext() },
-                    onPrev = { viewModel.skipToPrevious() }
-                )
-            }
+
 
             // --- 创建歌单对话框喵 ---
             if (showCreatePlaylistDialog) {
@@ -488,5 +478,16 @@ fun MainScreen(
                 )
             }
         }
+    }
+        
+        // --- 全屏详情面板作为顶层 Overlay 喵 ---
+        PlayingPanel(
+            viewModel = viewModel,
+            isVisible = isPlayingPanelVisible,
+            onClose = { viewModel.setPlayingPanelVisible(false) },
+            onPlayPause = { if (audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PLAYING) viewModel.pause() else viewModel.play() },
+            onNext = { viewModel.skipToNext() },
+            onPrev = { viewModel.skipToPrevious() }
+        )
     }
 }
