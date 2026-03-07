@@ -232,6 +232,18 @@ class PlaybackManager(
                 if (actualLoopStart == 0L && actualLoopEnd == 0L && durationFrames > 0L) {
                     actualLoopEnd = durationFrames
                 }
+                
+                // --- 🛡️ 安全边界检查：防止 PC 数据越界喵！ ---
+                if (durationFrames > 0L) {
+                    if (actualLoopEnd > durationFrames) {
+                        android.util.Log.w("PlaybackManager", "⚠️ 警告：loopEnd ($actualLoopEnd) 超过了实测时长 ($durationFrames)，已强制截断喵！")
+                        actualLoopEnd = durationFrames
+                    }
+                    if (actualLoopStart >= durationFrames) {
+                        android.util.Log.e("PlaybackManager", "❌ 错误：loopStart ($actualLoopStart) 在时长之外，重置为 0 喵！")
+                        actualLoopStart = 0L
+                    }
+                }
 
                 if (actualLoopEnd > actualLoopStart) {
                     android.util.Log.d("PlaybackManager", "🎯 设置循环点: [$actualLoopStart-$actualLoopEnd], end > start = ${actualLoopEnd > actualLoopStart}")
