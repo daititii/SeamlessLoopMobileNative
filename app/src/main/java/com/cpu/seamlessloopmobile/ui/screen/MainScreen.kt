@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.items
 import com.cpu.seamlessloopmobile.ui.components.MiniPlayer
+import com.cpu.seamlessloopmobile.ui.components.CentralizedDialogHost
 import com.cpu.seamlessloopmobile.ui.screen.playing.PlayingPanel
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -66,13 +67,6 @@ fun MainScreen(
     val syncStatus by viewModel.syncStatus.observeAsState("")
     val selectedFolders by viewModel.selectedFolders.observeAsState(emptySet())
 
-    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
-    var showAddToPlaylistDialog by remember { mutableStateOf(false) }
-    var newPlaylistName by remember { mutableStateOf("") }
-    var playlistToDelete by remember { mutableStateOf<com.cpu.seamlessloopmobile.model.Playlist?>(null) }
-    var showImportFoldersDialog by remember { mutableStateOf(false) }
-    var showMergeFoldersNameDialog by remember { mutableStateOf(false) }
-    var mergePlaylistName by remember { mutableStateOf("") }
 
     // 计算当前页面展示的歌曲，用于“全选”喵
     val songsInCurrentPage = remember(uiState, allSongs, folders, albums, artists) {
@@ -267,7 +261,14 @@ fun MainScreen(
                                     modifier = Modifier.padding(end = 16.dp)
                                 )
                                 Spacer(modifier = Modifier.weight(1f))
-                                IconButton(onClick = { viewModel.deleteSelectedPlaylists() }) {
+                                IconButton(onClick = { 
+                                    viewModel.showDialog(
+                                        com.cpu.seamlessloopmobile.viewmodel.MusicDialog.ConfirmDeletePlaylist(
+                                            playlist = com.cpu.seamlessloopmobile.model.Playlist(name = "选中的 ${selectedPlaylists.size} 个歌单"),
+                                            onConfirm = { viewModel.deleteSelectedPlaylists() }
+                                        )
+                                    )
+                                }) {
                                     Icon(Icons.Default.Delete, contentDescription = "删除歌单")
                                 }
                                 IconButton(onClick = { viewModel.clearSelection() }) {
@@ -280,7 +281,21 @@ fun MainScreen(
                                     modifier = Modifier.padding(end = 16.dp)
                                 )
                                 Spacer(modifier = Modifier.weight(1f))
-                                IconButton(onClick = { showImportFoldersDialog = true }) {
+                                 IconButton(onClick = { 
+                                    viewModel.showDialog(
+                                        com.cpu.seamlessloopmobile.viewmodel.MusicDialog.ImportFoldersOptions(
+                                            count = selectedFolders.size,
+                                            onIndividual = { viewModel.importSelectedFoldersIndividually() },
+                                            onMerge = { 
+                                                viewModel.showDialog(
+                                                    com.cpu.seamlessloopmobile.viewmodel.MusicDialog.MergeFoldersName { name ->
+                                                        viewModel.importSelectedFoldersAsSinglePlaylist(name)
+                                                    }
+                                                )
+                                            }
+                                        )
+                                    )
+                                }) {
                                     Icon(Icons.Default.PlaylistAdd, contentDescription = "导入文件夹")
                                 }
                                 IconButton(onClick = { viewModel.clearSelection() }) {
@@ -294,11 +309,24 @@ fun MainScreen(
                                 )
                                 Spacer(modifier = Modifier.weight(1f))
                                 IconButton(onClick = { 
-                                    if (playlists.isNotEmpty()) {
-                                        showAddToPlaylistDialog = true
+                                    val dialog = if (playlists.isNotEmpty()) {
+                                        com.cpu.seamlessloopmobile.viewmodel.MusicDialog.AddToPlaylist(
+                                            playlists = playlists,
+                                            onAdd = { p -> viewModel.addSelectedToPlaylist(p.id) },
+                                            onCreateNew = {
+                                                viewModel.showDialog(
+                                                    com.cpu.seamlessloopmobile.viewmodel.MusicDialog.CreatePlaylist { name ->
+                                                        viewModel.createPlaylistWithSelected(name)
+                                                    }
+                                                )
+                                            }
+                                        )
                                     } else {
-                                        showCreatePlaylistDialog = true
+                                        com.cpu.seamlessloopmobile.viewmodel.MusicDialog.CreatePlaylist { name ->
+                                            viewModel.createPlaylistWithSelected(name)
+                                        }
                                     }
+                                    viewModel.showDialog(dialog)
                                 }) {
                                     Icon(Icons.Default.PlaylistAdd, contentDescription = "添加到歌单")
                                 }
@@ -319,175 +347,20 @@ fun MainScreen(
                     }
                 }
             }
-
-
-
-            // --- 创建歌单对话框喵 ---
-            if (showCreatePlaylistDialog) {
-                AlertDialog(
-                    onDismissRequest = { showCreatePlaylistDialog = false },
-                    title = { Text("创建新歌单") },
-                    text = {
-                        TextField(
-                            value = newPlaylistName,
-                            onValueChange = { newPlaylistName = it },
-                            placeholder = { Text("请输入歌单名称") },
-                            singleLine = true
-                        )
-                    },
-                    confirmButton = {
-                        Button(onClick = {
-                            if (newPlaylistName.isNotBlank()) {
-                                viewModel.createPlaylistWithSelected(newPlaylistName)
-                                newPlaylistName = ""
-                                showCreatePlaylistDialog = false
-                            }
-                        }) {
-                            Text("确定")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showCreatePlaylistDialog = false }) {
-                            Text("取消")
-                        }
-                    }
-                )
-            }
-
-            // --- 添加到现有歌单对话框喵 ---
-            if (showAddToPlaylistDialog) {
-                AlertDialog(
-                    onDismissRequest = { showAddToPlaylistDialog = false },
-                    title = { Text("添加到歌单") },
-                    text = {
-                        androidx.compose.foundation.lazy.LazyColumn {
-                            item {
-                                ListItem(
-                                    headlineContent = { Text("新建歌单...") },
-                                    leadingContent = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
-                                    modifier = Modifier.clickable {
-                                        showAddToPlaylistDialog = false
-                                        showCreatePlaylistDialog = true
-                                    }
-                                )
-                            }
-                            items(playlists) { playlist ->
-                                ListItem(
-                                    headlineContent = { Text(playlist.name) },
-                                    leadingContent = { Icon(Icons.Default.QueueMusic, contentDescription = null) },
-                                    modifier = Modifier.clickable {
-                                        viewModel.addSelectedToPlaylist(playlist.id)
-                                        showAddToPlaylistDialog = false
-                                    }
-                                )
-                            }
-                        }
-                    },
-                    confirmButton = {},
-                    dismissButton = {
-                        TextButton(onClick = { showAddToPlaylistDialog = false }) {
-                            Text("取消")
-                        }
-                    }
-                )
-            }
-
-            // --- 导入文件夹选择对话框喵 ---
-            if (showImportFoldersDialog) {
-                AlertDialog(
-                    onDismissRequest = { showImportFoldersDialog = false },
-                    title = { Text("导入文件夹 ${selectedFolders.size} 个") },
-                    text = { Text("你要如何导入这些文件夹喵？") },
-                    confirmButton = {
-                        Column {
-                            Button(
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = {
-                                    viewModel.importSelectedFoldersIndividually()
-                                    showImportFoldersDialog = false
-                                }
-                            ) { Text("各文件夹导入各自歌单 (1:1)") }
-                            
-                            Spacer(modifier = Modifier.height(8.dp))
-                            
-                            Button(
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = {
-                                    showImportFoldersDialog = false
-                                    showMergeFoldersNameDialog = true
-                                }
-                            ) { Text("全部合并为一个歌单") }
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showImportFoldersDialog = false }) { Text("取消") }
-                    }
-                )
-            }
-
-            // --- 合并文件夹命名对话框喵 ---
-            if (showMergeFoldersNameDialog) {
-                AlertDialog(
-                    onDismissRequest = { showMergeFoldersNameDialog = false },
-                    title = { Text("合并导入歌单名称") },
-                    text = {
-                        TextField(
-                            value = mergePlaylistName,
-                            onValueChange = { mergePlaylistName = it },
-                            placeholder = { Text("请输入新歌单名称") },
-                            singleLine = true
-                        )
-                    },
-                    confirmButton = {
-                        Button(onClick = {
-                            if (mergePlaylistName.isNotBlank()) {
-                                viewModel.importSelectedFoldersAsSinglePlaylist(mergePlaylistName)
-                                mergePlaylistName = ""
-                                showMergeFoldersNameDialog = false
-                            }
-                        }) { Text("确定") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showMergeFoldersNameDialog = false }) { Text("取消") }
-                    }
-                )
-            }
-
-            // --- 删除歌单的再确定弹窗喵 ---
-            playlistToDelete?.let { targetPlaylist ->
-                AlertDialog(
-                    onDismissRequest = { playlistToDelete = null },
-                    title = { Text("删除歌单") },
-                    text = { Text("真的要删除歌单《${targetPlaylist.name}》吗？这不会影响设备上的实际音频文件喵。") },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                viewModel.deletePlaylist(targetPlaylist)
-                                playlistToDelete = null
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        ) {
-                            Text("残忍删除")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { playlistToDelete = null }) {
-                            Text("算了吧")
-                        }
-                    }
-                )
-            }
         }
     }
-        
-        // --- 全屏详情面板作为顶层 Overlay 喵 ---
-        PlayingPanel(
-            viewModel = viewModel,
-            isVisible = isPlayingPanelVisible,
-            onClose = { viewModel.setPlayingPanelVisible(false) },
-            onPlayPause = { if (audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PLAYING) viewModel.pause() else viewModel.play() },
-            onNext = { viewModel.skipToNext() },
-            onPrev = { viewModel.skipToPrevious() }
-        )
-    }
+}
+
+    // --- 全屏详情面板作为顶层 Overlay 喵 ---
+    PlayingPanel(
+        viewModel = viewModel,
+        isVisible = isPlayingPanelVisible,
+        onClose = { viewModel.setPlayingPanelVisible(false) },
+        onPlayPause = { if (audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PLAYING) viewModel.pause() else viewModel.play() },
+        onNext = { viewModel.skipToNext() },
+        onPrev = { viewModel.skipToPrevious() }
+    )
+
+    // --- 全局对话框托管中心喵 ---
+    CentralizedDialogHost(viewModel)
 }

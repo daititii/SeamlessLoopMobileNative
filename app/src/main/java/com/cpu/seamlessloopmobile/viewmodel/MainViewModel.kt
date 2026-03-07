@@ -41,6 +41,44 @@ sealed class MusicUiState {
 }
 
 /**
+ * 全局对话框中台状态喵！
+ */
+sealed class MusicDialog {
+    // 1. 循环点编辑 (迁移 PlayingPanel 的弹窗)
+    data class LoopEdit(
+        val isStart: Boolean,
+        val initialSamples: Long,
+        val onConfirm: (Long) -> Unit
+    ) : MusicDialog()
+
+    // 2. 创建歌单 (迁移 MainScreen 的弹窗)
+    data class CreatePlaylist(val onConfirm: (String) -> Unit) : MusicDialog()
+
+    // 3. 添加到现有歌单
+    data class AddToPlaylist(
+        val playlists: List<Playlist>, 
+        val onAdd: (Playlist) -> Unit, 
+        val onCreateNew: () -> Unit
+    ) : MusicDialog()
+
+    // 4. 导入文件夹选择
+    data class ImportFoldersOptions(
+        val count: Int, 
+        val onIndividual: () -> Unit, 
+        val onMerge: () -> Unit
+    ) : MusicDialog()
+
+    // 5. 合并文件夹命名
+    data class MergeFoldersName(val onConfirm: (String) -> Unit) : MusicDialog()
+
+    // 6. 确认删除歌单
+    data class ConfirmDeletePlaylist(
+        val playlist: Playlist, 
+        val onConfirm: () -> Unit
+    ) : MusicDialog()
+}
+
+/**
  * 主界面调度员喵！
  * 莱芙现在变聪明了，把具体的脏活累活都分给了 Library, Selection 和 Playlist 这三位管家，
  * 现在的 MainViewModel 只负责整体架构的指挥和 UI 状态的同步。
@@ -130,6 +168,18 @@ class MainViewModel(
     // --- 播放器面板显示控制 ---
     private val _isPlayingPanelVisible = MutableLiveData(false)
     val isPlayingPanelVisible: LiveData<Boolean> = _isPlayingPanelVisible
+
+    // --- 对话框中台控制喵 ---
+    private val _currentDialog = MutableLiveData<MusicDialog?>(null)
+    val currentDialog: LiveData<MusicDialog?> = _currentDialog
+
+    fun showDialog(dialog: MusicDialog) {
+        _currentDialog.value = dialog
+    }
+
+    fun dismissDialog() {
+        _currentDialog.value = null
+    }
 
     // --- 核心业务接口转发喵 ---
 

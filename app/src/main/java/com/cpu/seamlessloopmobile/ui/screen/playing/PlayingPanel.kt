@@ -72,12 +72,7 @@ fun PlayingPanel(
     // 状态管理：使用 VerticalPagerState 实现纵向滑动切换喵
     val pagerState = rememberPagerState(initialPage = 0) { 2 } // 0: 主页, 1: 调节页
     
-    // --- 编辑弹窗状态 ---
-    var showEditDialog by remember { mutableStateOf(false) }
-    var editIsStart by remember { mutableStateOf(true) }
-    var editValueSamples by remember { mutableStateOf("") }
-    var editValueTime by remember { mutableStateOf("") }
-
+    // --- 临时循环点状态 (仅在调节页显示时使用) ---
     var tempLoopStart by remember(playingSong?.id) { mutableStateOf(playingSong?.loopStart ?: 0L) }
     var tempLoopEnd by remember(playingSong?.id) { mutableStateOf(playingSong?.loopEnd ?: 0L) }
 
@@ -159,11 +154,16 @@ fun PlayingPanel(
                                 tempLoopEnd = (tempLoopEnd + deltaSamples).coerceIn(tempLoopStart, dur)
                             },
                             onEditClick = { isStart ->
-                                editIsStart = isStart
-                                editValueSamples = (if(isStart) tempLoopStart else tempLoopEnd).toString()
-                                val sr = NativeAudio.getSampleRate()
-                                editValueTime = String.format("%.3f", (if(isStart) tempLoopStart else tempLoopEnd).toDouble() / if(sr>0) sr else 44100)
-                                showEditDialog = true
+                                viewModel.showDialog(
+                                    com.cpu.seamlessloopmobile.viewmodel.MusicDialog.LoopEdit(
+                                        isStart = isStart,
+                                        initialSamples = if(isStart) tempLoopStart else tempLoopEnd,
+                                        onConfirm = { newValue ->
+                                            if (isStart) tempLoopStart = newValue
+                                            else tempLoopEnd = newValue
+                                        }
+                                    )
+                                )
                             },
                             onApplyAndListen = {
                                 viewModel.updateSongLoopPoints(songItem, tempLoopStart, tempLoopEnd)
@@ -206,34 +206,5 @@ fun PlayingPanel(
                 }
             }
         }
-
-        // --- 简单的编辑弹窗喵 ---
-        LoopEditDialog(
-            visible = showEditDialog,
-            isStart = editIsStart,
-            samplesValue = editValueSamples,
-            timeValue = editValueTime,
-            onValueSamplesChange = { editValueSamples = it },
-            onValueTimeChange = { editValueTime = it },
-            onDismiss = { showEditDialog = false },
-            onConfirm = {
-                val sr = NativeAudio.getSampleRate()
-                val newSamples = editValueSamples.toLongOrNull()
-                val newTime = editValueTime.toDoubleOrNull()
-                
-                if (newSamples != null) {
-                    if (editIsStart) tempLoopStart = newSamples
-                    else tempLoopEnd = newSamples
-                } else if (newTime != null) {
-                    val calculatedSamples = (newTime * sr).toLong()
-                    if (editIsStart) tempLoopStart = calculatedSamples
-                    else tempLoopEnd = calculatedSamples
-                }
-                showEditDialog = false
-            }
-        )
     }
 }
-
-
-
