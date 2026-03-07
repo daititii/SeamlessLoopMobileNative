@@ -19,6 +19,7 @@ import android.support.v4.media.session.PlaybackStateCompat
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import com.cpu.seamlessloopmobile.viewmodel.PlayMode
 import com.cpu.seamlessloopmobile.utils.TimeUtils
+import kotlinx.coroutines.delay
 
 @Composable
 fun MiniPlayer(
@@ -36,6 +37,17 @@ fun MiniPlayer(
     val isPreparing = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PREPARING
     val isError = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.ERROR
     val title = metadata?.description?.title ?: "未在播放"
+    
+    var showLoading by remember { mutableStateOf(false) }
+    
+    LaunchedEffect(isPreparing) {
+        if (isPreparing) {
+            delay(2000)
+            showLoading = true
+        } else {
+            showLoading = false
+        }
+    }
     
     // 采样率暂定 44100，实际可从 PM 获取喵
     val sampleRate = 44100L 
@@ -97,7 +109,7 @@ fun MiniPlayer(
                 modifier = Modifier.size(48.dp),
                 enabled = !isPreparing
             ) {
-                if (isPreparing) {
+                if (showLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(32.dp),
                         strokeWidth = 3.dp,

@@ -51,6 +51,17 @@ fun PlayingPanel(
     val isError = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.ERROR
     val playMode by viewModel.playMode.observeAsState(com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP)
     
+    var showLoading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isPreparing) {
+        if (isPreparing) {
+            kotlinx.coroutines.delay(2000)
+            showLoading = true
+        } else {
+            showLoading = false
+        }
+    }
+    
     val playingSong = if (currentSongIndex in playlist.indices) playlist[currentSongIndex] else null
     
     // 状态管理：使用 VerticalPagerState 实现纵向滑动切换喵
@@ -171,7 +182,7 @@ fun PlayingPanel(
                             ),
                             enabled = !isPreparing
                         ) {
-                            if (isPreparing) {
+                            if (showLoading) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(28.dp),
                                     strokeWidth = 3.dp,
