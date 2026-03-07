@@ -3,8 +3,6 @@ package com.cpu.seamlessloopmobile.viewmodel
 import android.content.Context
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.cpu.seamlessloopmobile.data.MusicRepository
 import com.cpu.seamlessloopmobile.model.Folder
 import com.cpu.seamlessloopmobile.model.Song
@@ -17,8 +15,9 @@ import kotlinx.coroutines.withContext
  * 专门负责歌曲扫描、文件夹整理和数据库同步，把 MainViewModel 从繁重的 IO 工作中解放出来。
  */
 class LibraryViewModel(
-    private val repository: MusicRepository
-) : ViewModel() {
+    private val repository: com.cpu.seamlessloopmobile.data.MusicRepository,
+    private val coroutineScope: kotlinx.coroutines.CoroutineScope
+) {
 
     private val _allSongs = MutableLiveData<List<Song>>(emptyList())
     val allSongs: LiveData<List<Song>> = _allSongs
@@ -36,7 +35,7 @@ class LibraryViewModel(
     val syncStatus: LiveData<String> = _syncStatus
 
     fun loadSongsFromDatabase() {
-        viewModelScope.launch(Dispatchers.IO) {
+        coroutineScope.launch(Dispatchers.IO) {
             val songs = repository.getAllSongs()
             withContext(Dispatchers.Main) {
                 _allSongs.value = songs
@@ -49,7 +48,7 @@ class LibraryViewModel(
      * 核心扫描逻辑喵！
      */
     fun scanLibrary(context: Context) {
-        viewModelScope.launch {
+        coroutineScope.launch {
             _syncStatus.value = "🔍 寻找新曲子中..."
             withContext(Dispatchers.IO) {
                 val songs = repository.getInitialScannedSongs(context)
@@ -63,7 +62,7 @@ class LibraryViewModel(
     }
 
     private fun rebuildLibrary(songs: List<Song>) {
-        viewModelScope.launch(Dispatchers.Default) {
+        coroutineScope.launch(Dispatchers.Default) {
             val folderMap = mutableMapOf<String, MutableList<Song>>()
             val albumMap = mutableMapOf<String, MutableList<Song>>()
             val artistMap = mutableMapOf<String, MutableList<Song>>()
@@ -95,7 +94,7 @@ class LibraryViewModel(
     }
 
     fun updateSongLoopPoints(song: Song, start: Long, end: Long) {
-        viewModelScope.launch {
+        coroutineScope.launch {
             repository.updateSongLoopPoints(song, start, end)
             loadSongsFromDatabase() // 暴力但有效的刷新喵
         }

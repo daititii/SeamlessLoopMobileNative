@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlinx.coroutines.flow.collect
 
 enum class PlayMode {
     LIST_LOOP,    // 列表循环
@@ -45,13 +46,41 @@ sealed class MusicUiState {
  * 现在的 MainViewModel 只负责整体架构的指挥和 UI 状态的同步。
  */
 class MainViewModel(
-    private val repository: MusicRepository,
-    val library: LibraryViewModel,
-    val selection: SelectionViewModel,
-    val playlist: PlaylistViewModel,
+    private val repository: com.cpu.seamlessloopmobile.data.MusicRepository,
     private val mediaControlManager: com.cpu.seamlessloopmobile.audio.MediaControlManager
 ) : ViewModel() {
+    lateinit var library: LibraryViewModel
+    lateinit var selection: SelectionViewModel
+    lateinit var playlist: PlaylistViewModel
     private var settingsManager: com.cpu.seamlessloopmobile.data.SettingsManager? = null
+
+    init {
+        // 莱芙现在变聪明了，不在构造函数里乱连天线了喵！
+    }
+
+    fun startObservation() {
+        viewModelScope.launch {
+            mediaControlManager.metadata.collect { meta ->
+                val mediaId = meta?.getString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_MEDIA_ID)
+                val mediaUri = meta?.getString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_MEDIA_URI)
+                
+                val list = _currentPlaylist.value ?: emptyList()
+                var index = -1
+                
+                if (mediaId != null) {
+                    index = list.indexOfFirst { it.mediaId.toString() == mediaId }
+                }
+                
+                if (index == -1 && mediaUri != null) {
+                    index = list.indexOfFirst { it.filePath == mediaUri }
+                }
+
+                if (index != -1 && index != _currentSongIndex.value) {
+                    _currentSongIndex.postValue(index)
+                }
+            }
+        }
+    }
 
     // --- 播放引擎状态流代理喵 ---
     val playbackState = mediaControlManager.playbackState
@@ -142,18 +171,29 @@ class MainViewModel(
     // --- 组合业务逻辑喵 (MainViewModel 负责跨模块协调) ---
 
     fun playSong(song: Song, startPosition: Long = 0, startPaused: Boolean = false) {
-        // 更新 UI 记录喵
-        val list = library.allSongs.value ?: emptyList()
-        val index = list.indexOfFirst { it.filePath == song.filePath }
+        // 智能找索引：如果歌曲已经在现在的播放队列里，就别乱换队列喵！
+        val currentList = _currentPlaylist.value ?: emptyList()
+        var index = currentList.indexOfFirst { it.filePath == song.filePath }
+        var listToUse = currentList
+
+        if (index == -1) {
+            // 不在现有的列表里？那才去翻翻全家桶喵
+            val allList = library.allSongs.value ?: emptyList()
+            index = allList.indexOfFirst { it.filePath == song.filePath }
+            if (index != -1) {
+                listToUse = allList
+                _currentPlaylist.value = allList
+            }
+        }
+
         if (index != -1) {
-            _currentPlaylist.value = list
             _currentSongIndex.value = index
         }
 
         val bundle = android.os.Bundle().apply {
             putLong("start_pos", startPosition)
             putBoolean("start_paused", startPaused)
-            putStringArray("playlist_paths", list.map { it.filePath }.toTypedArray())
+            putStringArray("playlist_paths", listToUse.map { it.filePath }.toTypedArray())
         }
         mediaControlManager.playFromMediaId(song.mediaId.toString(), bundle)
     }

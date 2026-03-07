@@ -2,6 +2,7 @@ package com.cpu.seamlessloopmobile.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.model.SongDao
 
@@ -15,12 +16,22 @@ class MainViewModelFactory(
             val repository = com.cpu.seamlessloopmobile.data.MusicRepository(songDao, playlistDao)
             val mediaControl = com.cpu.seamlessloopmobile.audio.MediaControlManager(context.applicationContext)
             
-            val libraryVM = LibraryViewModel(repository)
-            val selectionVM = SelectionViewModel()
-            val playlistVM = PlaylistViewModel(repository)
-            
             @Suppress("UNCHECKED_CAST")
-            return MainViewModel(repository, libraryVM, selectionVM, playlistVM, mediaControl) as T
+            val viewModel = MainViewModel(repository, mediaControl)
+            
+            // 莱芙帮大家找了个统一的大伞（Scope）喵！
+            val scope = (viewModel as ViewModel).viewModelScope
+            
+            val libraryVM = LibraryViewModel(repository, scope)
+            val selectionVM = SelectionViewModel()
+            val playlistVM = PlaylistViewModel(repository, scope)
+            
+            // 设置子管家引用
+            viewModel.library = libraryVM
+            viewModel.selection = selectionVM
+            viewModel.playlist = playlistVM
+            
+            return viewModel as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

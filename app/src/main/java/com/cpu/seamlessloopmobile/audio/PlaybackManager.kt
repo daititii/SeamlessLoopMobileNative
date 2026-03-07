@@ -115,8 +115,10 @@ class PlaybackManager(
         this.isAbMode = isAbMode
         
         val metadata = android.support.v4.media.MediaMetadataCompat.Builder()
+            .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_MEDIA_ID, song.mediaId.toString())
             .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_TITLE, song.displayName ?: song.fileName)
             .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ARTIST, song.artist ?: "Unknown Artist")
+            .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_MEDIA_URI, song.filePath)
             .putLong(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_DURATION, song.duration)
             // 存入自定义标记，方便 UI 识别喵
             .putString("is_ab_mode", if (isAbMode) "true" else "false")

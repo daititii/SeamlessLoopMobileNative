@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
 
         checkPermissionsAndLoadHome()
         viewModel.connectMedia()
+        viewModel.startObservation()
     }
 
     override fun onDestroy() {
