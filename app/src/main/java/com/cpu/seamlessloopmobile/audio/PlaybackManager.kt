@@ -224,14 +224,23 @@ class PlaybackManager(
                     NativeAudio.startAudioEngine(afd.parcelFileDescriptor.fd, afd.startOffset, actualLength)
                 }
 
-                if (latestSong.loopEnd > latestSong.loopStart) {
-                    android.util.Log.d("PlaybackManager", "🎯 设置循环点: [${latestSong.loopStart}-${latestSong.loopEnd}], end > start = ${latestSong.loopEnd > latestSong.loopStart}")
-                    NativeAudio.setLoopPoints(latestSong.loopStart, latestSong.loopEnd)
+                val durationFrames = NativeAudio.getDuration()
+                var actualLoopStart = latestSong.loopStart
+                var actualLoopEnd = latestSong.loopEnd
+                
+                // 如果循环点都是 0（新导入未设置），默认全曲首尾循环喵！
+                if (actualLoopStart == 0L && actualLoopEnd == 0L && durationFrames > 0L) {
+                    actualLoopEnd = durationFrames
+                }
+
+                if (actualLoopEnd > actualLoopStart) {
+                    android.util.Log.d("PlaybackManager", "🎯 设置循环点: [$actualLoopStart-$actualLoopEnd], end > start = ${actualLoopEnd > actualLoopStart}")
+                    NativeAudio.setLoopPoints(actualLoopStart, actualLoopEnd)
                 } else {
-                    android.util.Log.d("PlaybackManager", "⚠️ 未设置循环点: loopEnd=${latestSong.loopEnd} <= loopStart=${latestSong.loopStart} (需要 end > start)")
+                    android.util.Log.d("PlaybackManager", "⚠️ 未设置循环点: loopEnd=$actualLoopEnd <= loopStart=$actualLoopStart (需要 end > start)")
                 }
                 // 如果歌曲本身有预设循环点，或者处于单曲循环模式，就让引擎开启循环喵！
-                val shouldLoop = isSingleLoop || (latestSong.loopEnd > latestSong.loopStart)
+                val shouldLoop = isSingleLoop || (actualLoopEnd > actualLoopStart)
                 android.util.Log.d("PlaybackManager", "🔁 设置循环模式: isSingleLoop=$isSingleLoop, shouldLoop=$shouldLoop")
                 NativeAudio.setLooping(shouldLoop)
 
@@ -243,15 +252,22 @@ class PlaybackManager(
                     NativeAudio.pauseAudioEngine()
                 }
 
-                val durationFrames = NativeAudio.getDuration()
-                var finalSong = song
+                var finalSong = latestSong
                 if (durationFrames > 0) {
                     val actualSampleRate = NativeAudio.getSampleRate().let { if (it > 0) it else 44100 }
-                    finalSong = song.copy(
+                    val newTotalSamples = if (latestSong.totalSamples <= 0L) durationFrames else latestSong.totalSamples
+                    
+                    // 同步将推断的循环点信息更新到数据库喵！
+                    val newLoopEnd = if (latestSong.loopStart == 0L && latestSong.loopEnd == 0L) durationFrames else latestSong.loopEnd
+                    
+                    finalSong = latestSong.copy(
                         duration = durationFrames * 1000 / actualSampleRate,
-                        totalSamples = if (song.totalSamples == 0L) durationFrames else song.totalSamples 
+                        totalSamples = newTotalSamples,
+                        loopEnd = newLoopEnd
                     )
-                    if (song.totalSamples == 0L && finalSong.id > 0) {
+                    
+                    // 如果这是第一次读取样本数或者这是首没循环点的新歌，就把它的档案补充完整！
+                    if ((latestSong.totalSamples <= 0L || (latestSong.loopStart == 0L && latestSong.loopEnd == 0L)) && finalSong.id > 0) {
                         repository.updateSong(finalSong) 
                     }
                 }
