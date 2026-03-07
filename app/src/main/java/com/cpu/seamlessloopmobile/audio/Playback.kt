@@ -53,11 +53,6 @@ interface Playback {
     fun playSong(song: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true)
 
     /**
-     * 通过 ID 点歌
-     */
-    fun playFromMediaId(mediaId: Long, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true, playlistPaths: Array<String>? = null)
-
-    /**
      * 歇一会喵
      */
     fun pause()
@@ -87,13 +82,4 @@ interface Playback {
      */
     fun setLooping(looping: Boolean)
 
-    /**
-     * 下一首喵！
-     */
-    fun skipToNext(playMode: Int)
-
-    /**
-     * 上一首喵！
-     */
-    fun skipToPrevious(playMode: Int)
 }

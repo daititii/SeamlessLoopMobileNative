@@ -57,13 +57,6 @@ class PlaybackManager(
         private set
 
     private var isAbMode = false
-    private var currentPlaylist: List<Song> = emptyList()
-    private var currentPlaylistIndex: Int = -1
-
-    fun updatePlaylist(songs: List<Song>, initialIndex: Int) {
-        currentPlaylist = songs
-        currentPlaylistIndex = initialIndex
-    }
 
     override val isPlaying: Boolean
         get() = mediaSession.controller.playbackState?.state == android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING
@@ -166,36 +159,6 @@ class PlaybackManager(
         onPlaybackStatusChanged?.invoke(isPlaying, song)
     }
 
-    override fun playFromMediaId(mediaId: Long, startPosition: Long, startPaused: Boolean, isSingleLoop: Boolean, playlistPaths: Array<String>?) {
-        coroutineScope.launch {
-            if (playlistPaths != null) {
-                val songs = withContext(Dispatchers.IO) {
-                    playlistPaths.mapNotNull { repository.getSongByPath(it) }
-                }
-                val index = songs.indexOfFirst { it.mediaId == mediaId }
-                updatePlaylist(songs, index)
-            }
-            
-            val song = withContext(Dispatchers.IO) {
-                 // 1. 尝试通过 mediaId 找喵
-                 var s = repository.getAllSongs().find { it.mediaId == mediaId }
-                 if (s == null) {
-                     // 2. 兜底：如果 mediaId 变了（安卓常态），尝试用最近存过的路径拉回它喵！
-                     val lastPath = settingsManager.lastSongPath
-                     if (lastPath != null) {
-                         s = repository.getSongByPath(lastPath)
-                     }
-                 }
-                 s
-            }
-            song?.let { 
-                playSong(it, startPosition, startPaused, isSingleLoop)
-            } ?: run {
-                onPlaybackError?.invoke("找不着大人的这首歌了喵...")
-            }
-        }
-    }
-
     override fun play(song: Song, startPos: Long, startPaused: Boolean) {
         playSong(song, startPos, startPaused)
     }
@@ -230,11 +193,6 @@ class PlaybackManager(
 
     private fun actuallyPlaySong(song: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) {
         this.currentSong = song
-        // 顺便校对下在当前列表里的位置喵
-        val index = currentPlaylist.indexOfFirst { it.filePath == song.filePath }
-        if (index != -1) {
-            currentPlaylistIndex = index
-        }
         coroutineScope.launch(Dispatchers.IO) {
             _state.value = AudioPlayState.PREPARING
             NativeAudio.stopAudioEngine()
@@ -346,32 +304,4 @@ class PlaybackManager(
         }
     }
 
-    override fun skipToNext(playMode: Int) {
-        if (currentPlaylist.isEmpty()) return
-        
-        // 0: LIST_LOOP, 1: SINGLE_LOOP, 2: SHUFFLE
-        val nextIndex = when (playMode) {
-            2 -> { // 随机喵
-                if (currentPlaylist.size <= 1) 0 
-                else (currentPlaylist.indices).random().let { 
-                    if (it == currentPlaylistIndex && currentPlaylist.size > 1) (it + 1) % currentPlaylist.size else it 
-                }
-            }
-            else -> (currentPlaylistIndex + 1) % currentPlaylist.size
-        }
-        
-        currentPlaylist.getOrNull(nextIndex)?.let {
-            currentPlaylistIndex = nextIndex
-            playSong(it, isSingleLoop = (playMode == 1))
-        }
-    }
-
-    override fun skipToPrevious(playMode: Int) {
-        if (currentPlaylist.isEmpty()) return
-        val prevIndex = if (currentPlaylistIndex <= 0) currentPlaylist.size - 1 else currentPlaylistIndex - 1
-        currentPlaylist.getOrNull(prevIndex)?.let {
-            currentPlaylistIndex = prevIndex
-            playSong(it, isSingleLoop = (playMode == 1))
-        }
-    }
 }

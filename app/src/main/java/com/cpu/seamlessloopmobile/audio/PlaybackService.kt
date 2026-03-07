@@ -22,10 +22,11 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private val binder = PlaybackBinder()
     private val serviceScope = MainScope()
     private lateinit var repository: MusicRepository
-    var playbackManager: Playback? = null
+    var playbackManager: PlaybackManager? = null
     var mediaControlManager: MediaControlManager? = null
     private var mediaSession: MediaSessionCompat? = null
     private var notify: Notify? = null
+    private val queueManager = QueueManager()
 
     inner class PlaybackBinder : android.os.Binder() {
         fun getService(): PlaybackService = this@PlaybackService
@@ -129,11 +130,17 @@ class PlaybackService : MediaBrowserServiceCompat() {
             override fun onPause() { playbackManager?.pause() }
             override fun onSkipToNext() {
                 val mode = mediaSession?.controller?.playbackState?.extras?.getInt("play_mode") ?: 0
-                playbackManager?.skipToNext(mode)
+                queueManager.playMode = mode
+                queueManager.getNextSong()?.let { 
+                    playbackManager?.play(it, 0, false)
+                }
             }
             override fun onSkipToPrevious() {
                 val mode = mediaSession?.controller?.playbackState?.extras?.getInt("play_mode") ?: 0
-                playbackManager?.skipToPrevious(mode)
+                queueManager.playMode = mode
+                queueManager.getPreviousSong()?.let { 
+                    playbackManager?.play(it, 0, false)
+                }
             }
             override fun onSeekTo(pos: Long) { playbackManager?.seekTo(pos) }
             override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
@@ -143,7 +150,25 @@ class PlaybackService : MediaBrowserServiceCompat() {
                 val isSingleLoop = extras?.getBoolean("is_single_loop") ?: true
                 val playlistPaths = extras?.getStringArray("playlist_paths")
 
-                playbackManager?.playFromMediaId(idLong, startPos, startPaused, isSingleLoop, playlistPaths)
+                serviceScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    if (playlistPaths != null) {
+                        val songs = playlistPaths.mapNotNull { repository.getSongByPath(it) }
+                        val index = songs.indexOfFirst { it.mediaId == idLong }
+                        queueManager.updatePlaylist(songs, if (index != -1) index else 0)
+                    }
+
+                    val songToPlay = queueManager.currentSong ?: repository.getAllSongs().find { it.mediaId == idLong }
+                    
+                    if (songToPlay != null) {
+                        val index = queueManager.currentSong?.let { queueManager.currentIndex } ?: 0
+                        if (queueManager.currentSong == null) {
+                            queueManager.updatePlaylist(listOf(songToPlay), 0)
+                        }
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            playbackManager?.playSong(songToPlay, startPos, startPaused, isSingleLoop)
+                        }
+                    }
+                }
             }
 
             override fun onCustomAction(action: String?, extras: Bundle?) {
