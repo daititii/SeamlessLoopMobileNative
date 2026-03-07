@@ -64,7 +64,7 @@ PlaybackManager.kt（第 194 行）时，直接惊呆了：
 - [ ] AB式 - 已通过MusicScannerRepository.findAbPair实现AB对检测，但AB播放界面可能不完整
 - [x] 后台播放，有时就退出。熄屏后台拔耳机必定死机 - HeadsetPlugReceiver已实现，但稳定性待验证
 - [ ] 试图添加通知列表和锁屏按钮。结果失败了。 - NotifyImpl已实现通知，锁屏按钮可见性已设置，但可能不完整
-- [ ] 修改对电脑端db文件的适配，增加专辑，艺术家分类 - PcDatabaseImporter仅同步循环点，需要扩展以处理专辑/艺术家信息
+- [ ] 修改对电脑端db文件的适配，增加专辑，艺术家分类 - PcDatabaseImporter仅同步循环点，需要扩展以处理专辑/艺术家信息 - 我想应该不需要 
 - [ ] 是否可以支持多个文件夹导入，或是怎么处理的 - 文件夹扫描已支持，但批量导入逻辑待优化
 - [ ] 本地歌曲的数量如何计算的 - 已通过MusicScannerRepository实现，但计数逻辑可能需要优化
 - [ ] 又开始不能列表播放与随机播放（只能单曲循环），即使有歌曲循环点在末尾，歌曲播放到此处，就会快速向下滑动越过大量歌曲，然后停在某首歌曲 - PlayMode枚举已定义LIST_LOOP/SINGLE_LOOP/SHUFFLE，但播放队列逻辑可能有bug

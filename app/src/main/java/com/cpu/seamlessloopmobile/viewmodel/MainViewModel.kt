@@ -306,6 +306,17 @@ class MainViewModel(
     fun connectMedia() = mediaControlManager.connect()
     fun disconnectMedia() = mediaControlManager.disconnect()
 
-    fun updateSongLoopPoints(song: Song, start: Long, end: Long) = library.updateSongLoopPoints(song, start, end)
+    fun updateSongLoopPoints(song: Song, start: Long, end: Long) {
+        library.updateSongLoopPoints(song, start, end)
+        
+        // 确保本地 UI 状态 (currentPlaylist) 里的曲目数据也立刻更新，否则在详情页的循环调节数字不会动喵！
+        val currentList = _currentPlaylist.value?.toMutableList() ?: return
+        val index = currentList.indexOfFirst { it.id == song.id }
+        if (index != -1) {
+            currentList[index] = currentList[index].copy(loopStart = start, loopEnd = end)
+            _currentPlaylist.postValue(currentList)
+        }
+    }
+    
     fun findAbPair(song: Song): Pair<Song, Song>? = repository.findAbPair(song, library.allSongs.value ?: emptyList())
 }

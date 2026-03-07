@@ -73,6 +73,9 @@ fun PlayingPanel(
     var editValueSamples by remember { mutableStateOf("") }
     var editValueTime by remember { mutableStateOf("") }
 
+    var tempLoopStart by remember(playingSong?.id) { mutableStateOf(playingSong?.loopStart ?: 0L) }
+    var tempLoopEnd by remember(playingSong?.id) { mutableStateOf(playingSong?.loopEnd ?: 0L) }
+
     AnimatedVisibility(
         visible = isVisible && playingSong != null,
         enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -131,13 +134,43 @@ fun PlayingPanel(
                 ) { page ->
                     when (page) {
                         0 -> MainInfoPage(songItem, isPlaying) // 主页只剩封面和歌曲信息
-                        1 -> FineTunePage(songItem, viewModel) { isStart ->
-                            editIsStart = isStart
-                            editValueSamples = (if(isStart) songItem.loopStart else songItem.loopEnd).toString()
-                            val sr = NativeAudio.getSampleRate()
-                            editValueTime = String.format("%.3f", (if(isStart) songItem.loopStart else songItem.loopEnd).toDouble() / if(sr>0) sr else 44100)
-                            showEditDialog = true
-                        }
+                        1 -> FineTunePage(
+                            song = songItem,
+                            tempLoopStart = tempLoopStart,
+                            tempLoopEnd = tempLoopEnd,
+                            onStartValueChange = { tempLoopStart = it },
+                            onEndValueChange = { tempLoopEnd = it },
+                            onStartAdjustMs = { deltaMs ->
+                                val sampleRate = NativeAudio.getSampleRate()
+                                val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
+                                val dur = NativeAudio.getDuration()
+                                val actualEnd = if (tempLoopEnd > 0) tempLoopEnd else dur
+                                tempLoopStart = (tempLoopStart + deltaSamples).coerceIn(0, actualEnd)
+                            },
+                            onEndAdjustMs = { deltaMs ->
+                                val sampleRate = NativeAudio.getSampleRate()
+                                val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
+                                val dur = NativeAudio.getDuration()
+                                tempLoopEnd = (tempLoopEnd + deltaSamples).coerceIn(tempLoopStart, dur)
+                            },
+                            onEditClick = { isStart ->
+                                editIsStart = isStart
+                                editValueSamples = (if(isStart) tempLoopStart else tempLoopEnd).toString()
+                                val sr = NativeAudio.getSampleRate()
+                                editValueTime = String.format("%.3f", (if(isStart) tempLoopStart else tempLoopEnd).toDouble() / if(sr>0) sr else 44100)
+                                showEditDialog = true
+                            },
+                            onApplyAndListen = {
+                                viewModel.updateSongLoopPoints(songItem, tempLoopStart, tempLoopEnd)
+                                NativeAudio.setLoopPoints(tempLoopStart, tempLoopEnd)
+                                
+                                val sampleRate = NativeAudio.getSampleRate().toLong()
+                                val totalDur = NativeAudio.getDuration()
+                                val actualEnd = if (tempLoopEnd > 0) tempLoopEnd else totalDur
+                                val seekPos = (actualEnd - (sampleRate * 3)).coerceIn(0, actualEnd)
+                                NativeAudio.seekTo(seekPos)
+                            }
+                        )
                     }
                 }
 
@@ -245,12 +278,12 @@ fun PlayingPanel(
                         
                         // 优先按采样数改，如果采样数没变但时间变了，按时间改喵
                         if (newSamples != null) {
-                            if (editIsStart) onStartValueChange(songItem, newSamples, viewModel)
-                            else onEndValueChange(songItem, newSamples, viewModel)
+                            if (editIsStart) tempLoopStart = newSamples
+                            else tempLoopEnd = newSamples
                         } else if (newTime != null) {
                             val calculatedSamples = (newTime * sr).toLong()
-                            if (editIsStart) onStartValueChange(songItem, calculatedSamples, viewModel)
-                            else onEndValueChange(songItem, calculatedSamples, viewModel)
+                            if (editIsStart) tempLoopStart = calculatedSamples
+                            else tempLoopEnd = calculatedSamples
                         }
                         showEditDialog = false
                     }) {
@@ -340,8 +373,14 @@ fun MainInfoPage(
 @Composable
 fun FineTunePage(
     song: Song, 
-    viewModel: MainViewModel,
-    onEditClick: (Boolean) -> Unit
+    tempLoopStart: Long,
+    tempLoopEnd: Long,
+    onStartValueChange: (Long) -> Unit,
+    onEndValueChange: (Long) -> Unit,
+    onStartAdjustMs: (Double) -> Unit,
+    onEndAdjustMs: (Double) -> Unit,
+    onEditClick: (Boolean) -> Unit,
+    onApplyAndListen: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -361,10 +400,10 @@ fun FineTunePage(
         Box(modifier = Modifier.weight(1f)) {
             TuneSectionBox(
                 label = "循环起点 (A)",
-                samples = song.loopStart,
+                samples = tempLoopStart,
                 accentColor = Color(0xFF8FBBD9),
-                onValueChange = { onStartValueChange(song, it, viewModel) },
-                onAdjustMs = { onStartAdjustMs(song, it, viewModel) },
+                onValueChange = onStartValueChange,
+                onAdjustMs = onStartAdjustMs,
                 onEditClick = { onEditClick(true) }
             )
         }
@@ -375,10 +414,10 @@ fun FineTunePage(
         Box(modifier = Modifier.weight(1f)) {
             TuneSectionBox(
                 label = "循环终点 (B)",
-                samples = song.loopEnd,
+                samples = tempLoopEnd,
                 accentColor = Color(0xFFF398AF),
-                onValueChange = { onEndValueChange(song, it, viewModel) },
-                onAdjustMs = { onEndAdjustMs(song, it, viewModel) },
+                onValueChange = onEndValueChange,
+                onAdjustMs = onEndAdjustMs,
                 onEditClick = { onEditClick(false) }
             )
         }
@@ -386,13 +425,7 @@ fun FineTunePage(
         Spacer(modifier = Modifier.height(12.dp))
 
         Button(
-            onClick = {
-                val sampleRate = NativeAudio.getSampleRate().toLong()
-                val totalDur = NativeAudio.getDuration()
-                val actualEnd = if (song.loopEnd > 0) song.loopEnd else totalDur
-                val seekPos = (actualEnd - (sampleRate * 3)).coerceIn(0, actualEnd)
-                NativeAudio.seekTo(seekPos)
-            },
+            onClick = onApplyAndListen,
             modifier = Modifier.fillMaxWidth().height(40.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF353545)),
             shape = RoundedCornerShape(8.dp),
@@ -400,7 +433,7 @@ fun FineTunePage(
         ) {
             Icon(Icons.Default.Hearing, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.size(4.dp))
-            Text("最后 3 秒试听", color = Color.White, fontSize = 13.sp)
+            Text("应用并试听", color = Color.White, fontSize = 13.sp)
         }
     }
 }
@@ -513,34 +546,6 @@ fun TuneGridButton(text: String, modifier: Modifier = Modifier, onClick: () -> U
         }
     }
 }
-
-// 辅助逻辑函数喵
-private fun onStartValueChange(song: Song, newValue: Long, viewModel: MainViewModel) {
-    viewModel.updateSongLoopPoints(song, newValue, song.loopEnd)
-    NativeAudio.setLoopPoints(newValue, song.loopEnd)
-}
-
-private fun onStartAdjustMs(song: Song, deltaMs: Double, viewModel: MainViewModel) {
-    val sampleRate = NativeAudio.getSampleRate()
-    val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
-    val dur = NativeAudio.getDuration()
-    val newStart = (song.loopStart + deltaSamples).coerceIn(0, if (song.loopEnd > 0) song.loopEnd else dur)
-    onStartValueChange(song, newStart, viewModel)
-}
-
-private fun onEndValueChange(song: Song, newValue: Long, viewModel: MainViewModel) {
-    viewModel.updateSongLoopPoints(song, song.loopStart, newValue)
-    NativeAudio.setLoopPoints(song.loopStart, newValue)
-}
-
-private fun onEndAdjustMs(song: Song, deltaMs: Double, viewModel: MainViewModel) {
-    val sampleRate = NativeAudio.getSampleRate()
-    val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
-    val dur = NativeAudio.getDuration()
-    val newEnd = (song.loopEnd + deltaSamples).coerceIn(song.loopStart, dur)
-    onEndValueChange(song, newEnd, viewModel)
-}
-
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun PlaybackProgressBar(song: Song) {
