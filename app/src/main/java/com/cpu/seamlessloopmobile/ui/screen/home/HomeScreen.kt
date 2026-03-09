@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -107,5 +108,31 @@ fun HomeScreen(
                 )
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun HomeScreenPreview() {
+    MaterialTheme {
+        HomeScreen(
+            localCount = 120,
+            albumsCount = 15,
+            artistsCount = 8,
+            foldersCount = 5,
+            playlists = listOf(
+                Playlist(id = 1, name = "精选循环") to 10,
+                Playlist(id = 2, name = "电脑同步", isFolderLinked = 1) to 50,
+                Playlist(id = 3, name = "睡前解压") to 5
+            ),
+            onOpenAllSongs = {},
+            onOpenAlbums = {},
+            onOpenArtists = {},
+            onOpenFolders = {},
+            onOpenPlaylist = {},
+            isSelectionMode = false,
+            selectedPlaylists = emptySet(),
+            onTogglePlaylistSelection = {}
+        )
     }
 }

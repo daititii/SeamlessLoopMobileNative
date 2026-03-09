@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import com.cpu.seamlessloopmobile.ui.screen.category.CategoryScreen
 import com.cpu.seamlessloopmobile.ui.screen.home.HomeScreen
 import com.cpu.seamlessloopmobile.ui.screen.songlist.SongListScreen
@@ -363,4 +364,38 @@ fun MainScreen(
 
     // --- 全局对话框托管中心喵 ---
     CentralizedDialogHost(viewModel)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Preview(showBackground = true)
+@Composable
+fun MainScreenPreview() {
+    MaterialTheme {
+        // 在预览中，我们可以手动画一个相似的脚手架来观察布局喵！
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Seamless Loop (预览)") },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                )
+            },
+            bottomBar = {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("此处是 MiniPlayer 区域喵")
+                    }
+                }
+            }
+        ) { padding ->
+            Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("这里是主内容区域喵。\n\n您可以在 HomeScreen.kt 或 SongListScreen.kt \n中添加更具体的页面级预览！")
+            }
+        }
+    }
 }
