@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -129,5 +130,16 @@ fun MiniPlayer(
                 Icon(Icons.Default.SkipNext, contentDescription = "下一首")
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MiniPlayerPreview() {
+    MaterialTheme {
+        // 由于 MiniPlayer 依赖 MainViewModel，预览时很难模拟整个 VM。
+        // 但莱芙发现 MiniPlayer 的逻辑可以抽离，这里先为您放一个空的模拟。
+        // 为了让预览能动起来，通常我们会建议把 UI 和逻辑分开喵。
+        Text("MiniPlayer 预览需要模拟 ViewModel 状态", modifier = Modifier.padding(16.dp))
     }
 }

@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -268,5 +269,78 @@ fun FolderListItem(
                 )
             }
         }
+    }
+}
+
+// --- 预览 ---
+
+@Preview(showBackground = true)
+@Composable
+fun SectionHeaderPreview() {
+    MaterialTheme {
+        SectionHeader(title = "热门歌单")
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun CategoryCardPreview() {
+    MaterialTheme {
+        CategoryCard(
+            iconId = android.R.drawable.ic_menu_gallery,
+            title = "本地音乐",
+            count = 128,
+            onClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun PlaylistCardPreview() {
+    MaterialTheme {
+        PlaylistCard(
+            playlist = Playlist(id = 1, name = "我的最爱", isFolderLinked = 1),
+            count = 42,
+            isSelected = false,
+            onClick = {},
+            onLongClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun SongListItemPreview() {
+    MaterialTheme {
+        SongListItem(
+            song = Song(
+                id = 1L,
+                fileName = "test.mp3",
+                filePath = "",
+                totalSamples = 0,
+                displayName = "示例歌曲",
+                artist = "莱芙"
+            ),
+            isPlaying = true,
+            isSelected = false,
+            isSelectionMode = false,
+            onClick = {},
+            onLongClick = {},
+            onMoreClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun FolderListItemPreview() {
+    MaterialTheme {
+        FolderListItem(
+            folder = Folder(name = "音乐文件夹", path = "/sdcard/music", songCount = 0, songs = emptyList()),
+            isSelected = false,
+            onClick = {},
+            onLongClick = {}
+        )
     }
 }

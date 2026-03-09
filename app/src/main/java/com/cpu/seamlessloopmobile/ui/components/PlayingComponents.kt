@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -18,6 +19,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalInspectionMode
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.utils.TimeUtils
@@ -95,11 +97,13 @@ fun MainInfoPage(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlaybackProgressBar(song: Song) {
+    val isPreview = LocalInspectionMode.current
     var currentFrame by remember { mutableStateOf(0L) }
-    val totalFrames = NativeAudio.getDuration()
-    val sampleRate = NativeAudio.getSampleRate().toLong()
+    val totalFrames = if (isPreview) 1000000L else NativeAudio.getDuration()
+    val sampleRate = (if (isPreview) 44100 else NativeAudio.getSampleRate()).toLong()
 
     LaunchedEffect(Unit) {
+        if (isPreview) return@LaunchedEffect
         while (true) {
             currentFrame = NativeAudio.getCurrentPosition()
             delay(100)
@@ -109,7 +113,7 @@ fun PlaybackProgressBar(song: Song) {
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         Slider(
             value = currentFrame.toFloat(),
-            onValueChange = { NativeAudio.seekTo(it.toLong()) },
+            onValueChange = { if(!isPreview) NativeAudio.seekTo(it.toLong()) },
             valueRange = 0f..totalFrames.toFloat().coerceAtLeast(1f),
             modifier = Modifier.height(12.dp),
             thumb = {},
@@ -215,6 +219,44 @@ fun PlaybackControls(
 
         IconButton(onClick = { /* 更多控制 */ }) {
             Icon(Icons.Default.MoreVert, contentDescription = "更多", tint = Color.Gray, modifier = Modifier.size(24.dp))
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF1E1E2E)
+@Composable
+fun MainInfoPagePreview() {
+    MaterialTheme {
+        MainInfoPage(
+            songItem = Song(
+                id = 1L,
+                fileName = "test.wav",
+                filePath = "",
+                totalSamples = 0,
+                displayName = "示例歌曲",
+                artist = "莱芙"
+            ),
+            isPlaying = true
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF1E1E2E)
+@Composable
+fun PlaybackControlsPreview() {
+    MaterialTheme {
+        Box(modifier = Modifier.background(Color(0xFF1E1E2E)).padding(16.dp)) {
+            PlaybackControls(
+                playMode = com.cpu.seamlessloopmobile.viewmodel.PlayMode.LIST_LOOP,
+                isPlaying = false,
+                isPreparing = false,
+                isError = false,
+                showLoading = false,
+                onTogglePlayMode = {},
+                onPrev = {},
+                onPlayPause = {},
+                onNext = {}
+            )
         }
     }
 }

@@ -4,15 +4,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import com.cpu.seamlessloopmobile.viewmodel.MusicDialog
@@ -27,7 +28,7 @@ fun CentralizedDialogHost(viewModel: MainViewModel) {
             var timeValue by remember { 
                 val sr = NativeAudio.getSampleRate()
                 val seconds = dialog.initialSamples.toDouble() / if(sr > 0) sr else 44100
-                mutableStateOf(String.format("%.3f", seconds))
+                mutableStateOf(String.format(Locale.US, "%.3f", seconds))
             }
 
             LoopEditDialog(
@@ -39,13 +40,13 @@ fun CentralizedDialogHost(viewModel: MainViewModel) {
                 onValueTimeChange = { timeValue = it; samplesValue = "" },
                 onDismiss = { viewModel.dismissDialog() },
                 onConfirm = {
-                    val sr = NativeAudio.getSampleRate()
                     val newSamples = samplesValue.toLongOrNull()
                     val newTime = timeValue.toDoubleOrNull()
                     
                     if (newSamples != null) {
                         dialog.onConfirm(newSamples)
                     } else if (newTime != null) {
+                        val sr = NativeAudio.getSampleRate()
                         dialog.onConfirm((newTime * sr).toLong())
                     }
                     viewModel.dismissDialog()
@@ -89,14 +90,14 @@ fun CentralizedDialogHost(viewModel: MainViewModel) {
                         item {
                             ListItem(
                                 headlineContent = { Text("新建歌单...") },
-                                leadingContent = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
+                                leadingContent = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null) },
                                 modifier = Modifier.clickable { dialog.onCreateNew() }
                             )
                         }
                         items(dialog.playlists) { playlist ->
                             ListItem(
                                 headlineContent = { Text(playlist.name) },
-                                leadingContent = { Icon(Icons.Default.QueueMusic, contentDescription = null) },
+                                leadingContent = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null) },
                                 modifier = Modifier.clickable { 
                                     dialog.onAdd(playlist)
                                     viewModel.dismissDialog()
@@ -189,5 +190,21 @@ fun CentralizedDialogHost(viewModel: MainViewModel) {
         }
 
         null -> { /* 无弹窗显示 */ }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun CentralizedDialogHostPreview() {
+    MaterialTheme {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("CentralizedDialogHost 负责管理所有弹窗喵。", fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("由于它依赖 ViewModel 状态，直接预览较为复杂。")
+            Text("莱芙建议您直接在各个子组件（如 LoopEditDialog）中查看预览。")
+            
+            // 莱芙为您演示一个简单的模拟弹窗预览思路
+            // 如果需要观察具体的弹窗样式，可以临时在这里硬编码调用一个 Dialog 喵！
+        }
     }
 }

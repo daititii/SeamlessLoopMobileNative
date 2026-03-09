@@ -8,12 +8,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalInspectionMode
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.model.Song
 
@@ -94,7 +96,8 @@ fun TuneSectionBox(
     onAdjustMs: (Double) -> Unit,
     onEditClick: () -> Unit
 ) {
-    val sampleRate = NativeAudio.getSampleRate()
+    val isPreview = LocalInspectionMode.current
+    val sampleRate = if (isPreview) 44100 else NativeAudio.getSampleRate()
     val seconds = samples.toDouble() / sampleRate
 
     Surface(
@@ -152,8 +155,8 @@ fun TuneSectionBox(
             // 第一排: 最小/现/最大
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TuneGridButton("最小", modifier = Modifier.weight(1f)) { onValueChange(0) }
-                TuneGridButton("现在", modifier = Modifier.weight(1f)) { onValueChange(NativeAudio.getCurrentPosition()) }
-                TuneGridButton("最大", modifier = Modifier.weight(1f)) { onValueChange(NativeAudio.getDuration()) }
+                TuneGridButton("现在", modifier = Modifier.weight(1f)) { if(!isPreview) onValueChange(NativeAudio.getCurrentPosition()) }
+                TuneGridButton("最大", modifier = Modifier.weight(1f)) { if(!isPreview) onValueChange(NativeAudio.getDuration()) }
             }
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -259,6 +262,34 @@ fun LoopEditDialog(
             },
             containerColor = Color(0xFF1E1E2E),
             shape = RoundedCornerShape(16.dp)
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF1E1E2E)
+@Composable
+fun FineTunePagePreview() {
+    Box(modifier = Modifier.background(Color(0xFF1E1E2E))) {
+        FineTunePage(
+            song = Song(
+                id = 1L,
+                fileName = "example.wav",
+                filePath = "/sdcard/music/example.wav",
+                totalSamples = 1000000L,
+                displayName = "示例歌曲 - cpu 大人专用",
+                artist = "莱芙",
+                duration = 300000L,
+                loopStart = 1000L,
+                loopEnd = 5000L
+            ),
+            tempLoopStart = 1000L,
+            tempLoopEnd = 5000L,
+            onStartValueChange = {},
+            onEndValueChange = {},
+            onStartAdjustMs = {},
+            onEndAdjustMs = {},
+            onEditClick = {},
+            onApplyAndListen = {}
         )
     }
 }
