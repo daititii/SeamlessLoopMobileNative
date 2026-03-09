@@ -11,6 +11,7 @@
 #include <thread>
 #include <memory>
 #include <condition_variable>
+#include <functional>
 
 // 日志宏定义
 #define LOG_TAG "SeamlessLoopEngine"
@@ -36,10 +37,13 @@ public:
     int32_t getSampleRate();
     bool isPlaying() const;
 
+    void setEventCallback(std::function<void(int)> callback) { mEventCallback = callback; }
+
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream *oboeStream, void *audioData, int32_t numFrames) override;
     void onErrorAfterClose(oboe::AudioStream *oboeStream, oboe::Result error) override;
 
 private:
+    std::function<void(int)> mEventCallback;
     std::mutex mStreamMutex;
     std::shared_ptr<oboe::AudioStream> mStream;
     std::unique_ptr<AudioDecoder> mDecoderA;
@@ -86,6 +90,8 @@ private:
 
     std::atomic<int32_t> mChannelCount {2};
     std::atomic<int32_t> mSampleRate {44100};
+
+    std::atomic<bool> mEosSent {false};
 };
 
 #endif //SEAMLESSLOOPMOBILE_AUDIOENGINE_H

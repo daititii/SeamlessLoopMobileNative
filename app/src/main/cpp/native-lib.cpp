@@ -7,6 +7,70 @@
 static AudioEngine *audioEngine = nullptr;
 static std::mutex engineMutex; 
 
+// JNI 回调相关的全局引用喵！
+static JavaVM* g_jvm = nullptr;
+static jobject g_nativeAudioObj = nullptr;
+static jmethodID g_onNativeEventMethod = nullptr;
+static std::mutex g_callbackMutex;
+
+// JNI_OnLoad 让我们拿到 JavaVM 喵！
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+    g_jvm = vm;
+    return JNI_VERSION_1_6;
+}
+
+// 跨线程发送 JNI 事件的工具函数喵！
+void sendNativeEvent(int type) {
+    std::lock_guard<std::mutex> lock(g_callbackMutex);
+    if (g_jvm == nullptr || g_nativeAudioObj == nullptr || g_onNativeEventMethod == nullptr) return;
+
+    JNIEnv* env;
+    bool attached = false;
+    int res = g_jvm->GetEnv((void**)&env, JNI_VERSION_1_6);
+    
+    if (res == JNI_EDETACHED) {
+        if (g_jvm->AttachCurrentThread(&env, NULL) != 0) {
+            LOGE("Failed to attach current thread to JVM");
+            return;
+        }
+        attached = true;
+    } else if (res != JNI_OK) {
+        LOGE("Failed to get JNIEnv from JVM");
+        return;
+    }
+
+    env->CallStaticVoidMethod((jclass)env->GetObjectClass(g_nativeAudioObj), g_onNativeEventMethod, (jint)type);
+
+    if (attached) {
+        g_jvm->DetachCurrentThread();
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_cpu_seamlessloopmobile_jni_NativeAudio_setEventListenerNative(
+        JNIEnv* env,
+        jobject thiz,
+        jboolean enabled) {
+    std::lock_guard<std::mutex> lock(g_callbackMutex);
+    
+    if (enabled) {
+        if (g_nativeAudioObj != nullptr) {
+            env->DeleteGlobalRef(g_nativeAudioObj);
+        }
+        g_nativeAudioObj = env->NewGlobalRef(thiz);
+        jclass clazz = env->GetObjectClass(g_nativeAudioObj);
+        g_onNativeEventMethod = env->GetStaticMethodID(clazz, "onNativeEvent", "(I)V");
+        if (g_onNativeEventMethod == nullptr) {
+            LOGE("Failed to find onNativeEvent method");
+        }
+    } else {
+        if (g_nativeAudioObj != nullptr) {
+            env->DeleteGlobalRef(g_nativeAudioObj);
+            g_nativeAudioObj = nullptr;
+        }
+        g_onNativeEventMethod = nullptr;
+    }
+}
 extern "C" JNIEXPORT void JNICALL
 Java_com_cpu_seamlessloopmobile_jni_NativeAudio_startAudioEngine(
         JNIEnv* env,
@@ -18,6 +82,9 @@ Java_com_cpu_seamlessloopmobile_jni_NativeAudio_startAudioEngine(
     
     if (audioEngine == nullptr) {
         audioEngine = new AudioEngine();
+        audioEngine->setEventCallback([](int type) {
+            sendNativeEvent(type);
+        });
     }
     
     // 加载音频数据（通过文件描述符）
@@ -40,6 +107,9 @@ Java_com_cpu_seamlessloopmobile_jni_NativeAudio_startAbAudioEngine(
     
     if (audioEngine == nullptr) {
         audioEngine = new AudioEngine();
+        audioEngine->setEventCallback([](int type) {
+            sendNativeEvent(type);
+        });
     }
     
     audioEngine->loadAbAudioSource(fdA, offsetA, lengthA, fdB, offsetB, lengthB);

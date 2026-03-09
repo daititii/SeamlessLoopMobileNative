@@ -5,6 +5,30 @@ object NativeAudio {
         System.loadLibrary("seamlessloopmobile")
     }
 
+    // 事件常量喵！
+    const val EVENT_EOS = 1
+    const val EVENT_LOOP_JUMP = 2
+
+    interface NativeEventListener {
+        fun onEvent(type: Int)
+    }
+
+    private var listener: NativeEventListener? = null
+
+    fun setEventListener(l: NativeEventListener?) {
+        listener = l
+        setEventListenerNative(l != null)
+    }
+
+    // 由 JNI 调用喵！
+    @JvmStatic
+    private fun onNativeEvent(type: Int) {
+        android.util.Log.d("NativeAudio", "📡 收到底层事件: $type")
+        listener?.onEvent(type)
+    }
+
+    private external fun setEventListenerNative(enabled: Boolean)
+
     external fun stringFromJNI(): String
     external fun startAudioEngine(fd: Int, offset: Long, length: Long)
     external fun startAbAudioEngine(fdA: Int, offsetA: Long, lengthA: Long, fdB: Int, offsetB: Long, lengthB: Long)

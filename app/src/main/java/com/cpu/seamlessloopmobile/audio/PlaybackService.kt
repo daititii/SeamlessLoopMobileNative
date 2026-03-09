@@ -123,6 +123,9 @@ class PlaybackService : MediaBrowserServiceCompat() {
                     handlePlaybackStateChange(isPlaying, song)
                 }
             }
+            onSongCompleted = {
+                mediaSession?.controller?.transportControls?.skipToNext()
+            }
         }
 
         // 莱芙帮大人找回上次的记忆喵！

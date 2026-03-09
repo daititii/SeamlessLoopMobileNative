@@ -44,10 +44,28 @@ class PlaybackManager(
             })
             .build()
         mediaSession.setPlaybackState(newState)
+
+        // 绑定底层的“灵魂感应”器喵！
+        NativeAudio.setEventListener(object : NativeAudio.NativeEventListener {
+            override fun onEvent(type: Int) {
+                when (type) {
+                    NativeAudio.EVENT_EOS -> {
+                        android.util.Log.d("PlaybackManager", "🏁 底层报告：歌曲播完了喵！")
+                        coroutineScope.launch(Dispatchers.Main) {
+                            onSongCompleted?.invoke()
+                        }
+                    }
+                    NativeAudio.EVENT_LOOP_JUMP -> {
+                        android.util.Log.d("PlaybackManager", "🔄 底层报告：完成了一次完美的循环跳转喵！")
+                    }
+                }
+            }
+        })
     }
     
     // 专门给 Service 回调的钩子，用于通知 UI 更新
     override var onPlaybackStatusChanged: ((isPlaying: Boolean, currentSong: Song?) -> Unit)? = null
+    var onSongCompleted: (() -> Unit)? = null
     override var onPlaybackError: ((String) -> Unit)? = { error ->
         _state.value = AudioPlayState.ERROR
         currentSong?.let { updateMediaSessionState(it, false, isAbMode, error) }
@@ -161,16 +179,15 @@ class PlaybackManager(
         onPlaybackStatusChanged?.invoke(isPlaying, song)
     }
 
+    private var playJob: kotlinx.coroutines.Job? = null
+
     override fun play(song: Song, startPos: Long, startPaused: Boolean) {
         playSong(song, startPos, startPaused)
     }
 
     override fun playSong(song: Song, startPosition: Long, startPaused: Boolean, isSingleLoop: Boolean) {
-        // 先检查是否需要 AB 模式 (逻辑从 Activity 搬到了这里喵)
-        // 注意：AB 模式的发现由于不再依赖 ViewModel，需要调用者提供同级歌曲列表
-        // 或者我们可以让 Repository 负责寻找 AB 配对喵
-        
-        coroutineScope.launch {
+        playJob?.cancel()
+        playJob = coroutineScope.launch {
             // 安全第一喵！如果这是一首刚从 PC 导入、身份未知的歌，莱芙现场申请一个 ID 令牌！
             val resolvedSong = if (song.mediaId <= 0) {
                 repository.resolveMediaId(context, song)
@@ -193,11 +210,10 @@ class PlaybackManager(
         }
     }
 
-    private fun actuallyPlaySong(song: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) {
-        this.currentSong = song
-        coroutineScope.launch(Dispatchers.IO) {
-            _state.value = AudioPlayState.PREPARING
-            NativeAudio.stopAudioEngine()
+    private suspend fun actuallyPlaySong(song: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) = withContext(Dispatchers.IO) {
+        this@PlaybackManager.currentSong = song
+        _state.value = AudioPlayState.PREPARING
+        NativeAudio.stopAudioEngine()
             
             // --- 核心修复：防止内存对象过时喵！ ---
             // 莱芙在正式闭眼播放前，先去数据库里确认一下这首歌最新的“灵魂参数”喵
@@ -245,16 +261,19 @@ class PlaybackManager(
                     }
                 }
 
-                if (actualLoopEnd > actualLoopStart) {
-                    android.util.Log.d("PlaybackManager", "🎯 设置循环点: [$actualLoopStart-$actualLoopEnd], end > start = ${actualLoopEnd > actualLoopStart}")
+                // --- 播放模式适配喵 ---
+                // 只有在单曲循环模式下，才允许启用 A-B 循环点喵
+                val modeOrdinal = mediaSession.controller.playbackState?.extras?.getInt("play_mode") ?: settingsManager.playMode.ordinal
+                val isSingleLoopMode = modeOrdinal == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
+
+                if (isSingleLoopMode && (isSingleLoop || actualLoopEnd > actualLoopStart)) {
+                    android.util.Log.d("PlaybackManager", "🎯 单曲循环模式：开启循环点控制 [$actualLoopStart-$actualLoopEnd]")
                     NativeAudio.setLoopPoints(actualLoopStart, actualLoopEnd)
+                    NativeAudio.setLooping(true)
                 } else {
-                    android.util.Log.d("PlaybackManager", "⚠️ 未设置循环点: loopEnd=$actualLoopEnd <= loopStart=$actualLoopStart (需要 end > start)")
+                    android.util.Log.d("PlaybackManager", "⚠️ 顺序/随机模式：禁用内部循环，等待底层 EOS 通知切歌喵")
+                    NativeAudio.setLooping(false)
                 }
-                // 如果歌曲本身有预设循环点，或者处于单曲循环模式，就让引擎开启循环喵！
-                val shouldLoop = isSingleLoop || (actualLoopEnd > actualLoopStart)
-                android.util.Log.d("PlaybackManager", "🔁 设置循环模式: isSingleLoop=$isSingleLoop, shouldLoop=$shouldLoop")
-                NativeAudio.setLooping(shouldLoop)
 
                 if (startPosition > 0) {
                     NativeAudio.seekTo(startPosition)
@@ -293,14 +312,12 @@ class PlaybackManager(
                     onPlaybackError?.invoke("无法打开音频文件喵...")
                 }
             }
-        }
     }
 
-    private fun playAbSong(introSong: Song, loopSong: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) {
-        this.currentSong = introSong
-        coroutineScope.launch(Dispatchers.IO) {
-            _state.value = AudioPlayState.PREPARING
-            NativeAudio.stopAudioEngine()
+    private suspend fun playAbSong(introSong: Song, loopSong: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) = withContext(Dispatchers.IO) {
+        this@PlaybackManager.currentSong = introSong
+        _state.value = AudioPlayState.PREPARING
+        NativeAudio.stopAudioEngine()
             
             try {
                 android.util.Log.d("PlaybackManager", "====== 🚀 准备启动 AB 无缝合体模式喵！======")
@@ -355,7 +372,6 @@ class PlaybackManager(
                     onPlaybackError?.invoke("AB 播放失败: ${e.message}")
                 }
             }
-        }
     }
 
 }

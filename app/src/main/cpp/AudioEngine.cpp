@@ -125,6 +125,7 @@ void AudioEngine::loadAudioSource(int fd, int64_t offset, int64_t length) {
         mAbIntroFrames = 0;
         
         resetFifo();
+        mEosSent = false;
         mFifoCond.notify_all();
         LOGD("loadAudioSource: Dual Async decoders ready.");
     }
@@ -165,6 +166,7 @@ void AudioEngine::loadAbAudioSource(int fdA, int64_t offsetA, int64_t lengthA, i
         mLoopEndFrame = mActiveDecoder->getTotalFrames();
         
         resetFifo();
+        mEosSent = false;
         mFifoCond.notify_all();
         LOGD("loadAbAudioSource: Intro(A) and Loop(B) sources ready. User loop: [%lld, %lld]", (long long)mUserLoopStart.load(), (long long)mUserLoopEnd.load());
     }
@@ -431,6 +433,14 @@ void AudioEngine::decodingLoop() {
                 LOGD("DualDecoder: Triggered early handover due to physical EOF.");
             }
 
+            // --- 播放完成 (EOS) 检测喵 ---
+            if (!isLooping && samplesReadTotal < framesRequested * channels && mActiveDecoder->isFinished()) {
+                if (!mEosSent.exchange(true)) {
+                    LOGD("AudioEngine: EOS detected.");
+                    if (mEventCallback) mEventCallback(1); // EVENT_EOS
+                }
+            }
+
             // 【无缝交跑换棒逻辑喵】
             int32_t targetSamples = kBlockFrames * channels;
             if (isLooping && hitLoopEnd) {
@@ -472,6 +482,9 @@ void AudioEngine::decodingLoop() {
                     if (secondRead > 0) samplesReadTotal += secondRead;
                 }
                 LOGD("DualDecoder: Handover successful at frame %lld", (long long)loopEnd);
+                
+                // --- 循环跳转 (Loop Jump) 检测喵 ---
+                if (mEventCallback) mEventCallback(2); // EVENT_LOOP_JUMP
             }
         }
 
