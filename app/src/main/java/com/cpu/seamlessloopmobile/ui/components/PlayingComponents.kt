@@ -23,6 +23,8 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.utils.TimeUtils
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.delay
 
 @Composable
@@ -99,21 +101,43 @@ fun MainInfoPage(
 fun PlaybackProgressBar(song: Song) {
     val isPreview = LocalInspectionMode.current
     var currentFrame by remember { mutableStateOf(0L) }
+    var sliderPosition by remember { mutableStateOf<Float?>(null) }
+    val coroutineScope = rememberCoroutineScope()
     val totalFrames = if (isPreview) 1000000L else NativeAudio.getDuration()
     val sampleRate = (if (isPreview) 44100 else NativeAudio.getSampleRate()).toLong()
 
     LaunchedEffect(Unit) {
         if (isPreview) return@LaunchedEffect
         while (true) {
-            currentFrame = NativeAudio.getCurrentPosition()
+            // 如果还在拖拽中（或者等待底层的缓冲中），就不去读取底层可能还未更新的旧排版喵
+            if (sliderPosition == null) {
+                currentFrame = NativeAudio.getCurrentPosition()
+            }
             delay(100)
         }
     }
 
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         Slider(
-            value = currentFrame.toFloat(),
-            onValueChange = { if(!isPreview) NativeAudio.seekTo(it.toLong()) },
+            value = sliderPosition ?: currentFrame.toFloat(),
+            onValueChange = { sliderPosition = it },
+            onValueChangeFinished = { 
+                sliderPosition?.let { finalPos ->
+                    if (!isPreview) {
+                        currentFrame = finalPos.toLong() // 提前设置本地坐标
+                        NativeAudio.seekTo(finalPos.toLong()) // 通知底层去干活
+                        
+                        // 底层跳跃需要极短暂的时间，如果不等待直接清空 sliderPosition，
+                        // 就会因马上读取到还没跳过去的旧 currentFrame 发生视觉上的“回弹”喵！
+                        coroutineScope.launch {
+                            delay(300) // 让界面先维持拖动后的位置，等底层音频追上来
+                            sliderPosition = null
+                        }
+                    } else {
+                        sliderPosition = null
+                    }
+                }
+            },
             valueRange = 0f..totalFrames.toFloat().coerceAtLeast(1f),
             modifier = Modifier.height(12.dp),
             thumb = {},
@@ -149,7 +173,8 @@ fun PlaybackProgressBar(song: Song) {
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            val startTime = TimeUtils.formatTime(currentFrame, sampleRate)
+            val displayFrame = sliderPosition?.toLong() ?: currentFrame
+            val startTime = TimeUtils.formatTime(displayFrame, sampleRate)
             val totalTime = TimeUtils.formatTime(totalFrames, sampleRate)
             Text(startTime, color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Light)
             Text(totalTime, color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Light)
