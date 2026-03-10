@@ -229,6 +229,10 @@ class PlaybackService : MediaBrowserServiceCompat() {
                         })
                         .build()
                     mediaSession?.setPlaybackState(newState)
+
+                    // 动态更新内核的循环状态喵！
+                    val isSingleLoopMode = mode == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
+                    playbackManager?.setLooping(isSingleLoopMode)
                 }
             }
             override fun onStop() { stopForegroundCompletely() }

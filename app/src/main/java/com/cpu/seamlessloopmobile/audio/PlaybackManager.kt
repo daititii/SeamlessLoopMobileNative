@@ -342,8 +342,18 @@ class PlaybackManager(
                     }
                 }
 
-                // 在 AB 模式下，底层会自动把 B 段作为循环主体喵
-                NativeAudio.setLooping(isSingleLoop)
+                // --- 播放模式适配喵 ---
+                val modeOrdinal = mediaSession.controller.playbackState?.extras?.getInt("play_mode") ?: settingsManager.playMode.ordinal
+                val isSingleLoopMode = modeOrdinal == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
+
+                // 在 AB 模式下，单曲循环模式时才把 B 段作为循环主体喵，否则顺序/随机时只播放一次喵！
+                if (isSingleLoopMode && isSingleLoop) {
+                    android.util.Log.d("PlaybackManager", "🎯 AB 模式：开启单曲循环，B段无限洗脑喵")
+                    NativeAudio.setLooping(true)
+                } else {
+                    android.util.Log.d("PlaybackManager", "⚠️ AB 模式：禁用内部循环，等待底层 EOS 通知切歌喵")
+                    NativeAudio.setLooping(false)
+                }
 
                 if (startPosition > 0) {
                     NativeAudio.seekTo(startPosition)
