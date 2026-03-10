@@ -130,6 +130,17 @@ class MainViewModel(
 
     fun initSettings(manager: com.cpu.seamlessloopmobile.data.SettingsManager) {
         this.settingsManager = manager
+        
+        // --- 修复：启动时把存在小本本里的播放模式读出来给 UI 喵！ ---
+        val savedMode = manager.playMode
+        _playMode.value = savedMode
+        
+        // 给底层发个信号，告诉它当前的初始模式，也把状态机的模式同步好喵！
+        val bundle = android.os.Bundle().apply {
+            putInt("play_mode", savedMode.ordinal)
+        }
+        mediaControlManager.sendCustomAction("SET_PLAY_MODE", bundle)
+
         // 莱芙顺便帮 UI 界面把名单也请回来喵！
         restorePlaybackSession()
     }
