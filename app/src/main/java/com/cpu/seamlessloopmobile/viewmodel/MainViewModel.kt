@@ -396,5 +396,20 @@ class MainViewModel(
         }
     }
     
+    fun applyAndListenToLoop(song: Song, start: Long, end: Long) {
+        // 先同步更新本地和数据库的数据喵
+        updateSongLoopPoints(song, start, end)
+        
+        // 顺水推舟：UI 端直接切换为单曲循环模式，让图标变化
+        setPlayMode(PlayMode.SINGLE_LOOP)
+        
+        // 通过专线向系统服务下达“试听应用指令”，一切由后台状态机调度
+        val bundle = android.os.Bundle().apply {
+            putLong("start_pos", start)
+            putLong("end_pos", end)
+        }
+        mediaControlManager.sendCustomAction("APPLY_LOOP_POINTS", bundle)
+    }
+    
     fun findAbPair(song: Song): Pair<Song, Song>? = repository.findAbPair(song, library.allSongs.value ?: emptyList())
 }

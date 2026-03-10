@@ -233,6 +233,36 @@ class PlaybackService : MediaBrowserServiceCompat() {
                     // 动态更新内核的循环状态喵！
                     val isSingleLoopMode = mode == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
                     playbackManager?.setLooping(isSingleLoopMode)
+                } else if (action == "APPLY_LOOP_POINTS") {
+                    val startPos = extras?.getLong("start_pos") ?: 0L
+                    val endPos = extras?.getLong("end_pos") ?: 0L
+                    
+                    // 1. 设置底层的真正循环点
+                    com.cpu.seamlessloopmobile.jni.NativeAudio.setLoopPoints(startPos, endPos)
+                    
+                    // 2. 将状态机的模式设为单曲循环（模拟用户按下模式切换按钮）
+                    val mode = com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
+                    val state = mediaSession?.controller?.playbackState
+                    val builder = if (state != null) {
+                        android.support.v4.media.session.PlaybackStateCompat.Builder(state)
+                    } else {
+                        android.support.v4.media.session.PlaybackStateCompat.Builder()
+                    }
+                    val newState = builder.setExtras(android.os.Bundle().apply { 
+                            putInt("play_mode", mode)
+                        })
+                        .build()
+                    mediaSession?.setPlaybackState(newState)
+                    
+                    // 3. 通知底层引擎开启循环
+                    playbackManager?.setLooping(true)
+                    
+                    // 4. 计算并跳转到试听位置 (默认跳到结束前 3 秒以供检验)
+                    val sampleRate = com.cpu.seamlessloopmobile.jni.NativeAudio.getSampleRate().toLong()
+                    val totalDur = com.cpu.seamlessloopmobile.jni.NativeAudio.getDuration()
+                    val actualEnd = if (endPos > 0) endPos else totalDur
+                    val seekPos = (actualEnd - (sampleRate * 3)).coerceIn(0, actualEnd)
+                    playbackManager?.seekTo(seekPos)
                 }
             }
             override fun onStop() { stopForegroundCompletely() }

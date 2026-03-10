@@ -166,14 +166,7 @@ fun PlayingPanel(
                                 )
                             },
                             onApplyAndListen = {
-                                viewModel.updateSongLoopPoints(songItem, tempLoopStart, tempLoopEnd)
-                                NativeAudio.setLoopPoints(tempLoopStart, tempLoopEnd)
-                                
-                                val sampleRate = NativeAudio.getSampleRate().toLong()
-                                val totalDur = NativeAudio.getDuration()
-                                val actualEnd = if (tempLoopEnd > 0) tempLoopEnd else totalDur
-                                val seekPos = (actualEnd - (sampleRate * 3)).coerceIn(0, actualEnd)
-                                NativeAudio.seekTo(seekPos)
+                                viewModel.applyAndListenToLoop(songItem, tempLoopStart, tempLoopEnd)
                             }
                         )
                     }
