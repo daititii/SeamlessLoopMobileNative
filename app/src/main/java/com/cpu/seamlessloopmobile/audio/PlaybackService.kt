@@ -65,12 +65,11 @@ class PlaybackService : MediaBrowserServiceCompat() {
         
         headsetPlugReceiver = HeadsetPlugReceiver(object : HeadsetPlugReceiver.Callbacks {
             override fun onHeadsetPlugged() {
-                // 🎧 检测到耳机插回，如果刚才因为拔出而中断，就自动恢复播放
-                if (wasPlayingBeforeUnplug && playbackManager?.isPlaying == false) {
-                    android.util.Log.d("PlaybackService", "🔄 自动恢复播放喵！")
-                    playbackManager?.resume()
+                // 🎧 插入耳机设备切换，我们要采取和拔出一样的措施：暂停播放防惊吓喵！
+                if (playbackManager?.isPlaying == true) {
+                    wasPlayingBeforeUnplug = true
+                    playbackManager?.pause()
                 }
-                wasPlayingBeforeUnplug = false
             }
 
             override fun onHeadsetUnplugged() {
