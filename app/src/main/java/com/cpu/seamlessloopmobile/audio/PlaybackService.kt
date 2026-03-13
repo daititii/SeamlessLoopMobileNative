@@ -236,32 +236,62 @@ class PlaybackService : MediaBrowserServiceCompat() {
                     val startPos = extras?.getLong("start_pos") ?: 0L
                     val endPos = extras?.getLong("end_pos") ?: 0L
                     
-                    // 1. 设置底层的真正循环点
-                    com.cpu.seamlessloopmobile.jni.NativeAudio.setLoopPoints(startPos, endPos)
+                    val isAb = mediaSession?.controller?.playbackState?.extras?.getBoolean("is_ab_mode") == true
                     
-                    // 2. 将状态机的模式设为单曲循环（模拟用户按下模式切换按钮）
-                    val mode = com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
-                    val state = mediaSession?.controller?.playbackState
-                    val builder = if (state != null) {
-                        android.support.v4.media.session.PlaybackStateCompat.Builder(state)
+                    if (isAb) {
+                        // 🍓 AB 模式下，底层有着严格的双规制跑道，如果我们强行在中途修改点位，且套上单曲循环，
+                        // 会直接让 C++ 引擎懵逼进入无尽深渊循环！
+                        // 所以最干净的做法是：带上新的循环点，让它完完整整重生一次喵！
+                        
+                        // 1. 设置状态机为单曲循环（模拟用户按下模式切换按钮）
+                        val mode = com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
+                        val state = mediaSession?.controller?.playbackState
+                        val builder = if (state != null) {
+                            android.support.v4.media.session.PlaybackStateCompat.Builder(state)
+                        } else {
+                            android.support.v4.media.session.PlaybackStateCompat.Builder()
+                        }
+                        val newState = builder.setExtras(android.os.Bundle().apply { 
+                                putInt("play_mode", mode)
+                            })
+                            .build()
+                        mediaSession?.setPlaybackState(newState)
+                        
+                        // 2. 计算跳转到试听位置
+                        val sampleRate = com.cpu.seamlessloopmobile.jni.NativeAudio.getSampleRate().toLong()
+                        val totalDur = com.cpu.seamlessloopmobile.jni.NativeAudio.getDuration()
+                        val actualEnd = if (endPos > 0) endPos else totalDur
+                        val seekPos = (actualEnd - (sampleRate * 3)).coerceIn(0, actualEnd)
+                        
+                        // 3. 干净地让引擎带着现在的光辉历史（刚刚新应用到数据库和内存的当前歌曲）重生！
+                        playbackManager?.currentSong?.let {
+                            playbackManager?.playSong(it, seekPos, false, true)
+                        }
                     } else {
-                        android.support.v4.media.session.PlaybackStateCompat.Builder()
+                        // 普通模式下，可以直接瞬发通知底层修改喵！
+                        com.cpu.seamlessloopmobile.jni.NativeAudio.setLoopPoints(startPos, endPos)
+                        
+                        val mode = com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
+                        val state = mediaSession?.controller?.playbackState
+                        val builder = if (state != null) {
+                            android.support.v4.media.session.PlaybackStateCompat.Builder(state)
+                        } else {
+                            android.support.v4.media.session.PlaybackStateCompat.Builder()
+                        }
+                        val newState = builder.setExtras(android.os.Bundle().apply { 
+                                putInt("play_mode", mode)
+                            })
+                            .build()
+                        mediaSession?.setPlaybackState(newState)
+                        
+                        playbackManager?.setLooping(true)
+                        
+                        val sampleRate = com.cpu.seamlessloopmobile.jni.NativeAudio.getSampleRate().toLong()
+                        val totalDur = com.cpu.seamlessloopmobile.jni.NativeAudio.getDuration()
+                        val actualEnd = if (endPos > 0) endPos else totalDur
+                        val seekPos = (actualEnd - (sampleRate * 3)).coerceIn(0, actualEnd)
+                        playbackManager?.seekTo(seekPos)
                     }
-                    val newState = builder.setExtras(android.os.Bundle().apply { 
-                            putInt("play_mode", mode)
-                        })
-                        .build()
-                    mediaSession?.setPlaybackState(newState)
-                    
-                    // 3. 通知底层引擎开启循环
-                    playbackManager?.setLooping(true)
-                    
-                    // 4. 计算并跳转到试听位置 (默认跳到结束前 3 秒以供检验)
-                    val sampleRate = com.cpu.seamlessloopmobile.jni.NativeAudio.getSampleRate().toLong()
-                    val totalDur = com.cpu.seamlessloopmobile.jni.NativeAudio.getDuration()
-                    val actualEnd = if (endPos > 0) endPos else totalDur
-                    val seekPos = (actualEnd - (sampleRate * 3)).coerceIn(0, actualEnd)
-                    playbackManager?.seekTo(seekPos)
                 }
             }
             override fun onStop() { stopForegroundCompletely() }

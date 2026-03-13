@@ -94,6 +94,11 @@ fun PlayingPanel(
                         )
                     )
                 )
+                // 🛡️ 莱芙加的绝对防御防穿透护盾喵！拦截所有底部点击
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null
+                ) {}
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // --- 顶部控制 (关闭按钮 & 指示器) ---
