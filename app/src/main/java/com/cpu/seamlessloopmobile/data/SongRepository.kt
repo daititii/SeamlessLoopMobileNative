@@ -15,6 +15,10 @@ class SongRepository(private val songDao: SongDao) {
         songDao.getAllSongs()
     }
 
+    suspend fun getAllSongsRaw(): List<Song> = withContext(Dispatchers.IO) {
+        songDao.getAllSongsRaw()
+    }
+
     suspend fun getSongByPath(path: String): Song? = withContext(Dispatchers.IO) {
         songDao.getSongByPath(path)
     }

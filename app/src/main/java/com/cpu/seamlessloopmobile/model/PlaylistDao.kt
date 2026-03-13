@@ -6,7 +6,7 @@ import androidx.room.*
 interface PlaylistDao {
     // --- 歌单管理 ---
     @Query("""
-        SELECT p.*, (SELECT COUNT(*) FROM PlaylistItems WHERE PlaylistId = p.Id) as songCount 
+        SELECT p.*, (SELECT COUNT(*) FROM PlaylistItems pi JOIN LoopPoints s ON pi.SongId = s.Id WHERE pi.PlaylistId = p.Id AND s.IsAbPartB = 0) as songCount 
         FROM Playlists p 
         ORDER BY p.SortOrder ASC, p.CreatedAt DESC
     """)
@@ -30,7 +30,7 @@ interface PlaylistDao {
     @Query("""
         SELECT s.* FROM LoopPoints s
         JOIN PlaylistItems pi ON s.Id = pi.SongId
-        WHERE pi.PlaylistId = :playlistId
+        WHERE pi.PlaylistId = :playlistId AND s.IsAbPartB = 0
         ORDER BY pi.SortOrder ASC
     """)
     suspend fun getSongsInPlaylist(playlistId: Int): List<Song>
@@ -89,6 +89,6 @@ interface PlaylistDao {
         }
     }
 
-    @Query("SELECT COUNT(*) FROM PlaylistItems WHERE PlaylistId = :playlistId")
+    @Query("SELECT COUNT(*) FROM PlaylistItems pi JOIN LoopPoints s ON pi.SongId = s.Id WHERE pi.PlaylistId = :playlistId AND s.IsAbPartB = 0")
     suspend fun getSongCountInPlaylist(playlistId: Int): Int
 }

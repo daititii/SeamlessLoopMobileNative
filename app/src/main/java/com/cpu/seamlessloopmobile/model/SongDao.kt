@@ -4,7 +4,7 @@ import androidx.room.*
 
 @Dao
 interface SongDao {
-    @Query("SELECT * FROM LoopPoints ORDER BY FileName ASC")
+    @Query("SELECT * FROM LoopPoints WHERE IsAbPartB = 0 ORDER BY FileName ASC")
     suspend fun getAllSongs(): List<Song>
 
     @Query("SELECT * FROM LoopPoints WHERE FileName = :name AND duration = :duration LIMIT 1")
@@ -13,7 +13,7 @@ interface SongDao {
     @Query("SELECT * FROM LoopPoints WHERE FileName = :name AND TotalSamples = :samples LIMIT 1")
     suspend fun getSongBySamples(name: String, samples: Long): Song?
 
-    @Query("SELECT * FROM LoopPoints WHERE FileName = :name")
+    @Query("SELECT * FROM LoopPoints WHERE FileName = :name AND IsAbPartB = 0")
     suspend fun getSongsByName(name: String): List<Song>
 
     @Query("SELECT * FROM LoopPoints WHERE Id = :id LIMIT 1")
@@ -30,6 +30,9 @@ interface SongDao {
 
     @Query("SELECT * FROM LoopPoints WHERE FilePath = :path LIMIT 1")
     suspend fun getSongByPath(path: String): Song?
+
+    @Query("SELECT * FROM LoopPoints")
+    suspend fun getAllSongsRaw(): List<Song>
 
     @Transaction
     suspend fun insertOrUpdateSong(song: Song): Long {

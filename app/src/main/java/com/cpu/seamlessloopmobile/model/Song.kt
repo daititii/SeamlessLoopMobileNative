@@ -60,5 +60,8 @@ data class Song(
     val albumArtist: String? = "Unknown Artist",
 
     val duration: Long = 0,          // 毫秒级时长（用于列表进度显示）
-    val isLoopEnabled: Boolean = true
+    val isLoopEnabled: Boolean = true,
+    
+    @ColumnInfo(name = "IsAbPartB")
+    val isAbPartB: Boolean = false   // 标记这是否是 AB 模式中被隐藏的 B 段
 )

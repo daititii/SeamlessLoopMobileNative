@@ -22,6 +22,9 @@ class LibraryViewModel(
     private val _allSongs = MutableLiveData<List<Song>>(emptyList())
     val allSongs: LiveData<List<Song>> = _allSongs
 
+    private val _allSongsRaw = MutableLiveData<List<Song>>(emptyList())
+    val allSongsRaw: LiveData<List<Song>> = _allSongsRaw
+
     private val _folders = MutableLiveData<List<Folder>>(emptyList())
     val folders: LiveData<List<Folder>> = _folders
 
@@ -37,8 +40,10 @@ class LibraryViewModel(
     fun loadSongsFromDatabase() {
         coroutineScope.launch(Dispatchers.IO) {
             val songs = repository.getAllSongs()
+            val songsRaw = repository.getAllSongsRaw()
             withContext(Dispatchers.Main) {
                 _allSongs.value = songs
+                _allSongsRaw.value = songsRaw
                 rebuildLibrary(songs)
             }
         }
@@ -52,8 +57,10 @@ class LibraryViewModel(
             _syncStatus.value = "🔍 寻找新曲子中..."
             withContext(Dispatchers.IO) {
                 val songs = repository.getInitialScannedSongs(context)
+                val songsRaw = repository.getAllSongsRaw()
                 withContext(Dispatchers.Main) {
                     _allSongs.value = songs
+                    _allSongsRaw.value = songsRaw
                     rebuildLibrary(songs)
                     _syncStatus.value = ""
                 }

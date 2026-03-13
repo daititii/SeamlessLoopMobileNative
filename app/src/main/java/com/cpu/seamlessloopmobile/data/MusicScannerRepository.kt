@@ -20,7 +20,13 @@ class MusicScannerRepository(private val songDao: SongDao) {
         val scannedSongs = AudioScanner.scan(context)
         val dbSongs = songDao.getAllSongs().associateBy { "${it.fileName}|${it.duration}" }
         
-        scannedSongs.map { song ->
+        // --- 预处理：识别 AB 模式下的 B 段喵 ---
+        val abMarkedSongs = scannedSongs.map { song ->
+            val isB = isLikelyAbPartB(song, scannedSongs)
+            if (isB) song.copy(isAbPartB = true) else song
+        }
+        
+        abMarkedSongs.map { song ->
             val dbSong = dbSongs["${song.fileName}|${song.duration}"]
             if (dbSong != null) {
                 val updatedSong = song.copy(
@@ -28,17 +34,40 @@ class MusicScannerRepository(private val songDao: SongDao) {
                     loopStart = dbSong.loopStart, 
                     loopEnd = dbSong.loopEnd, 
                     totalSamples = dbSong.totalSamples, 
-                    displayName = dbSong.displayName ?: song.displayName
+                    displayName = dbSong.displayName ?: song.displayName,
+                    isAbPartB = song.isAbPartB // 即使以前不是，现在也要同步更新这个标记喵
                 )
-                // 即使数据库里有，如果 mediaId 对不上（或者我们要更新持久化），也插一遍喵
                 songDao.insertOrUpdateSong(updatedSong)
                 updatedSong
             } else {
-                // 如果是彻头彻尾的新歌，必须存进数据库，不然同步 PC 时它是“幽灵”喵！
                 val newId = songDao.insertOrUpdateSong(song)
                 song.copy(id = newId)
             }
         }
+    }
+
+    /**
+     * 判断这首歌是不是传说中隐身的 B 段喵
+     */
+    private fun isLikelyAbPartB(song: Song, allSongs: List<Song>): Boolean {
+        val fileName = song.fileName.substringBeforeLast(".")
+        val bSuffixes = arrayOf("_B", "_b", "_loop", "_Loop")
+        val aSuffixes = arrayOf("_A", "_a", "_intro", "_Intro")
+        
+        for (i in bSuffixes.indices) {
+            if (fileName.endsWith(bSuffixes[i])) {
+                val baseName = fileName.substring(0, fileName.length - bSuffixes[i].length)
+                val targetAName = baseName + aSuffixes[i]
+                
+                // 如果同文件夹下真的有个 A 存在，那它就是小跟班 B 没跑了喵！
+                val hasA = allSongs.any { 
+                    it.fileName.substringBeforeLast(".") == targetAName &&
+                    File(it.filePath).parent == File(song.filePath).parent
+                }
+                if (hasA) return true
+            }
+        }
+        return false
     }
 
     /**
@@ -84,8 +113,9 @@ class MusicScannerRepository(private val songDao: SongDao) {
         if (bNameWithoutExt == null) return@withContext null
         val parentDir = File(song.filePath).parent ?: return@withContext null
 
-        // 1. 同步数据库中寻找
-        val dbSongs = songDao.getAllSongs()
+        // --- 核心修复：必须查阅“生死簿”的全卷喵！ ---
+        // 1. 同步数据库中寻找 (使用 unfiltered 版本)
+        val dbSongs = songDao.getAllSongsRaw()
         val pB = dbSongs.find { 
             it.fileName.substringBeforeLast(".") == bNameWithoutExt &&
             File(it.filePath).parent == parentDir

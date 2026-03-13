@@ -69,47 +69,42 @@ class PlaylistRepository(
         
         if (scannedSongs.isEmpty()) return@withContext
 
-        // 2. 移除 AB 配对中的 B 部分（因为我们需要它是逻辑上的一个条目喵）
+        // 2. 预处理：识别所有歌曲中的 B 段喵
         val nameMapInFolder = scannedSongs.associateBy { it.fileName.substringBeforeLast(".") }
         val bSuffixes = arrayOf("_B", "_b", "_loop", "_Loop")
         val aSuffixes = arrayOf("_A", "_a", "_intro", "_Intro")
-        val ignorePaths = mutableSetOf<String>()
-
-        for (item in scannedSongs) {
+        
+        val processedSongs = scannedSongs.map { item ->
+            var isB = false
             val nameNormal = item.fileName.substringBeforeLast(".")
             for (i in bSuffixes.indices) {
                 if (nameNormal.endsWith(bSuffixes[i])) {
                     val baseName = nameNormal.substring(0, nameNormal.length - bSuffixes[i].length)
                     if (nameMapInFolder.containsKey(baseName + aSuffixes[i])) {
-                        ignorePaths.add(item.filePath)
+                        isB = true
                         break
                     }
                 }
             }
+            if (isB) item.copy(isAbPartB = true) else item
         }
 
-        val targetItems = scannedSongs.filter { it.filePath !in ignorePaths }
-        val total = targetItems.size
-
-        // 3. 清空并开始同步写库
+        val total = processedSongs.size
         playlistDao.clearPlaylist(playlist.id)
-        val allDbSongs = songDao.getAllSongs()
+        
+        // 提前捞取一份数据库快照喵
+        val allDbSongs = songDao.getAllSongsRaw()
         val dbSongsByFingerprint = allDbSongs.associateBy { "${it.fileName}|${it.duration}" }
-        // 提取出所有来自PC端数据的记录喵，它们应该有 totalSamples > 0 
         val pcDbSongs = allDbSongs.filter { it.totalSamples > 0 }
 
-        targetItems.forEachIndexed { index, item ->
+        processedSongs.forEachIndexed { index, item ->
             onProgress("正在同步: ${index + 1}/$total")
             val (accurateSamples, sampleRate) = AudioScanner.getAccurateMetadata(context, item.mediaId)
             
-            // 优先查找手机端“指纹” (名称|毫秒时长)
             val mobileSong = dbSongsByFingerprint["${item.fileName}|${item.duration}"]
-            
-            // 备选查找电脑端记录：兼顾手机和电脑MP3采样数的细微差异喵！
             var pcSong: Song? = null
             val itemNameBase = item.fileName.substringBeforeLast(".")
             
-            // 第一步：先看有没有名字能包含或被包含的 PC 歌曲
             val nameMatchedPcSongs = pcDbSongs.filter { pc ->
                 val pcNameBase = pc.fileName.substringBeforeLast(".")
                 itemNameBase.equals(pcNameBase, ignoreCase = true) || 
@@ -118,8 +113,6 @@ class PlaylistRepository(
             }
             
             if (nameMatchedPcSongs.isNotEmpty()) {
-                // 第二步：在名字匹配的歌曲中，找一个采样数最接近的喵！
-                // 允许的最大误差为 10000 采样（对于44.1kHz大约0.2秒），足够包容MP3的首尾填充差异了
                 val closestSong = nameMatchedPcSongs.minByOrNull { Math.abs(it.totalSamples - accurateSamples) }
                 if (closestSong != null && (accurateSamples == 0L || Math.abs(closestSong.totalSamples - accurateSamples) < 20000)) {
                     pcSong = closestSong
@@ -128,18 +121,18 @@ class PlaylistRepository(
             
             val song = item.copy(
                 totalSamples = if (accurateSamples > 0) accurateSamples else (pcSong?.totalSamples ?: 0L),
-                duration = item.duration, // 明确显式继承 duration 喵！
+                duration = item.duration,
                 displayName = pcSong?.displayName ?: mobileSong?.displayName ?: item.displayName,
                 loopStart = pcSong?.loopStart ?: mobileSong?.loopStart ?: 0L,
                 loopEnd = pcSong?.loopEnd ?: mobileSong?.loopEnd ?: (if (accurateSamples > 0) accurateSamples else pcSong?.totalSamples ?: 0L),
-                id = mobileSong?.id ?: pcSong?.id ?: 0
+                id = mobileSong?.id ?: pcSong?.id ?: 0,
+                isAbPartB = item.isAbPartB // 应用隐身标记
             )
             
             val songId = songDao.insertOrUpdateSong(song)
-            if (songId > 0) {
+            // 只有非 B 段的歌曲，才有资格进入歌单排队显示喵！
+            if (songId > 0 && !song.isAbPartB) {
                 playlistDao.addSongsToPlaylist(playlist.id, listOf(songId))
-            } else {
-                android.util.Log.e("PlaylistRepo", "插入歌曲失败喵: ${song.fileName}")
             }
         }
     }

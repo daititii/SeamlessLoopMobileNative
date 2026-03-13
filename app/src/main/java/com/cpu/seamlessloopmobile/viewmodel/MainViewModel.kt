@@ -410,5 +410,22 @@ class MainViewModel(
         mediaControlManager.sendCustomAction("APPLY_LOOP_POINTS", bundle)
     }
     
-    fun findAbPair(song: Song): Pair<Song, Song>? = repository.findAbPair(song, library.allSongs.value ?: emptyList())
+    fun findAbPair(song: Song): Pair<Song, Song>? {
+        // UI 层现在即使在 library 里找不到也没关系，因为我们要实现“点 A 放全曲”喵！
+        // 我们改用一个同步包裹的探测（或者引导大人在真正播放时才去加载）
+        // 为了保持 UI 响应，我们在 viewModelScope 之外建议直接调用 repository 的原始逻辑
+        
+        // 修正：我们直接利用库里的 findAbPairRobust 逻辑，但为了方便 UI 同步显示图标，
+        // 我们给 library 增加一个全局感知能力，或者在这里直接搜全家桶喵
+        val allSongsInDb = library.allSongs.value ?: emptyList() 
+        // 注意：library.allSongs 已经被 DAO 过滤了，所以里面没有 B！
+        // 莱芙在这里必须手动去 repository 申请一次“全域探测”喵
+        
+        // 由于这个函数被 UI 的 Composable 调用频繁，我们不能直接在这里起协程喵。
+        // 我们建议在 PlaybackManager 加载时已经处理好了合体逻辑，
+        // 这里的 findAbPair 仅用于 UI 上的 [AB Loop] 标签显示喵。
+        
+        // 方案：让 library 提供一个未过滤的版本，或者干脆在这里通过文件名推断！
+        return repository.findAbPair(song, library.allSongsRaw.value ?: emptyList())
+    }
 }
