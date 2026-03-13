@@ -39,12 +39,14 @@ class LibraryViewModel(
 
     fun loadSongsFromDatabase() {
         coroutineScope.launch(Dispatchers.IO) {
-            val songs = repository.getAllSongs()
             val songsRaw = repository.getAllSongsRaw()
+            // --- 核心过滤：UI 显示只留 A 段或非 AB 曲目喵 ---
+            val filteredSongs = songsRaw.filter { !it.isAbPartB }
+            
             withContext(Dispatchers.Main) {
-                _allSongs.value = songs
+                _allSongs.value = filteredSongs
                 _allSongsRaw.value = songsRaw
-                rebuildLibrary(songs)
+                rebuildLibrary(filteredSongs)
             }
         }
     }
@@ -56,12 +58,15 @@ class LibraryViewModel(
         coroutineScope.launch {
             _syncStatus.value = "🔍 寻找新曲子中..."
             withContext(Dispatchers.IO) {
-                val songs = repository.getInitialScannedSongs(context)
+                val scannedSongs = repository.getInitialScannedSongs(context)
                 val songsRaw = repository.getAllSongsRaw()
+                // --- 核心过滤：UI 显示只留 A 段或非 AB 曲目喵 ---
+                val filteredSongs = songsRaw.filter { !it.isAbPartB }
+
                 withContext(Dispatchers.Main) {
-                    _allSongs.value = songs
+                    _allSongs.value = filteredSongs
                     _allSongsRaw.value = songsRaw
-                    rebuildLibrary(songs)
+                    rebuildLibrary(filteredSongs)
                     _syncStatus.value = ""
                 }
             }
