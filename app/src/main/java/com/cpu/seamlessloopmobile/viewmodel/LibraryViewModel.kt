@@ -9,6 +9,9 @@ import com.cpu.seamlessloopmobile.model.Song
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.async
+import com.cpu.seamlessloopmobile.data.SettingsManager
 
 /**
  * 乐库管理员喵！
@@ -16,40 +19,76 @@ import kotlinx.coroutines.withContext
  */
 class LibraryViewModel(
     private val repository: com.cpu.seamlessloopmobile.data.MusicRepository,
-    private val coroutineScope: kotlinx.coroutines.CoroutineScope
+    private val coroutineScope: kotlinx.coroutines.CoroutineScope,
+    private val settingsManager: SettingsManager? = null
 ) {
 
-    private val _allSongs = MutableLiveData<List<Song>>(emptyList())
-    val allSongs: LiveData<List<Song>> = _allSongs
+    private val _syncStatus = MutableStateFlow<String>("")
+    val syncStatus: StateFlow<String> = _syncStatus
 
-    private val _allSongsRaw = MutableLiveData<List<Song>>(emptyList())
-    val allSongsRaw: LiveData<List<Song>> = _allSongsRaw
+    private val _folders = MutableStateFlow<List<Folder>>(emptyList())
+    val folders: StateFlow<List<Folder>> = _folders
 
-    private val _folders = MutableLiveData<List<Folder>>(emptyList())
-    val folders: LiveData<List<Folder>> = _folders
+    private val _albums = MutableStateFlow<List<Folder>>(emptyList())
+    val albums: StateFlow<List<Folder>> = _albums
 
-    private val _albums = MutableLiveData<List<Folder>>(emptyList())
-    val albums: LiveData<List<Folder>> = _albums
+    private val _artists = MutableStateFlow<List<Folder>>(emptyList())
+    val artists: StateFlow<List<Folder>> = _artists
 
-    private val _artists = MutableLiveData<List<Folder>>(emptyList())
-    val artists: LiveData<List<Folder>> = _artists
+    // --- 响应式数据流：APlayer 的瞬发秘籍喵！🚀 ---
 
-    private val _syncStatus = MutableLiveData<String>("")
-    val syncStatus: LiveData<String> = _syncStatus
+    // 0. 快照统计流：大人一推门就能看到的“假象”（真相的前哨）喵！🚀
+    private val _stats = MutableStateFlow(settingsManager?.lastLibraryStats ?: SettingsManager.LibraryStats())
+    val stats: StateFlow<SettingsManager.LibraryStats> = _stats
 
-    fun loadSongsFromDatabase() {
-        coroutineScope.launch(Dispatchers.IO) {
-            val songsRaw = repository.getAllSongsRaw()
-            // --- 核心过滤：UI 显示只留 A 段或非 AB 曲目喵 ---
-            val filteredSongs = songsRaw.filter { !it.isAbPartB }
-            
-            withContext(Dispatchers.Main) {
-                _allSongs.value = filteredSongs
-                _allSongsRaw.value = songsRaw
-                rebuildLibrary(filteredSongs)
+    // 1. 全部歌曲（过滤掉 B 段）
+    val allSongs: StateFlow<List<Song>> = repository.getAllSongsFlow()
+        .stateIn(coroutineScope, SharingStarted.Eagerly, emptyList())
+
+    // 2. 原始全量歌曲（包含 B 段）
+    val allSongsRaw: StateFlow<List<Song>> = repository.getAllSongsRawFlow()
+        .stateIn(coroutineScope, SharingStarted.Eagerly, emptyList())
+
+    init {
+        // APlayer 秘籍：统一指挥，全速前进喵！🚀
+        coroutineScope.launch {
+            allSongs.collect { songs ->
+                if (songs.isNotEmpty()) {
+                    android.util.Log.d("LibraryViewModel", "🚀 收到数据库水流，准备开始分类处理 (${songs.size} 首歌) 喵！")
+                    val startTime = System.currentTimeMillis()
+                    
+                    // 继承 APlayer 意志：全并行分类，压榨每一核性能喵！🚀
+                    withContext(Dispatchers.Default) {
+                        val foldersDeferred = async { processFolders(songs) }
+                        val albumsDeferred = async { processAlbums(songs) }
+                        val artistsDeferred = async { processArtists(songs) }
+                        
+                        val f = foldersDeferred.await()
+                        val a = albumsDeferred.await()
+                        val r = artistsDeferred.await()
+                        
+                        _folders.value = f
+                        _albums.value = a
+                        _artists.value = r
+
+                        // 把这一刻的美好记在小本本上喵！🚀
+                        val newStats = SettingsManager.LibraryStats(
+                            songCount = songs.size,
+                            albumCount = a.size,
+                            artistCount = r.size,
+                            folderCount = f.size
+                        )
+                        _stats.value = newStats
+                        settingsManager?.lastLibraryStats = newStats
+                        
+                        val endTime = System.currentTimeMillis()
+                        android.util.Log.d("LibraryViewModel", "✅ 分类处理完成，耗时 ${endTime - startTime}ms 喵！")
+                    }
+                }
             }
         }
     }
+
 
     /**
      * 核心扫描逻辑喵！
@@ -57,58 +96,53 @@ class LibraryViewModel(
     fun scanLibrary(context: Context) {
         coroutineScope.launch {
             _syncStatus.value = "🔍 寻找新曲子中..."
+            // 扫描完成后，数据库会发生变化，Room Flow 会自动通知到 UI 喵！🚀
             withContext(Dispatchers.IO) {
-                val scannedSongs = repository.getInitialScannedSongs(context)
-                val songsRaw = repository.getAllSongsRaw()
-                // --- 核心过滤：UI 显示只留 A 段或非 AB 曲目喵 ---
-                val filteredSongs = songsRaw.filter { !it.isAbPartB }
-
-                withContext(Dispatchers.Main) {
-                    _allSongs.value = filteredSongs
-                    _allSongsRaw.value = songsRaw
-                    rebuildLibrary(filteredSongs)
-                    _syncStatus.value = ""
-                }
+                repository.getInitialScannedSongs(context)
             }
+            _syncStatus.value = ""
         }
     }
 
-    private fun rebuildLibrary(songs: List<Song>) {
-        coroutineScope.launch(Dispatchers.Default) {
-            val folderMap = mutableMapOf<String, MutableList<Song>>()
-            val albumMap = mutableMapOf<String, MutableList<Song>>()
-            val artistMap = mutableMapOf<String, MutableList<Song>>()
-
-            songs.forEach { song ->
-                // 文件夹分类喵
-                val parent = java.io.File(song.filePath).parent ?: "未知目录"
-                folderMap.getOrPut(parent) { mutableListOf() }.add(song)
-
-                // 专辑分类喵
-                val album = song.album ?: "未知专辑"
-                albumMap.getOrPut(album) { mutableListOf() }.add(song)
-
-                // 歌手分类喵
-                val artist = song.artist ?: "未知歌手"
-                artistMap.getOrPut(artist) { mutableListOf() }.add(song)
-            }
-
-            val folders = folderMap.map { Folder(java.io.File(it.key).name, it.key, it.value.size, it.value) }.sortedBy { it.name }
-            val albums = albumMap.map { Folder(it.key, "album_${it.key}", it.value.size, it.value) }.sortedBy { it.name }
-            val artists = artistMap.map { Folder(it.key, "artist_${it.key}", it.value.size, it.value) }.sortedBy { it.name }
-
-            withContext(Dispatchers.Main) {
-                _folders.value = folders
-                _albums.value = albums
-                _artists.value = artists
-            }
+    private fun processFolders(songs: List<Song>): List<Folder> {
+        val folderMap = mutableMapOf<String, MutableList<Song>>()
+        songs.forEach { song ->
+            val path = song.filePath
+            val lastSlash = path.lastIndexOf(java.io.File.separator)
+            val parent = if (lastSlash != -1) path.substring(0, lastSlash) else "未知目录"
+            folderMap.getOrPut(parent) { mutableListOf() }.add(song)
         }
+        return folderMap.map { 
+            val path = it.key
+            val lastSlash = path.lastIndexOf(java.io.File.separator)
+            val name = if (lastSlash != -1) path.substring(lastSlash + 1) else path
+            Folder(name, path, it.value.size, it.value) 
+        }.sortedBy { it.name }
     }
+
+    private fun processAlbums(songs: List<Song>): List<Folder> {
+        val albumMap = mutableMapOf<String, MutableList<Song>>()
+        songs.forEach { song ->
+            val album = song.album ?: "未知专辑"
+            albumMap.getOrPut(album) { mutableListOf() }.add(song)
+        }
+        return albumMap.map { Folder(it.key, "album_${it.key}", it.value.size, it.value) }.sortedBy { it.name }
+    }
+
+    private fun processArtists(songs: List<Song>): List<Folder> {
+        val artistMap = mutableMapOf<String, MutableList<Song>>()
+        songs.forEach { song ->
+            val artist = song.artist ?: "未知歌手"
+            artistMap.getOrPut(artist) { mutableListOf() }.add(song)
+        }
+        return artistMap.map { Folder(it.key, "artist_${it.key}", it.value.size, it.value) }.sortedBy { it.name }
+    }
+
 
     fun updateSongLoopPoints(song: Song, start: Long, end: Long) {
         coroutineScope.launch {
             repository.updateSongLoopPoints(song, start, end)
-            loadSongsFromDatabase() // 暴力但有效的刷新喵
+            // 不需要再手动刷新了喵，真谛就在于此喵！🚀
         }
     }
 }

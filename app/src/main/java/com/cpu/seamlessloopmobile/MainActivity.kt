@@ -92,9 +92,13 @@ class MainActivity : ComponentActivity() {
 
         if (permissions.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
             viewModel.openHome()
-            viewModel.loadSongsFromDatabase() // 从数据库快速加载
-            viewModel.loadPlaylists() // 加载歌单
-            viewModel.scanLibrary(this) // 后台继续扫描新歌曲
+            // APlayer 风格：子模块 init 已经帮我们抢跑了喵，这里直接等扫描就行喵
+            
+            // --- 优化：扫描工作稍后再悄悄开始喵 ---
+            lifecycleScope.launch(Dispatchers.Main) {
+                kotlinx.coroutines.delay(800) // 让数据库里的老数据先露个脸，再轻轻启动扫描喵
+                viewModel.scanLibrary(this@MainActivity) 
+            }
         } else {
             ActivityCompat.requestPermissions(this, permissions.toTypedArray(), 1001)
         }

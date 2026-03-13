@@ -1,6 +1,7 @@
 package com.cpu.seamlessloopmobile.model
 
 import androidx.room.*
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PlaylistDao {
@@ -11,6 +12,13 @@ interface PlaylistDao {
         ORDER BY p.SortOrder ASC, p.CreatedAt DESC
     """)
     suspend fun getPlaylistsWithCounts(): List<PlaylistWithCount>
+
+    @Query("""
+        SELECT p.*, (SELECT COUNT(*) FROM PlaylistItems pi JOIN LoopPoints s ON pi.SongId = s.Id WHERE pi.PlaylistId = p.Id AND s.IsAbPartB = 0) as songCount 
+        FROM Playlists p 
+        ORDER BY p.SortOrder ASC, p.CreatedAt DESC
+    """)
+    fun getPlaylistsWithCountsFlow(): Flow<List<PlaylistWithCount>>
 
     data class PlaylistWithCount(
         @Embedded val playlist: Playlist,

@@ -13,7 +13,9 @@ import androidx.room.PrimaryKey
     tableName = "LoopPoints", // 电脑端表名
     indices = [
         Index(value = ["FilePath"]), // 移除 unique=true，允许同步时的空路径共存喵
-        Index(value = ["FileName", "duration"]) // 用文件名+时长作为手机端核心指纹
+        Index(value = ["FileName", "duration"]), // 用文件名+时长作为手机端核心指纹
+        Index(value = ["FileName"]), // 增加文件名索引，配合 ORDER BY FileName 提速喵！
+        Index(value = ["IsAbPartB"]) // 为隐藏标记建立索引，提速查询喵！
     ]
 )
 data class Song(

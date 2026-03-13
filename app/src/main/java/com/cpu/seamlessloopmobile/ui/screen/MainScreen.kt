@@ -16,6 +16,7 @@ import com.cpu.seamlessloopmobile.ui.screen.category.CategoryScreen
 import com.cpu.seamlessloopmobile.ui.screen.home.HomeScreen
 import com.cpu.seamlessloopmobile.ui.screen.songlist.SongListScreen
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
+import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.viewmodel.MusicUiState
 import androidx.activity.compose.BackHandler
 
@@ -51,12 +52,12 @@ fun MainScreen(
     onSyncPc: () -> Unit
 ) {
     val uiState by viewModel.uiState.observeAsState(MusicUiState.Home)
-    val allSongs by viewModel.allSongs.observeAsState(emptyList())
-    val folders by viewModel.folders.observeAsState(emptyList())
-    val albums by viewModel.albums.observeAsState(emptyList())
-    val artists by viewModel.artists.observeAsState(emptyList())
-    val playlistsWithCounts by viewModel.playlistsWithCounts.observeAsState(emptyList())
-    val playlists by viewModel.playlists.observeAsState(emptyList())
+    val allSongs by viewModel.allSongs.collectAsState()
+    val folders by viewModel.folders.collectAsState()
+    val albums by viewModel.albums.collectAsState()
+    val artists by viewModel.artists.collectAsState()
+    val playlistsWithCounts by viewModel.playlistsWithCounts.collectAsState()
+    val playlists by viewModel.playlists.collectAsState()
     val currentSongIndex by viewModel.currentSongIndex.observeAsState(-1)
     val currentPlaylist by viewModel.currentPlaylist.observeAsState(emptyList())
     val isSelectionMode by viewModel.isSelectionMode.observeAsState(false)
@@ -65,7 +66,8 @@ fun MainScreen(
     val playbackState by viewModel.playbackState.collectAsState()
     val audioPlayState by viewModel.audioPlayState.collectAsState()
     val isPlayingPanelVisible by viewModel.isPlayingPanelVisible.observeAsState(false)
-    val syncStatus by viewModel.syncStatus.observeAsState("")
+    val syncStatus by viewModel.syncStatus.collectAsState()
+    val libraryStats by viewModel.libraryStats.collectAsState()
     val selectedFolders by viewModel.selectedFolders.observeAsState(emptySet())
     
     // --- 导航滚动位置记忆中心喵 ---
@@ -163,10 +165,10 @@ fun MainScreen(
                         val playlistPairs = playlistsWithCounts.map { it.playlist to it.songCount }
 
                         HomeScreen(
-                            localCount = allSongs.size,
-                            albumsCount = albums.size,
-                            artistsCount = artists.size,
-                            foldersCount = folders.size,
+                            localCount = if (allSongs.isEmpty() && libraryStats.songCount > 0) libraryStats.songCount else allSongs.size,
+                            albumsCount = if (albums.isEmpty() && libraryStats.albumCount > 0) libraryStats.albumCount else albums.size,
+                            artistsCount = if (artists.isEmpty() && libraryStats.artistCount > 0) libraryStats.artistCount else artists.size,
+                            foldersCount = if (folders.isEmpty() && libraryStats.folderCount > 0) libraryStats.folderCount else folders.size,
                             playlists = playlistPairs,
                             onOpenAllSongs = {
                                 viewModel.openSongList("全部歌曲", allSongs, MusicUiState.ListType.ALL_SONGS)

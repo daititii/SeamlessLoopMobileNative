@@ -7,12 +7,14 @@ import androidx.lifecycle.viewModelScope
 import com.cpu.seamlessloopmobile.model.Folder
 import com.cpu.seamlessloopmobile.model.Playlist
 import com.cpu.seamlessloopmobile.model.Song
+import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.data.MusicRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.StateFlow
 
 enum class PlayMode {
     LIST_LOOP,    // 列表循环
@@ -161,14 +163,15 @@ class MainViewModel(
     }
 
     // --- 数据代理层 (对接 UI 和子模块) ---
-    val allSongs: LiveData<List<Song>> get() = library.allSongs
-    val folders: LiveData<List<Folder>> get() = library.folders
-    val albums: LiveData<List<Folder>> get() = library.albums
-    val artists: LiveData<List<Folder>> get() = library.artists
-    val syncStatus: LiveData<String> get() = library.syncStatus
+    val allSongs: StateFlow<List<Song>> get() = library.allSongs
+    val folders: StateFlow<List<Folder>> get() = library.folders
+    val albums: StateFlow<List<Folder>> get() = library.albums
+    val artists: StateFlow<List<Folder>> get() = library.artists
+    val syncStatus: StateFlow<String> get() = library.syncStatus
+    val libraryStats: StateFlow<com.cpu.seamlessloopmobile.data.SettingsManager.LibraryStats> get() = library.stats
 
-    val playlists: LiveData<List<Playlist>> get() = playlist.playlists
-    val playlistsWithCounts get() = playlist.playlistsWithCounts
+    val playlists: StateFlow<List<Playlist>> get() = playlist.playlists
+    val playlistsWithCounts: StateFlow<List<PlaylistDao.PlaylistWithCount>> get() = playlist.playlistsWithCounts
 
     val isSelectionMode: LiveData<Boolean> get() = selection.isSelectionMode
     val selectedItems: LiveData<Set<String>> get() = selection.selectedItems
@@ -211,10 +214,10 @@ class MainViewModel(
 
     // --- 核心业务接口转发喵 ---
 
-    fun loadSongsFromDatabase() = library.loadSongsFromDatabase()
+    // --- 核心业务接口转发喵 ---
+    // (APlayer 重构：这些现在都是自动响应的，不需要手动拉水闸了喵！🚀)
+
     fun scanLibrary(context: android.content.Context) = library.scanLibrary(context)
-    fun loadPlaylists() = playlist.loadPlaylists()
-    fun refreshPlaylists() = playlist.loadPlaylists()
 
     fun setSelectionMode(enabled: Boolean) = selection.setSelectionMode(enabled)
     fun toggleSelection(id: String) = selection.toggleSelection(id)

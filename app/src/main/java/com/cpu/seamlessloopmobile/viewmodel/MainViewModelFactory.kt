@@ -24,9 +24,10 @@ class MainViewModelFactory(
             // 莱芙帮大家找了个统一的大伞（Scope）喵！
             val scope = (viewModel as ViewModel).viewModelScope
             
-            val libraryVM = LibraryViewModel(repository, scope)
+            val settingsManager = com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(context)
+            val libraryVM = LibraryViewModel(repository, scope, settingsManager)
             val selectionVM = SelectionViewModel()
-            val playlistVM = PlaylistViewModel(repository, scope)
+            val playlistVM = PlaylistViewModel(repository, scope, settingsManager)
             
             // 设置子管家引用
             viewModel.library = libraryVM

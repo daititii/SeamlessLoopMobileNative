@@ -1,11 +1,18 @@
 package com.cpu.seamlessloopmobile.model
 
 import androidx.room.*
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface SongDao {
     @Query("SELECT * FROM LoopPoints WHERE IsAbPartB = 0 ORDER BY FileName ASC")
     suspend fun getAllSongs(): List<Song>
+
+    @Query("SELECT * FROM LoopPoints WHERE IsAbPartB = 0 ORDER BY FileName ASC")
+    fun getAllSongsFlow(): Flow<List<Song>>
+
+    @Query("SELECT * FROM LoopPoints ORDER BY FileName ASC")
+    fun getAllSongsRawFlow(): Flow<List<Song>>
 
     @Query("SELECT * FROM LoopPoints WHERE FileName = :name AND duration = :duration LIMIT 1")
     suspend fun getSongByFingerprint(name: String, duration: Long): Song?

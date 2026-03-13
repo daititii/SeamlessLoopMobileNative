@@ -21,6 +21,7 @@ class SettingsManager(context: Context) {
         private const val KEY_PLAY_MODE = "play_mode"
         private const val KEY_IS_AB_MODE = "is_ab_mode"
         private const val KEY_CURRENT_SONG_INDEX = "current_song_index"
+        private const val KEY_LIBRARY_STATS = "library_stats"
         
         @Volatile
         private var instance: SettingsManager? = null
@@ -57,6 +58,13 @@ class SettingsManager(context: Context) {
         get() = prefs.getInt(KEY_CURRENT_SONG_INDEX, -1)
         set(value) = prefs.edit().putInt(KEY_CURRENT_SONG_INDEX, value).apply()
 
+    var lastLibraryStats: LibraryStats?
+        get() {
+            val json = prefs.getString(KEY_LIBRARY_STATS, null) ?: return null
+            return try { gson.fromJson(json, LibraryStats::class.java) } catch (e: Exception) { null }
+        }
+        set(value) = prefs.edit().putString(KEY_LIBRARY_STATS, gson.toJson(value)).apply()
+
     /**
      * 一键记录所有关键状态喵！
      */
@@ -77,4 +85,15 @@ class SettingsManager(context: Context) {
             apply()
         }
     }
+
+    /**
+     * 图书馆统计快照，用于“抢跑”显示喵！🚀
+     */
+    data class LibraryStats(
+        val songCount: Int = 0,
+        val albumCount: Int = 0,
+        val artistCount: Int = 0,
+        val folderCount: Int = 0,
+        val playlistNamesWithCounts: Map<String, Int> = emptyMap()
+    )
 }

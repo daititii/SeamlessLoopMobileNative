@@ -5,6 +5,7 @@ import com.cpu.seamlessloopmobile.model.Playlist
 import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.model.SongDao
+import kotlinx.coroutines.flow.Flow
 
 /**
  * MusicRepository (超级指挥官 - Facade)：
@@ -29,6 +30,10 @@ class MusicRepository(
 
     suspend fun getAllSongsRaw(): List<Song> = songRepository.getAllSongsRaw()
 
+    fun getAllSongsFlow(): Flow<List<Song>> = songDao.getAllSongsFlow()
+
+    fun getAllSongsRawFlow(): Flow<List<Song>> = songDao.getAllSongsRawFlow()
+
     suspend fun getSongByPath(path: String): Song? = songRepository.getSongByPath(path)
     
     suspend fun getSongById(id: Long): Song? = songRepository.getSongById(id)
@@ -46,6 +51,9 @@ class MusicRepository(
     suspend fun getAllPlaylists(): List<Playlist> = playlistRepository.getAllPlaylists()
 
     suspend fun getPlaylistsWithCounts(): List<com.cpu.seamlessloopmobile.model.PlaylistDao.PlaylistWithCount> = playlistRepository.getPlaylistsWithCounts()
+
+    fun getPlaylistsWithCountsFlow(): Flow<List<com.cpu.seamlessloopmobile.model.PlaylistDao.PlaylistWithCount>> = 
+        playlistDao.getPlaylistsWithCountsFlow()
 
     suspend fun getSongsInPlaylist(playlistId: Int): List<Song> = playlistRepository.getSongsInPlaylist(playlistId)
 
