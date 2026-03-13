@@ -67,7 +67,12 @@ fun MainScreen(
     val isPlayingPanelVisible by viewModel.isPlayingPanelVisible.observeAsState(false)
     val syncStatus by viewModel.syncStatus.observeAsState("")
     val selectedFolders by viewModel.selectedFolders.observeAsState(emptySet())
-
+    
+    // --- 导航滚动位置记忆中心喵 ---
+    // 我们把 LazyListState 留在 MainScreen 这里，这样当 AnimatedContent 切换内部页面时，
+    // 即使旧页面被销毁了，只要 MainScreen 还在，状态就还在喵！
+    val categoryScrollStates = remember { mutableMapOf<String, androidx.compose.foundation.lazy.LazyListState>() }
+    val songListScrollStates = remember { mutableMapOf<String, androidx.compose.foundation.lazy.LazyListState>() }
 
     // 计算当前页面展示的歌曲，用于“全选”喵
     val songsInCurrentPage = remember(uiState, allSongs, folders, albums, artists) {
@@ -190,8 +195,11 @@ fun MainScreen(
                             "文件夹" -> folders
                             else -> state.items
                         }
+                        val currentPlayingPath = currentPlaylist.getOrNull(currentSongIndex)?.filePath
+
                         CategoryScreen(
                             items = itemsToShow,
+                            currentPlayingPath = currentPlayingPath,
                             onOpenFolder = { folder ->
                                 val type = when {
                                     folder.path.startsWith("album_") -> MusicUiState.ListType.ALBUM
@@ -202,7 +210,10 @@ fun MainScreen(
                             },
                             isSelectionMode = isSelectionMode,
                             selectedFolders = selectedFolders,
-                            onToggleFolderSelection = { folder -> viewModel.toggleFolderSelection(folder) }
+                            onToggleFolderSelection = { folder -> viewModel.toggleFolderSelection(folder) },
+                            listState = categoryScrollStates.getOrPut(state.title) { 
+                                androidx.compose.foundation.lazy.LazyListState() 
+                            }
                         )
                     }
                     is MusicUiState.SongList -> {
@@ -232,6 +243,9 @@ fun MainScreen(
                             },
                             onShowMoreOptions = { song ->
                                 // TODO
+                            },
+                            listState = songListScrollStates.getOrPut("${state.type}_${state.title}") {
+                                androidx.compose.foundation.lazy.LazyListState()
                             }
                         )
                     }

@@ -224,11 +224,14 @@ fun SongListItem(
 fun FolderListItem(
     folder: Folder,
     isSelected: Boolean,
+    isPlaying: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
     Surface(
-        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer 
+                else if (isPlaying) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
+                else Color.Transparent,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -244,19 +247,21 @@ fun FolderListItem(
             Icon(
                 imageVector = Icons.Default.Folder,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = folder.name,
-                    style = MaterialTheme.typography.bodyLarge
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal
                 )
                 Text(
                     text = "${folder.songs.size} 首歌曲",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (isSelected || isPlaying) MaterialTheme.colorScheme.primary.copy(alpha=0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             

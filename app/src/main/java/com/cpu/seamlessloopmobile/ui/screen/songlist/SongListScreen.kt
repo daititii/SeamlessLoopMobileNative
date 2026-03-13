@@ -19,6 +19,9 @@ import com.cpu.seamlessloopmobile.ui.components.SongListItem
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.ExperimentalFoundationApi
 
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SongListScreen(
@@ -28,10 +31,12 @@ fun SongListScreen(
     selectedItems: Set<String>,
     onPlaySong: (Song) -> Unit,
     onToggleSelection: (Song) -> Unit,
-    onShowMoreOptions: (Song) -> Unit
+    onShowMoreOptions: (Song) -> Unit,
+    listState: LazyListState = rememberLazyListState()
 ) {
     LazyColumn(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier.fillMaxSize(),
+        state = listState
     ) {
         items(songs, key = { it.filePath }) { song ->
             val isPlaying = song.filePath == currentPlayingSongPath

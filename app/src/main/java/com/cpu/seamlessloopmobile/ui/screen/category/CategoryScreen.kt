@@ -15,22 +15,30 @@ import com.cpu.seamlessloopmobile.model.Folder
 import com.cpu.seamlessloopmobile.ui.components.FolderListItem
 import androidx.compose.ui.graphics.Color
 
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+
 @Composable
 fun CategoryScreen(
     items: List<Folder>,
+    currentPlayingPath: String?,
     onOpenFolder: (Folder) -> Unit,
     isSelectionMode: Boolean,
     selectedFolders: Set<Folder>,
-    onToggleFolderSelection: (Folder) -> Unit
+    onToggleFolderSelection: (Folder) -> Unit,
+    listState: LazyListState = rememberLazyListState()
 ) {
     LazyColumn(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier.fillMaxSize(),
+        state = listState
     ) {
         items(items) { folder ->
             val isSelected = selectedFolders.any { it.path == folder.path }
+            val isPlaying = currentPlayingPath != null && folder.songs.any { it.filePath == currentPlayingPath }
             FolderListItem(
                 folder = folder,
                 isSelected = isSelected,
+                isPlaying = isPlaying,
                 onClick = {
                     if (isSelectionMode) {
                         onToggleFolderSelection(folder)
