@@ -98,6 +98,13 @@ class LibraryViewModel(
             _syncStatus.value = "🔍 寻找新曲子中..."
             // 扫描完成后，数据库会发生变化，Room Flow 会自动通知到 UI 喵！🚀
             withContext(Dispatchers.IO) {
+                // 1. 先进行大扫除，清理掉不见了的本地魂灵喵
+                val cleanedCount = repository.cleanupStaleSongs(context)
+                if (cleanedCount > 0) {
+                    android.util.Log.d("LibraryViewModel", "🧹 大扫除完成，清理了 $cleanedCount 条失效记录喵！")
+                }
+                
+                // 2. 再进行常规扫描
                 repository.getInitialScannedSongs(context)
             }
             _syncStatus.value = ""

@@ -14,6 +14,30 @@ import java.io.File
 class MusicScannerRepository(private val songDao: SongDao) {
 
     /**
+     * 大扫除：清理掉那些有路径但文件已消失的失效记录喵！
+     * 注意：为了安全，如果没有路径（PC同步过来的）或者存储根目录不可达，莱芙会跳过它们喵。
+     */
+    suspend fun cleanupStaleSongs(context: Context) = withContext(Dispatchers.IO) {
+        val allSongs = songDao.getAllSongsRaw()
+        val staleIds = mutableListOf<Long>()
+        
+        allSongs.forEach { song ->
+            if (song.filePath.isNotBlank()) {
+                val file = File(song.filePath)
+                // 只有当父目录存在（排除SD卡拔出的情况），且文件确实不见了，才标记为失效喵
+                if (file.parentFile?.exists() == true && !file.exists()) {
+                    staleIds.add(song.id)
+                }
+            }
+        }
+        
+        if (staleIds.isNotEmpty()) {
+            songDao.deleteSongsByIds(staleIds)
+        }
+        staleIds.size
+    }
+
+    /**
      * 初始同步扫描
      */
     suspend fun getInitialScannedSongs(context: Context): List<Song> = withContext(Dispatchers.IO) {

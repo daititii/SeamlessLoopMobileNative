@@ -113,4 +113,10 @@ interface SongDao {
 
     @Delete
     suspend fun deleteSong(song: Song): Int
+
+    @Query("DELETE FROM LoopPoints WHERE Id IN (:ids)")
+    suspend fun deleteSongsByIds(ids: List<Long>): Int
+
+    @Query("SELECT * FROM LoopPoints WHERE FilePath LIKE :pathPrefix || '%'")
+    suspend fun getSongsByPathPrefix(pathPrefix: String): List<Song>
 }

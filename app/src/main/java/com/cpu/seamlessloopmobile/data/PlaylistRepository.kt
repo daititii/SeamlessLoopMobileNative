@@ -92,6 +92,10 @@ class PlaylistRepository(
         val total = processedSongs.size
         playlistDao.clearPlaylist(playlist.id)
         
+        // --- 核心优化：同步前先搜集该路径下的旧魂灵喵 ---
+        val folderSongsInDb = songDao.getSongsByPathPrefix(folderPath)
+        val processedPathSet = processedSongs.map { it.filePath }.toSet()
+        
         // 提前捞取一份数据库快照喵
         val allDbSongs = songDao.getAllSongsRaw()
         val dbSongsByFingerprint = allDbSongs.associateBy { "${it.fileName}|${it.duration}" }
@@ -134,6 +138,15 @@ class PlaylistRepository(
             if (songId > 0 && !song.isAbPartB) {
                 playlistDao.addSongsToPlaylist(playlist.id, listOf(songId))
             }
+        }
+
+        // --- 核心优化：清理掉物理文件夹中已经消失，但数据库中还有的旧记录喵 ---
+        val staleIds = folderSongsInDb
+            .filter { it.filePath !in processedPathSet }
+            .map { it.id }
+        
+        if (staleIds.isNotEmpty()) {
+            songDao.deleteSongsByIds(staleIds)
         }
     }
 }
