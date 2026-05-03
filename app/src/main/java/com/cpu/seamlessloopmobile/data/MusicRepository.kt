@@ -46,6 +46,8 @@ class MusicRepository(
 
     suspend fun updateSongLoopPoints(song: Song, start: Long, end: Long) = songRepository.updateSongLoopPoints(song, start, end)
 
+    suspend fun updateSongRating(song: Song, rating: Int) = songRepository.updateSongRating(song, rating)
+
     // --- 歌单相关转发 (PlaylistRepository) ---
 
     suspend fun getAllPlaylists(): List<Playlist> = playlistRepository.getAllPlaylists()

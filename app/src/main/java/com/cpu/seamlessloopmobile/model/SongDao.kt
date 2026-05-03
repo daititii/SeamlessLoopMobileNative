@@ -29,6 +29,12 @@ interface SongDao {
     @Query("UPDATE LoopPoints SET LoopStart = :start, LoopEnd = :end, TotalSamples = :total WHERE Id = :songId")
     suspend fun updateLoopPoints(songId: Long, start: Long, end: Long, total: Long)
 
+    @Query("UPDATE LoopPoints SET LoopStart = :start, LoopEnd = :end, TotalSamples = :total, Rating = :rating, Artist = :artist, Album = :album, DisplayName = :displayName, CoverPath = :coverPath WHERE Id = :songId")
+    suspend fun updateSyncMetadata(songId: Long, start: Long, end: Long, total: Long, rating: Int, artist: String?, album: String?, displayName: String?, coverPath: String?)
+
+    @Query("UPDATE LoopPoints SET Rating = :rating WHERE Id = :songId")
+    suspend fun updateSongRating(songId: Long, rating: Int)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSong(song: Song): Long
 

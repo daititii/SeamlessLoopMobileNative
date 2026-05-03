@@ -64,6 +64,12 @@ data class Song(
     val duration: Long = 0,          // 毫秒级时长（用于列表进度显示）
     val isLoopEnabled: Boolean = true,
     
+    @ColumnInfo(name = "Rating")
+    val rating: Int = 0,
+
+    @ColumnInfo(name = "CoverPath")
+    val coverPath: String? = null,
+
     @ColumnInfo(name = "IsAbPartB")
     val isAbPartB: Boolean = false   // 标记这是否是 AB 模式中被隐藏的 B 段
 )

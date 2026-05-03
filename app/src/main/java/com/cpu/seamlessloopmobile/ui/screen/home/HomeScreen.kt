@@ -32,11 +32,13 @@ fun HomeScreen(
     albumsCount: Int,
     artistsCount: Int,
     foldersCount: Int,
+    favoritesCount: Int,
     playlists: List<Pair<Playlist, Int>>,
     onOpenAllSongs: () -> Unit,
     onOpenAlbums: () -> Unit,
     onOpenArtists: () -> Unit,
     onOpenFolders: () -> Unit,
+    onOpenFavorites: () -> Unit,
     onOpenPlaylist: (Playlist) -> Unit,
     isSelectionMode: Boolean,
     selectedPlaylists: Set<Int>,
@@ -85,6 +87,14 @@ fun HomeScreen(
                 onClick = onOpenFolders
             )
         }
+        item {
+            CategoryCard(
+                iconId = android.R.drawable.btn_star_big_on,
+                title = "已评分",
+                count = favoritesCount,
+                onClick = onOpenFavorites
+            )
+        }
 
         if (playlists.isNotEmpty()) {
             item(span = { GridItemSpan(2) }) {
@@ -120,6 +130,7 @@ fun HomeScreenPreview() {
             albumsCount = 15,
             artistsCount = 8,
             foldersCount = 5,
+            favoritesCount = 3,
             playlists = listOf(
                 Playlist(id = 1, name = "精选循环") to 10,
                 Playlist(id = 2, name = "电脑同步", isFolderLinked = 1) to 50,
@@ -129,6 +140,7 @@ fun HomeScreenPreview() {
             onOpenAlbums = {},
             onOpenArtists = {},
             onOpenFolders = {},
+            onOpenFavorites = {},
             onOpenPlaylist = {},
             isSelectionMode = false,
             selectedPlaylists = emptySet(),

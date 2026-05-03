@@ -138,7 +138,7 @@ fun PlayingPanel(
                     beyondViewportPageCount = 1
                 ) { page ->
                     when (page) {
-                        0 -> MainInfoPage(songItem, isPlaying) // 主页只剩封面和歌曲信息
+                        0 -> MainInfoPage(songItem, isPlaying, onRatingClick = { viewModel.cycleSongRating(songItem) }) // 主页只剩封面和歌曲信息
                         1 -> FineTunePage(
                             song = songItem,
                             tempLoopStart = tempLoopStart,

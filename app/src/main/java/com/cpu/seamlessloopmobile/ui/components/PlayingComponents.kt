@@ -4,6 +4,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -30,7 +31,8 @@ import kotlinx.coroutines.delay
 @Composable
 fun MainInfoPage(
     songItem: Song,
-    isPlaying: Boolean
+    isPlaying: Boolean,
+    onRatingClick: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -91,6 +93,32 @@ fun MainInfoPage(
             ),
             textAlign = TextAlign.Center
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // --- 评分控制 (0-5 循环) ---
+        Button(
+            onClick = onRatingClick,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.White.copy(alpha = 0.05f),
+                contentColor = if (songItem.rating > 0) Color(0xFFFFD700) else Color.Gray
+            ),
+            shape = RoundedCornerShape(16.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (songItem.rating > 0) Icons.Default.Star else Icons.Default.StarBorder,
+                    contentDescription = "Rating",
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (songItem.rating > 0) "${songItem.rating}" else "未评分",
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.weight(1f))
     }

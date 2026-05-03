@@ -3,6 +3,7 @@ package com.cpu.seamlessloopmobile.data
 import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.model.SongDao
+import com.cpu.seamlessloopmobile.model.PlayQueueDao
 import org.junit.Assert.*
 import org.junit.Test
 import org.mockito.Mockito.mock
@@ -15,7 +16,8 @@ class ABLoopTest {
     // 莱芙直接提供两个空壳管家，避免引入复杂的第三方 Mock 库喵！
     private val fakeSongDao = org.mockito.Mockito.mock(SongDao::class.java) // 假设存在 Mock 方式，如果编译不过莱芙再教您手写 Fake 喵
     private val fakePlaylistDao = org.mockito.Mockito.mock(PlaylistDao::class.java)
-    private val repository = MusicRepository(fakeSongDao, fakePlaylistDao)
+    private val fakePlayQueueDao = org.mockito.Mockito.mock(PlayQueueDao::class.java)
+    private val repository = MusicRepository(fakeSongDao, fakePlaylistDao, fakePlayQueueDao)
 
     @Test
     fun testFindAbPairSuccess() {

@@ -41,6 +41,10 @@ class SongRepository(private val songDao: SongDao) {
         newSong
     }
 
+    suspend fun updateSongRating(song: Song, rating: Int) = withContext(Dispatchers.IO) {
+        songDao.updateSongRating(song.id, rating)
+    }
+
     /**
      * 应急修复：通过路径去系统库找寻 MediaID。
      */

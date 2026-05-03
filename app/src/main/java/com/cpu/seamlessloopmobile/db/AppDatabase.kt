@@ -15,7 +15,7 @@ import com.cpu.seamlessloopmobile.model.PlayQueueDao
 
 import androidx.room.TypeConverters
 
-@Database(entities = [Song::class, Playlist::class, PlaylistItem::class, PlaylistFolder::class, PlayQueueItem::class], version = 10, exportSchema = false)
+@Database(entities = [Song::class, Playlist::class, PlaylistItem::class, PlaylistFolder::class, PlayQueueItem::class], version = 11, exportSchema = false)
 @TypeConverters(DateConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun songDao(): SongDao

@@ -35,6 +35,9 @@ class LibraryViewModel(
     private val _artists = MutableStateFlow<List<Folder>>(emptyList())
     val artists: StateFlow<List<Folder>> = _artists
 
+    private val _favorites = MutableStateFlow<List<Song>>(emptyList())
+    val favorites: StateFlow<List<Song>> = _favorites
+
     // --- 响应式数据流：APlayer 的瞬发秘籍喵！🚀 ---
 
     // 0. 快照统计流：大人一推门就能看到的“假象”（真相的前哨）喵！🚀
@@ -62,14 +65,17 @@ class LibraryViewModel(
                         val foldersDeferred = async { processFolders(songs) }
                         val albumsDeferred = async { processAlbums(songs) }
                         val artistsDeferred = async { processArtists(songs) }
+                        val favoritesDeferred = async { songs.filter { it.rating > 0 }.sortedByDescending { it.rating } }
                         
                         val f = foldersDeferred.await()
                         val a = albumsDeferred.await()
                         val r = artistsDeferred.await()
+                        val favs = favoritesDeferred.await()
                         
                         _folders.value = f
                         _albums.value = a
                         _artists.value = r
+                        _favorites.value = favs
 
                         // 把这一刻的美好记在小本本上喵！🚀
                         val newStats = SettingsManager.LibraryStats(

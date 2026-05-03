@@ -39,7 +39,7 @@ sealed class MusicUiState {
         val originalItems: List<Folder>? = null 
     ) : MusicUiState()
     
-    enum class ListType { PLAYLIST, FOLDER, ALL_SONGS, ALBUM, ARTIST }
+    enum class ListType { PLAYLIST, FOLDER, ALL_SONGS, ALBUM, ARTIST, FAVORITES }
 }
 
 /**
@@ -169,6 +169,7 @@ class MainViewModel(
     val artists: StateFlow<List<Folder>> get() = library.artists
     val syncStatus: StateFlow<String> get() = library.syncStatus
     val libraryStats: StateFlow<com.cpu.seamlessloopmobile.data.SettingsManager.LibraryStats> get() = library.stats
+    val favorites: StateFlow<List<Song>> get() = library.favorites
 
     val playlists: StateFlow<List<Playlist>> get() = playlist.playlists
     val playlistsWithCounts: StateFlow<List<PlaylistDao.PlaylistWithCount>> get() = playlist.playlistsWithCounts
@@ -430,5 +431,20 @@ class MainViewModel(
         
         // 方案：让 library 提供一个未过滤的版本，或者干脆在这里通过文件名推断！
         return repository.findAbPair(song, library.allSongsRaw.value ?: emptyList())
+    }
+
+    fun cycleSongRating(song: Song) {
+        val nextRating = (song.rating + 1) % 6
+        viewModelScope.launch {
+            repository.updateSongRating(song, nextRating)
+            
+            // 确保本地 UI 状态 (currentPlaylist) 里的曲目数据也立刻更新喵！
+            val currentList = _currentPlaylist.value?.toMutableList() ?: return@launch
+            val index = currentList.indexOfFirst { it.id == song.id }
+            if (index != -1) {
+                currentList[index] = currentList[index].copy(rating = nextRating)
+                _currentPlaylist.postValue(currentList)
+            }
+        }
     }
 }

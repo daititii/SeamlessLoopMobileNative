@@ -119,6 +119,7 @@ class MainActivity : ComponentActivity() {
                 context = this@MainActivity,
                 uri = uri,
                 songDao = com.cpu.seamlessloopmobile.db.AppDatabase.getDatabase(this@MainActivity).songDao(),
+                playlistDao = com.cpu.seamlessloopmobile.db.AppDatabase.getDatabase(this@MainActivity).playlistDao(),
                 callback = object : com.cpu.seamlessloopmobile.db.PcDatabaseImporter.ImportCallback {
                     override fun onSuccess(syncCount: Int) {
                         runOnUiThread {

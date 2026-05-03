@@ -25,6 +25,9 @@ interface PlaylistDao {
         val songCount: Int
     )
 
+    @Query("SELECT * FROM Playlists WHERE Name = :name LIMIT 1")
+    suspend fun getPlaylistByName(name: String): Playlist?
+
     @Insert
     suspend fun insertPlaylist(playlist: Playlist): Long
 

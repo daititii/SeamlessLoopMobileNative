@@ -58,6 +58,7 @@ fun MainScreen(
     val artists by viewModel.artists.collectAsState()
     val playlistsWithCounts by viewModel.playlistsWithCounts.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
+    val favorites by viewModel.favorites.collectAsState()
     val currentSongIndex by viewModel.currentSongIndex.observeAsState(-1)
     val currentPlaylist by viewModel.currentPlaylist.observeAsState(emptyList())
     val isSelectionMode by viewModel.isSelectionMode.observeAsState(false)
@@ -169,6 +170,7 @@ fun MainScreen(
                             albumsCount = if (albums.isEmpty() && libraryStats.albumCount > 0) libraryStats.albumCount else albums.size,
                             artistsCount = if (artists.isEmpty() && libraryStats.artistCount > 0) libraryStats.artistCount else artists.size,
                             foldersCount = if (folders.isEmpty() && libraryStats.folderCount > 0) libraryStats.folderCount else folders.size,
+                            favoritesCount = favorites.size,
                             playlists = playlistPairs,
                             onOpenAllSongs = {
                                 viewModel.openSongList("全部歌曲", allSongs, MusicUiState.ListType.ALL_SONGS)
@@ -181,6 +183,9 @@ fun MainScreen(
                             },
                             onOpenFolders = {
                                 viewModel.openCategory("文件夹", folders)
+                            },
+                            onOpenFavorites = {
+                                viewModel.openSongList("已评分", favorites, MusicUiState.ListType.FAVORITES)
                             },
                             onOpenPlaylist = { playlist ->
                                 viewModel.openPlaylist(playlist)
@@ -224,6 +229,7 @@ fun MainScreen(
                             MusicUiState.ListType.FOLDER -> folders.find { it.name == state.title }?.songs ?: state.songs
                             MusicUiState.ListType.ALBUM -> albums.find { it.name == state.title }?.songs ?: state.songs
                             MusicUiState.ListType.ARTIST -> artists.find { it.name == state.title }?.songs ?: state.songs
+                            MusicUiState.ListType.FAVORITES -> favorites
                             else -> state.songs
                         }
 
