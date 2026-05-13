@@ -61,6 +61,7 @@ class ABLoopTest {
 
         // 1. 设置伪造的数据库：返回空白，模拟用户还没把歌曲扫进播放列表的情况喵！
         org.mockito.Mockito.`when`(fakeSongDao.getAllSongs()).thenReturn(emptyList())
+        org.mockito.Mockito.`when`(fakeSongDao.getAllSongsRaw()).thenReturn(emptyList())
 
         // 2. 伪造安卓系统环境喵！
         val mockContext = org.mockito.Mockito.mock(android.content.Context::class.java)

@@ -133,10 +133,10 @@ class PlaylistRepository(
                 isAbPartB = item.isAbPartB // 应用隐身标记
             )
             
-            val songId = songDao.insertOrUpdateSong(song)
+            val id = songDao.insertOrUpdateSong(song)
             // 只有非 B 段的歌曲，才有资格进入歌单排队显示喵！
-            if (songId > 0 && !song.isAbPartB) {
-                playlistDao.addSongsToPlaylist(playlist.id, listOf(songId))
+            if (id > 0 && !song.isAbPartB) {
+                playlistDao.addSongsToPlaylist(playlist.id, listOf(id))
             }
         }
 

@@ -7,14 +7,14 @@ import kotlinx.coroutines.flow.Flow
 interface PlaylistDao {
     // --- 歌单管理 ---
     @Query("""
-        SELECT p.*, (SELECT COUNT(*) FROM PlaylistItems pi JOIN LoopPoints s ON pi.SongId = s.Id WHERE pi.PlaylistId = p.Id AND s.IsAbPartB = 0) as songCount 
+        SELECT p.*, (SELECT COUNT(*) FROM PlaylistItems JOIN Songs ON PlaylistItems.SongId = Songs.Id WHERE PlaylistItems.PlaylistId = p.Id AND Songs.IsAbPartB = 0) as songCount 
         FROM Playlists p 
         ORDER BY p.SortOrder ASC, p.CreatedAt DESC
     """)
     suspend fun getPlaylistsWithCounts(): List<PlaylistWithCount>
 
     @Query("""
-        SELECT p.*, (SELECT COUNT(*) FROM PlaylistItems pi JOIN LoopPoints s ON pi.SongId = s.Id WHERE pi.PlaylistId = p.Id AND s.IsAbPartB = 0) as songCount 
+        SELECT p.*, (SELECT COUNT(*) FROM PlaylistItems JOIN Songs ON PlaylistItems.SongId = Songs.Id WHERE PlaylistItems.PlaylistId = p.Id AND Songs.IsAbPartB = 0) as songCount 
         FROM Playlists p 
         ORDER BY p.SortOrder ASC, p.CreatedAt DESC
     """)
@@ -38,11 +38,13 @@ interface PlaylistDao {
     suspend fun deletePlaylist(playlist: Playlist): Int
 
     // --- 歌单项管理 ---
+    
+    @Transaction
     @Query("""
-        SELECT s.* FROM LoopPoints s
-        JOIN PlaylistItems pi ON s.Id = pi.SongId
-        WHERE pi.PlaylistId = :playlistId AND s.IsAbPartB = 0
-        ORDER BY pi.SortOrder ASC
+        SELECT Songs.* FROM Songs
+        JOIN PlaylistItems ON Songs.Id = PlaylistItems.SongId
+        WHERE PlaylistItems.PlaylistId = :playlistId AND Songs.IsAbPartB = 0
+        ORDER BY PlaylistItems.SortOrder ASC
     """)
     suspend fun getSongsInPlaylist(playlistId: Int): List<Song>
 
@@ -100,6 +102,6 @@ interface PlaylistDao {
         }
     }
 
-    @Query("SELECT COUNT(*) FROM PlaylistItems pi JOIN LoopPoints s ON pi.SongId = s.Id WHERE pi.PlaylistId = :playlistId AND s.IsAbPartB = 0")
+    @Query("SELECT COUNT(*) FROM PlaylistItems JOIN Songs ON PlaylistItems.SongId = Songs.Id WHERE PlaylistItems.PlaylistId = :playlistId AND Songs.IsAbPartB = 0")
     suspend fun getSongCountInPlaylist(playlistId: Int): Int
 }

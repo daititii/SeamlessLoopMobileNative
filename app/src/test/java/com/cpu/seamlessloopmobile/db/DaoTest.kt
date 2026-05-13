@@ -45,7 +45,7 @@ class DaoTest {
             totalSamples = 1000,
             rating = 5
         )
-        val id = songDao.insertSong(song)
+        val id = songDao.insertOrUpdateSong(song)
         val loaded = songDao.getSongById(id)
         assertNotNull(loaded)
         assertEquals("test.mp3", loaded?.fileName)
@@ -80,7 +80,8 @@ class DaoTest {
     @Test
     fun playlistOperations() = runBlocking {
         val playlistId = playlistDao.insertPlaylist(Playlist(name = "Favorites")).toInt()
-        val songId = songDao.insertSong(Song(fileName = "fav.mp3", filePath = "/fav", totalSamples = 100))
+        val song = Song(fileName = "fav.mp3", filePath = "/fav", totalSamples = 100)
+        val songId = songDao.insertOrUpdateSong(song)
         
         playlistDao.addSongsToPlaylist(playlistId, listOf(songId))
         
@@ -92,5 +93,67 @@ class DaoTest {
         val songsInPl = playlistDao.getSongsInPlaylist(playlistId)
         assertEquals(1, songsInPl.size)
         assertEquals("fav.mp3", songsInPl[0].fileName)
+    }
+
+    @Test
+    fun artistAlbumNormalization() = runBlocking {
+        // 1. 模拟扫描出一首带有歌手和专辑的歌
+        val artistName = "莱芙"
+        val albumName = "无缝循环精选集"
+        val song = Song(
+            fileName = "norm.mp3",
+            filePath = "/path/norm.mp3",
+            totalSamples = 5000,
+            artist = artistName,
+            album = albumName
+        )
+
+        // 2. 执行插入 (DAO 会自动处理 Artist/Album 实体)
+        val id = songDao.insertOrUpdateSong(song)
+        
+        // 3. 验证 Song POJO 是否正确拼合了数据
+        val loaded = songDao.getSongById(id)
+        assertNotNull(loaded)
+        assertEquals(artistName, loaded?.artist)
+        assertEquals(albumName, loaded?.album)
+        
+        // 4. 验证底层表是否真的创建了对应的实体
+        val artist = songDao.getArtistByName(artistName)
+        val album = songDao.getAlbumByName(albumName)
+        assertNotNull("应该自动创建了 Artist 实体喵！", artist)
+        assertNotNull("应该自动创建了 Album 实体喵！", album)
+        assertEquals(artist?.id, loaded?.song?.artistId)
+        assertEquals(album?.id, loaded?.song?.albumId)
+
+        // 5. 验证重复使用：插入另一首同歌手的歌，不应创建新的 Artist 实体
+        val song2 = Song(fileName = "another.mp3", filePath = "/path/another.mp3", artist = artistName)
+        songDao.insertOrUpdateSong(song2)
+        
+        val artists = db.query("SELECT * FROM Artists", null)
+        artists.use {
+            assertEquals("不应该重复创建同名歌手喵！", 1, it.count)
+        }
+    }
+
+    @Test
+    fun testCascadeDeletion() = runBlocking {
+        val song = Song(fileName = "delete_me.mp3", filePath = "/temp", rating = 5, loopStart = 10, loopEnd = 90)
+        val id = songDao.insertOrUpdateSong(song)
+        
+        // 确认数据已存在
+        assertNotNull(songDao.getSongById(id))
+        
+        // 执行删除
+        songDao.deleteSongEntity(song.song.copy(id = id))
+        
+        // 验证主表已空
+        assertNull(songDao.getSongById(id))
+        
+        // 验证关联表已通过外键级联删除喵！
+        val ratings = db.query("SELECT * FROM UserRatings WHERE SongId = $id", null)
+        ratings.use { assertEquals("评分应该被级联删除了喵！", 0, it.count) }
+        
+        val loops = db.query("SELECT * FROM LoopPoints WHERE SongId = $id", null)
+        loops.use { assertEquals("循环点应该被级联删除了喵！", 0, it.count) }
     }
 }

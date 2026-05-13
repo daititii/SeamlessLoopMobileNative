@@ -1,8 +1,7 @@
 package com.cpu.seamlessloopmobile.data
 
 import android.content.Context
-import com.cpu.seamlessloopmobile.model.Song
-import com.cpu.seamlessloopmobile.model.SongDao
+import com.cpu.seamlessloopmobile.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -28,17 +27,22 @@ class SongRepository(private val songDao: SongDao) {
     }
 
     suspend fun updateSong(song: Song) = withContext(Dispatchers.IO) {
-        songDao.updateSong(song)
+        songDao.updateSongEntity(song.song)
     }
 
     suspend fun insertOrUpdateSong(song: Song): Long = withContext(Dispatchers.IO) {
-        songDao.insertOrUpdateSong(song)
+        songDao.insertOrUpdateSong(
+            song.song,
+            song.loopStart,
+            song.loopEnd,
+            song.rating
+        )
     }
 
     suspend fun updateSongLoopPoints(song: Song, start: Long, end: Long): Song = withContext(Dispatchers.IO) {
-        val newSong = song.copy(loopStart = start, loopEnd = end)
-        songDao.insertOrUpdateSong(newSong)
-        newSong
+        songDao.insertLoopPoint(LoopPoint(songId = song.id, loopStart = start, loopEnd = end))
+        // 重新获取最新的 Song 对象以反映更改
+        songDao.getSongById(song.id) ?: song
     }
 
     suspend fun updateSongRating(song: Song, rating: Int) = withContext(Dispatchers.IO) {
@@ -59,9 +63,9 @@ class SongRepository(private val songDao: SongDao) {
         context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
                 val newMediaId = cursor.getLong(cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media._ID))
-                val updatedSong = song.copy(mediaId = newMediaId)
-                songDao.insertOrUpdateSong(updatedSong)
-                return@withContext updatedSong
+                val updatedEntity = song.song.copy(mediaId = newMediaId)
+                songDao.updateSongEntity(updatedEntity)
+                return@withContext song.copy(song = updatedEntity)
             }
         }
         song

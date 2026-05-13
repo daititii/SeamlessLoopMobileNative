@@ -64,12 +64,13 @@ class PcDatabaseImporterTest {
 
         // 1. 预埋本地数据（请确保这里的文件名和采样数在您的样本库中存在喵！）
         // 莱芙假设样本库里有一首 "test.mp3"，总采样 100000
-        songDao.insertSong(Song(
+        val song = Song(
             fileName = "test.mp3", 
             filePath = "/sdcard/Music/test.mp3", 
             totalSamples = 100000, 
             duration = 2000
-        ))
+        )
+        songDao.insertOrUpdateSong(song.song, song.loopStart, song.loopEnd, song.rating)
 
         val uri = Uri.fromFile(dbFile)
         var capturedCount = -1
@@ -103,7 +104,8 @@ class PcDatabaseImporterTest {
             return@runBlocking
         }
 
-        songDao.insertSong(Song(fileName = "old_test.mp3", filePath = "/sdcard/Music/old.mp3", totalSamples = 50000))
+        val song = Song(fileName = "old_test.mp3", filePath = "/sdcard/Music/old.mp3", totalSamples = 50000)
+        songDao.insertOrUpdateSong(song.song, song.loopStart, song.loopEnd, song.rating)
 
         val uri = Uri.fromFile(dbFile)
         PcDatabaseImporter.importFromPcDatabase(context, uri, songDao, playlistDao, object : PcDatabaseImporter.ImportCallback {
