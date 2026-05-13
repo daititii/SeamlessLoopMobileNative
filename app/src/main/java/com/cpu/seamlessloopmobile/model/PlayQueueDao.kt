@@ -9,7 +9,8 @@ interface PlayQueueDao {
         SELECT Songs.* FROM Songs
         JOIN PlayQueue ON Songs.Id = PlayQueue.SongId
         ORDER BY PlayQueue.SortOrder ASC
-    """)
+    """
+    )
     suspend fun getPlayQueueSongs(): List<Song>
 
     @Query("DELETE FROM PlayQueue")

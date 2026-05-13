@@ -71,6 +71,18 @@ interface SongDao {
     @Query("UPDATE UserRatings SET Rating = :rating, LastModified = :now WHERE SongId = :songId")
     suspend fun updateSongRating(songId: Long, rating: Int, now: Long = System.currentTimeMillis())
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertArtistsBatch(artists: List<Artist>): List<Long>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAlbumsBatch(albums: List<Album>): List<Long>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLoopPointsBatch(loopPoints: List<LoopPoint>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUserRatingsBatch(userRatings: List<UserRating>)
+
     // --- 基础增删改 (针对 Entity) ---
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -82,8 +94,51 @@ interface SongDao {
     @Delete
     suspend fun deleteSongEntity(song: SongEntity): Int
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSongsBatch(songs: List<SongEntity>): List<Long>
+
+    @Update
+    suspend fun updateSongsBatch(songs: List<SongEntity>): Int
+
     @Query("DELETE FROM Songs WHERE Id IN (:ids)")
     suspend fun deleteSongsByIds(ids: List<Long>): Int
+
+    @Query("""
+        UPDATE Songs SET 
+            TotalSamples = :total, 
+            DisplayName = :displayName, 
+            CoverPath = :coverPath, 
+            ArtistId = :artistId, 
+            AlbumId = :albumId,
+            IsAbPartB = :isAbPartB
+        WHERE Id = :id
+    """)
+    suspend fun updateSongSyncFields(id: Long, total: Long, displayName: String?, coverPath: String?, artistId: Long?, albumId: Long?, isAbPartB: Boolean)
+
+    @Transaction
+    suspend fun updateSongsMetadataBatch(updates: List<SongMetadataUpdate>) {
+        if (updates.isEmpty()) return
+        
+        // 1. 主表逐行更新 (SQL 局部手术，避免覆盖无关字段)
+        updates.forEach { update ->
+            updateSongSyncFields(
+                id = update.songId,
+                total = update.total,
+                displayName = update.displayName,
+                coverPath = update.coverPath,
+                artistId = update.artistId,
+                albumId = update.albumId,
+                isAbPartB = update.isAbPartB
+            )
+        }
+        
+        // 2. 关联表批量 Insert (分层优化，极大减少磁盘 IO 和 SQL 解析开销喵！)
+        val loopPoints = updates.map { LoopPoint(songId = it.songId, loopStart = it.start, loopEnd = it.end) }
+        val ratings = updates.map { UserRating(songId = it.songId, rating = it.rating) }
+        
+        insertLoopPointsBatch(loopPoints)
+        insertUserRatingsBatch(ratings)
+    }
 
     // --- 复杂逻辑：Artist/Album 处理 ---
 

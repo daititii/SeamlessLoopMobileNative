@@ -51,6 +51,9 @@ interface PlaylistDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertPlaylistItem(item: PlaylistItem): Long
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertPlaylistItemsBatch(items: List<PlaylistItem>)
+
     @Query("SELECT SongId FROM PlaylistItems WHERE PlaylistId = :playlistId")
     suspend fun getSongIdsInPlaylist(playlistId: Int): List<Long>
 

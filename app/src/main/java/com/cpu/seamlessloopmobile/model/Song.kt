@@ -137,3 +137,20 @@ data class Song(
         album = album
     )
 }
+
+/**
+ * 极速同步专用的元数据更新包喵！
+ * 只携带变动字段，减少内存和数据库开销。
+ */
+data class SongMetadataUpdate(
+    val songId: Long,
+    val total: Long,
+    val start: Long,
+    val end: Long,
+    val rating: Int,
+    val artistId: Long?,
+    val albumId: Long?,
+    val displayName: String?,
+    val coverPath: String?,
+    val isAbPartB: Boolean = false
+)
