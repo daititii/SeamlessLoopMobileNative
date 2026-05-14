@@ -52,7 +52,9 @@ data class Song(
         loopCandidatesJson: String? = null,
         artist: String? = null,
         album: String? = null,
-        albumArtist: String? = null
+        albumArtist: String? = null,
+        artistId: Long? = null,
+        albumId: Long? = null
     ) : this(
         song = SongEntity(
             id = id,
@@ -63,6 +65,8 @@ data class Song(
             displayName = displayName,
             lastModified = lastModified,
             coverPath = coverPath,
+            artistId = artistId,
+            albumId = albumId,
             duration = duration,
             isLoopEnabled = isLoopEnabled,
             isAbPartB = isAbPartB,
@@ -89,6 +93,8 @@ data class Song(
     val isLoopEnabled get() = song.isLoopEnabled
     val isAbPartB get() = song.isAbPartB
     val loopCandidatesJson get() = song.loopCandidatesJson
+    val artistId get() = song.artistId
+    val albumId get() = song.albumId
 
     val loopStart get() = loopPoint?.loopStart ?: 0L
     val loopEnd get() = loopPoint?.loopEnd ?: 0L
@@ -116,7 +122,9 @@ data class Song(
         isAbPartB: Boolean = this.isAbPartB,
         loopCandidatesJson: String? = this.loopCandidatesJson,
         artist: String? = this.artist,
-        album: String? = this.album
+        album: String? = this.album,
+        artistId: Long? = this.artistId,
+        albumId: Long? = this.albumId
     ): Song = Song(
         id = id,
         mediaId = mediaId,
@@ -134,7 +142,9 @@ data class Song(
         isAbPartB = isAbPartB,
         loopCandidatesJson = loopCandidatesJson,
         artist = artist,
-        album = album
+        album = album,
+        artistId = artistId,
+        albumId = albumId
     )
 }
 
