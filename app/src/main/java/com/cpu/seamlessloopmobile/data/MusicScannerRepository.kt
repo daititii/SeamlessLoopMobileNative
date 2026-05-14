@@ -6,6 +6,8 @@ import com.cpu.seamlessloopmobile.model.SongDao
 import com.cpu.seamlessloopmobile.model.SongMetadataUpdate
 import com.cpu.seamlessloopmobile.model.LoopPoint
 import com.cpu.seamlessloopmobile.model.UserRating
+import com.cpu.seamlessloopmobile.model.Artist
+import com.cpu.seamlessloopmobile.model.Album
 import com.cpu.seamlessloopmobile.scanner.AudioScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -53,7 +55,39 @@ class MusicScannerRepository(private val songDao: SongDao) {
             val isB = isLikelyAbPartB(song, scannedSongs)
             if (isB) song.copy(song = song.song.copy(isAbPartB = true)) else song
         }
-        
+
+        // === Artist/Album 批量预创建，构建 name→id 映射 (CPU 大人的 Zip 映射法) ===
+        val ignoredNames = setOf("unknown artist", "unknown album", "<unknown>")
+        val allArtistNames = abMarkedSongs
+            .mapNotNull { it.artistEntity?.name }
+            .filter { it.isNotBlank() && it.lowercase() !in ignoredNames }
+            .toSet()
+        val allAlbumNames = abMarkedSongs
+            .mapNotNull { it.albumEntity?.name }
+            .filter { it.isNotBlank() && it.lowercase() !in ignoredNames }
+            .toSet()
+
+        val artistMap = mutableMapOf<String, Long>()
+        allArtistNames.forEach { name ->
+            songDao.getArtistByName(name)?.let { artistMap[name.lowercase()] = it.id }
+        }
+        val missingArtists = allArtistNames.filter { artistMap[it.lowercase()] == null }
+        if (missingArtists.isNotEmpty()) {
+            val newIds = songDao.insertArtistsBatch(missingArtists.map { Artist(name = it) })
+            missingArtists.zip(newIds).forEach { (name, id) -> artistMap[name.lowercase()] = id }
+        }
+
+        val albumMap = mutableMapOf<String, Long>()
+        allAlbumNames.forEach { name ->
+            songDao.getAlbumByName(name)?.let { albumMap[name.lowercase()] = it.id }
+        }
+        val missingAlbums = allAlbumNames.filter { albumMap[it.lowercase()] == null }
+        if (missingAlbums.isNotEmpty()) {
+            val newIds = songDao.insertAlbumsBatch(missingAlbums.map { Album(name = it) })
+            missingAlbums.zip(newIds).forEach { (name, id) -> albumMap[name.lowercase()] = id }
+        }
+        // === 预创建结束 ===
+
         val insertList = mutableListOf<Song>()
         val updateList = mutableListOf<SongMetadataUpdate>()
         val result = mutableListOf<Song>()
@@ -62,17 +96,23 @@ class MusicScannerRepository(private val songDao: SongDao) {
         abMarkedSongs.forEach { song ->
             val fingerprint = "${song.fileName.lowercase()}|${song.duration}"
             val dbSong = dbSongs[fingerprint]
-            
+
             if (dbSong != null) {
                 // 情况 A：老面孔，准备批量元数据更新
+                // 数据库已有的 artistId/albumId 优先（PC 同步数据），null 时用 MediaStore 扫描结果补充
+                val resolvedArtistId = dbSong.song.artistId
+                    ?: song.artistEntity?.name?.lowercase()?.let { artistMap[it] }
+                val resolvedAlbumId = dbSong.song.albumId
+                    ?: song.albumEntity?.name?.lowercase()?.let { albumMap[it] }
+
                 updateList.add(SongMetadataUpdate(
                     songId = dbSong.id,
                     total = dbSong.totalSamples,
                     start = dbSong.loopStart,
                     end = dbSong.loopEnd,
                     rating = dbSong.rating,
-                    artistId = dbSong.song.artistId,
-                    albumId = dbSong.song.albumId,
+                    artistId = resolvedArtistId,
+                    albumId = resolvedAlbumId,
                     displayName = dbSong.displayName,
                     coverPath = dbSong.coverPath,
                     isAbPartB = song.isAbPartB // 关键细节：由最新的扫描结果覆盖喵！
@@ -87,7 +127,12 @@ class MusicScannerRepository(private val songDao: SongDao) {
 
         // 2. 批量提交 (Atomic Batch)
         if (insertList.isNotEmpty()) {
-            val entities = insertList.map { it.song }
+            // 回填 artistId/albumId 到 SongEntity，确保入库时就有正确的关联喵！
+            val entities = insertList.map { song ->
+                val aId = song.artistEntity?.name?.lowercase()?.let { artistMap[it] }
+                val alId = song.albumEntity?.name?.lowercase()?.let { albumMap[it] }
+                song.song.copy(artistId = aId, albumId = alId)
+            }
             val newIds = songDao.insertSongsBatch(entities)
             
             val newLoopPoints = mutableListOf<LoopPoint>()

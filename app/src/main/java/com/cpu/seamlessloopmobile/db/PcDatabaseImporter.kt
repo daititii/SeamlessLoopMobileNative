@@ -169,8 +169,32 @@ object PcDatabaseImporter {
                                             Math.abs(it.totalSamples - data.total) <= tolerance
                                         }
                             }
-                            if (matchedSong == null && candidates.size == 1)
-                                    matchedSong = candidates[0]
+                            // 采样率交叉校验：针对本地采样数为 0 的情况喵
+                            if (matchedSong == null && data.total > 0) {
+                                matchedSong =
+                                        candidates.find { cand ->
+                                            val ms441 = data.total / 44.1
+                                            val ms480 = data.total / 48.0
+                                            Math.abs(ms441 - cand.duration) < 200 ||
+                                                    Math.abs(ms480 - cand.duration) < 200
+                                        }
+                            }
+                            // 智能兜底：仅当双方至少有一侧采样数未知（=0）时才允许唯一候选回退
+                            // 但即便是回退，也要进行“理性校验”：时长差距不能太离谱喵！
+                            if (matchedSong == null && candidates.size == 1) {
+                                val single = candidates[0]
+                                val bothKnown = data.total > 0 && single.totalSamples > 0
+                                if (!bothKnown) {
+                                    val pcMs441 = data.total / 44.1
+                                    val pcMs480 = data.total / 48.0
+                                    val durationRational =
+                                            data.total <= 0 ||
+                                                    single.duration <= 0 ||
+                                                    Math.abs(pcMs441 - single.duration) < 200 ||
+                                                    Math.abs(pcMs480 - single.duration) < 200
+                                    if (durationRational) matchedSong = single
+                                }
+                            }
 
                             if (matchedSong != null) {
                                 songUpdates.add(
@@ -251,8 +275,31 @@ object PcDatabaseImporter {
                                                 Math.abs(it.totalSamples - tSamples) <= tolerance
                                             }
                                 }
+                                // 采样率交叉校验：针对本地采样数为 0 的情况喵
+                                if (match == null && tSamples > 0) {
+                                    match =
+                                            candidates?.find { cand ->
+                                                val ms441 = tSamples / 44.1
+                                                val ms480 = tSamples / 48.0
+                                                Math.abs(ms441 - cand.duration) < 200 ||
+                                                        Math.abs(ms480 - cand.duration) < 200
+                                            }
+                                }
+                                // 智能兜底：仅当双方至少有一侧采样数未知（=0）时才允许唯一候选回退
+                                // 但即便是回退，也要进行“理性校验”：时长差距不能太离谱喵！
                                 if (match == null && candidates?.size == 1) {
-                                    match = candidates[0]
+                                    val single = candidates[0]
+                                    val bothKnown = tSamples > 0 && single.totalSamples > 0
+                                    if (!bothKnown) {
+                                        val pcMs441 = tSamples / 44.1
+                                        val pcMs480 = tSamples / 48.0
+                                        val durationRational =
+                                                tSamples <= 0 ||
+                                                        single.duration <= 0 ||
+                                                        Math.abs(pcMs441 - single.duration) < 200 ||
+                                                        Math.abs(pcMs480 - single.duration) < 200
+                                        if (durationRational) match = single
+                                    }
                                 }
 
                                 if (match != null && !existingSongIds.contains(match.id)) {
