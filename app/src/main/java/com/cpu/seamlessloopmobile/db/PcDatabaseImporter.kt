@@ -59,8 +59,9 @@ object PcDatabaseImporter {
                 val is3NF = tables.contains("Tracks")
 
                 // 4. 内存预热 (Pre-loading)
-                // 一次性加载本地所有歌曲到内存中，按文件名（小写）分组加速匹配
-                val localSongsMap = songDao.getAllSongs().groupBy { it.fileName.lowercase() }
+                // 一次性加载本地所有歌曲到内存中，按文件名（小写）分组加速匹配喵！
+                // 这里使用 getAllSongsRaw() 确保 B 段元数据也能被匹配并更新。
+                val localSongsMap = songDao.getAllSongsRaw().groupBy { it.fileName.lowercase() }
 
                 // 5. 数据收集阶段
                 val missingArtists = mutableSetOf<String>()
@@ -229,7 +230,8 @@ object PcDatabaseImporter {
 
                     // Stage 4.4: 歌单同步 (批量化重构)
                     if (tables.contains("Playlists")) {
-                        // 关键修复：元数据更新后刷新内存快照，避免用过期的 totalSamples 匹配失败喵！
+                        // 关键修复：元数据更新后刷新内存快照喵！
+                        // 注意：这里继续使用 getAllSongs() 是为了确保只有 A 段（IsAbPartB = 0）会被匹配并加入歌单。
                         val refreshedSongsMap =
                                 songDao.getAllSongs().groupBy { it.fileName.lowercase() }
 
@@ -248,7 +250,8 @@ object PcDatabaseImporter {
                                     if (is3NF) {
                                         "SELECT t.FileName, t.TotalSamples FROM PlaylistItems pi JOIN Tracks t ON pi.SongId = t.Id WHERE pi.PlaylistId = ?"
                                     } else {
-                                        "SELECT FileName, TotalSamples FROM PlaylistItems pi JOIN LoopPoints lp ON pi.SongId = lp.Id WHERE pi.PlaylistId = ?"
+                                        // 关键修复：使用 LEFT JOIN 防止没有循环点的 A 段被过滤掉喵！
+                                        "SELECT FileName, TotalSamples FROM PlaylistItems pi LEFT JOIN LoopPoints lp ON pi.SongId = lp.Id WHERE pi.PlaylistId = ?"
                                     }
 
                             val itemCursor = extDb.rawQuery(itemQuery, arrayOf(extPlId.toString()))
