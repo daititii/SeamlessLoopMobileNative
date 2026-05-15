@@ -96,6 +96,20 @@ class DaoTest {
     }
 
     @Test
+    fun playlistDuplicateSong_dedupById() = runBlocking {
+        val playlistId = playlistDao.insertPlaylist(Playlist(name = "DedupTest")).toInt()
+        val song = Song(fileName = "duplicate.mp3", filePath = "/dup", totalSamples = 200)
+        val songId = songDao.insertOrUpdateSong(song)
+
+        playlistDao.insertPlaylistItem(PlaylistItem(playlistId = playlistId, songId = songId, sortOrder = 1))
+        playlistDao.insertPlaylistItem(PlaylistItem(playlistId = playlistId, songId = songId, sortOrder = 2))
+
+        val songsInPl = playlistDao.getSongsInPlaylist(playlistId)
+        assertEquals(1, songsInPl.size)
+        assertEquals("duplicate.mp3", songsInPl[0].fileName)
+    }
+
+    @Test
     fun artistAlbumNormalization() = runBlocking {
         // 1. 模拟扫描出一首带有歌手和专辑的歌
         val artistName = "莱芙"

@@ -39,14 +39,18 @@ interface PlaylistDao {
 
     // --- 歌单项管理 ---
     
-    @Transaction
     @Query("""
         SELECT Songs.* FROM Songs
         JOIN PlaylistItems ON Songs.Id = PlaylistItems.SongId
         WHERE PlaylistItems.PlaylistId = :playlistId AND Songs.IsAbPartB = 0
         ORDER BY PlaylistItems.SortOrder ASC
     """)
-    suspend fun getSongsInPlaylist(playlistId: Int): List<Song>
+    suspend fun getSongsInPlaylistRaw(playlistId: Int): List<Song>
+
+    @Transaction
+    suspend fun getSongsInPlaylist(playlistId: Int): List<Song> {
+        return getSongsInPlaylistRaw(playlistId).distinctBy { it.id }
+    }
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertPlaylistItem(item: PlaylistItem): Long
