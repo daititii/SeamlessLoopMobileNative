@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.room.withTransaction
 import com.cpu.seamlessloopmobile.model.*
 import java.io.File
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -24,14 +25,18 @@ object PcDatabaseImporter {
         fun onError(message: String)
     }
 
+    var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    var mainDispatcher: CoroutineDispatcher = Dispatchers.Main
+
     suspend fun importFromPcDatabase(
             context: Context,
             uri: Uri,
             songDao: SongDao,
             playlistDao: PlaylistDao,
-            callback: ImportCallback
+            callback: ImportCallback,
+            appDb: AppDatabase? = null
     ) {
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             try {
                 // 1. 拷贝到临时文件
                 val tempFile = File(context.cacheDir, "temp_pc_data.db")
@@ -108,10 +113,10 @@ object PcDatabaseImporter {
                 cursor.close()
 
                 // 6. 原子级批量同步 (Atomic Transaction)
-                val appDb = AppDatabase.getDatabase(context)
+                val db = appDb ?: AppDatabase.getDatabase(context)
                 var syncCount = 0
 
-                appDb.withTransaction {
+                db.withTransaction {
                     // Stage 4.1: Artist/Album ID 回填 (CPU 大人的 Zip 映射法)
 
                     // --- 补全歌手缓存 ---
@@ -326,10 +331,10 @@ object PcDatabaseImporter {
                 extDb.close()
                 tempFile.delete()
 
-                withContext(Dispatchers.Main) { callback.onSuccess(syncCount) }
+                withContext(mainDispatcher) { callback.onSuccess(syncCount) }
             } catch (e: Exception) {
                 android.util.Log.e("PcDatabaseImporter", "Sync failed", e)
-                withContext(Dispatchers.Main) { callback.onError(e.message ?: "未知错误") }
+                withContext(mainDispatcher) { callback.onError(e.message ?: "未知错误") }
             }
         }
     }

@@ -15,6 +15,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
 import java.io.FileOutputStream
+import kotlinx.coroutines.Dispatchers
 
 /**
  * 桌面端数据库同步测试类
@@ -37,11 +38,18 @@ class PcDatabaseImporterTest {
             .build()
         songDao = db.songDao()
         playlistDao = db.playlistDao()
+        
+        // 莱芙在这里强制同步执行，不准偷懒等主线程喵！
+        PcDatabaseImporter.ioDispatcher = Dispatchers.Unconfined
+        PcDatabaseImporter.mainDispatcher = Dispatchers.Unconfined
     }
 
     @After
     fun tearDown() {
         db.close()
+        // 还原现场，莱芙是很讲礼貌的喵 (´w｀*)
+        PcDatabaseImporter.ioDispatcher = Dispatchers.IO
+        PcDatabaseImporter.mainDispatcher = Dispatchers.Main
     }
 
     private fun copyResourceToTempFile(resourcePath: String): File? {
@@ -85,7 +93,7 @@ class PcDatabaseImporterTest {
         }
 
         // 2. 执行导入
-        PcDatabaseImporter.importFromPcDatabase(context, uri, songDao, playlistDao, callback)
+        PcDatabaseImporter.importFromPcDatabase(context, uri, songDao, playlistDao, callback, appDb = db)
 
         // 3. 验证结果
         assertTrue("应该至少同步成功一条记录喵", capturedCount >= 0)
@@ -115,6 +123,6 @@ class PcDatabaseImporterTest {
             override fun onError(message: String) {
                 fail("旧版同步失败: $message")
             }
-        })
+        }, appDb = db)
     }
 }
