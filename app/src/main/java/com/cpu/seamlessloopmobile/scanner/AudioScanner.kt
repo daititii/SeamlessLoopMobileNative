@@ -3,6 +3,8 @@ package com.cpu.seamlessloopmobile.scanner
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.provider.MediaStore
 import com.cpu.seamlessloopmobile.model.Song
 import java.io.File
@@ -79,6 +81,24 @@ object AudioScanner {
             }
         }
         return songs
+    }
+
+    /**
+     * 快速估算！用 MediaExtractor 读文件头拿采样率，配合 MediaStore 的 duration 估算 tototalSamples喵！
+     * 只读文件头，不解码，每首歌约 1-10ms 喵～
+     */
+    fun getApproximateSamples(context: Context, mediaId: Long, durationMs: Long): Long {
+        return try {
+            val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, mediaId)
+            val extractor = MediaExtractor()
+            extractor.setDataSource(context, contentUri, null)
+            val format = extractor.getTrackFormat(0)
+            val sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+            extractor.release()
+            if (sampleRate > 0 && durationMs > 0) (durationMs * sampleRate) / 1000L else 0L
+        } catch (e: Exception) {
+            0L
+        }
     }
 
     /**

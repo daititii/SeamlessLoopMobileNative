@@ -105,9 +105,13 @@ class MusicScannerRepository(private val songDao: SongDao) {
                 val resolvedAlbumId = dbSong.song.albumId
                     ?: song.albumEntity?.name?.lowercase()?.let { albumMap[it] }
 
+                val approximateTotal = if (dbSong.totalSamples <= 0L)
+                    AudioScanner.getApproximateSamples(context, song.mediaId, song.duration)
+                else dbSong.totalSamples
+
                 updateList.add(SongMetadataUpdate(
                     songId = dbSong.id,
-                    total = dbSong.totalSamples,
+                    total = approximateTotal,
                     start = dbSong.loopStart,
                     end = dbSong.loopEnd,
                     rating = dbSong.rating,
@@ -115,7 +119,7 @@ class MusicScannerRepository(private val songDao: SongDao) {
                     albumId = resolvedAlbumId,
                     displayName = dbSong.displayName,
                     coverPath = dbSong.coverPath,
-                    isAbPartB = song.isAbPartB // 关键细节：由最新的扫描结果覆盖喵！
+                    isAbPartB = song.isAbPartB
                 ))
                 result.add(song.copy(song = song.song.copy(id = dbSong.id)))
             } else if (!seenFingerprints.contains(fingerprint)) {
@@ -131,7 +135,8 @@ class MusicScannerRepository(private val songDao: SongDao) {
             val entities = insertList.map { song ->
                 val aId = song.artistEntity?.name?.lowercase()?.let { artistMap[it] }
                 val alId = song.albumEntity?.name?.lowercase()?.let { albumMap[it] }
-                song.song.copy(artistId = aId, albumId = alId)
+                val total = AudioScanner.getApproximateSamples(context, song.mediaId, song.duration)
+                song.song.copy(artistId = aId, albumId = alId, totalSamples = total)
             }
             val newIds = songDao.insertSongsBatch(entities)
             
