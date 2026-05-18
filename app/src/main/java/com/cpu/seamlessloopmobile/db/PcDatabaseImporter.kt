@@ -66,7 +66,8 @@ object PcDatabaseImporter {
                 // 4. 内存预热 (Pre-loading)
                 // 一次性加载本地所有歌曲到内存中，按文件名（小写）分组加速匹配喵！
                 // 这里使用 getAllSongsRaw() 确保 B 段元数据也能被匹配并更新。
-                val localSongsMap = songDao.getAllSongsRaw().groupBy { it.fileName.lowercase() }
+                val allLocalSongs = songDao.getAllSongsRaw()
+                val localSongsMap = allLocalSongs.groupBy { it.fileName.lowercase() }
 
                 // 5. 数据收集阶段
                 val missingArtists = mutableSetOf<String>()
@@ -163,43 +164,28 @@ object PcDatabaseImporter {
                     extData.forEach { data ->
                         val candidates = localSongsMap[data.fileName.lowercase()]
                         if (!candidates.isNullOrEmpty()) {
-                            // 匹配逻辑：采样数优先 + 时长容差 (10000 采样数以内 ≈ 0.2s)
-                            var matchedSong =
-                                    candidates.find {
-                                        it.totalSamples == data.total && data.total > 0
-                                    }
-                            if (matchedSong == null) {
-                                val tolerance = 10000L
-                                matchedSong =
-                                        candidates.find {
-                                            Math.abs(it.totalSamples - data.total) <= tolerance
-                                        }
+                            var matchedSong: Song? = null
+                            if (data.total > 0) {
+                                matchedSong = candidates.find { cand ->
+                                    val localEffectiveDuration = getEffectiveDuration(cand, allLocalSongs)
+                                    val ms441 = data.total / 44.1
+                                    val ms480 = data.total / 48.0
+                                    Math.abs(ms441 - localEffectiveDuration) < 200 ||
+                                            Math.abs(ms480 - localEffectiveDuration) < 200
+                                }
                             }
-                            // 采样率交叉校验：针对本地采样数为 0 的情况喵
-                            if (matchedSong == null && data.total > 0) {
-                                matchedSong =
-                                        candidates.find { cand ->
-                                            val ms441 = data.total / 44.1
-                                            val ms480 = data.total / 48.0
-                                            Math.abs(ms441 - cand.duration) < 200 ||
-                                                    Math.abs(ms480 - cand.duration) < 200
-                                        }
-                            }
-                            // 智能兜底：仅当双方至少有一侧采样数未知（=0）时才允许唯一候选回退
-                            // 但即便是回退，也要进行“理性校验”：时长差距不能太离谱喵！
+                            
+                            // 唯一候选兜底
                             if (matchedSong == null && candidates.size == 1) {
                                 val single = candidates[0]
-                                val bothKnown = data.total > 0 && single.totalSamples > 0
-                                if (!bothKnown) {
-                                    val pcMs441 = data.total / 44.1
-                                    val pcMs480 = data.total / 48.0
-                                    val durationRational =
-                                            data.total <= 0 ||
-                                                    single.duration <= 0 ||
-                                                    Math.abs(pcMs441 - single.duration) < 200 ||
-                                                    Math.abs(pcMs480 - single.duration) < 200
-                                    if (durationRational) matchedSong = single
-                                }
+                                val localEffectiveDuration = getEffectiveDuration(single, allLocalSongs)
+                                val pcMs441 = data.total / 44.1
+                                val pcMs480 = data.total / 48.0
+                                val durationRational = data.total <= 0 ||
+                                        localEffectiveDuration <= 0L ||
+                                        Math.abs(pcMs441 - localEffectiveDuration) < 200 ||
+                                        Math.abs(pcMs480 - localEffectiveDuration) < 200
+                                if (durationRational) matchedSong = single
                             }
 
                             if (matchedSong != null) {
@@ -271,43 +257,32 @@ object PcDatabaseImporter {
                                 val fName = itemCursor.getString(0) ?: ""
                                 val tSamples = itemCursor.getLong(1)
                                 val candidates = refreshedSongsMap[fName.lowercase()]
-                                // 匹配逻辑与歌曲元数据同步保持一致：精确 → 容差 → 唯一候选兜底
-                                var match =
-                                        candidates?.find {
-                                            it.totalSamples == tSamples && tSamples > 0
+                                var match: Song? = null
+                                if (tSamples > 0 && !candidates.isNullOrEmpty()) {
+                                    match = candidates.find { it.totalSamples == tSamples }
+                                    
+                                    if (match == null) {
+                                        match = candidates.find { cand ->
+                                            val localEffectiveDuration = getEffectiveDuration(cand, allLocalSongs)
+                                            val ms441 = tSamples / 44.1
+                                            val ms480 = tSamples / 48.0
+                                            Math.abs(ms441 - localEffectiveDuration) < 200 ||
+                                                    Math.abs(ms480 - localEffectiveDuration) < 200
                                         }
-                                if (match == null) {
-                                    val tolerance = 10000L
-                                    match =
-                                            candidates?.find {
-                                                Math.abs(it.totalSamples - tSamples) <= tolerance
-                                            }
+                                    }
                                 }
-                                // 采样率交叉校验：针对本地采样数为 0 的情况喵
-                                if (match == null && tSamples > 0) {
-                                    match =
-                                            candidates?.find { cand ->
-                                                val ms441 = tSamples / 44.1
-                                                val ms480 = tSamples / 48.0
-                                                Math.abs(ms441 - cand.duration) < 200 ||
-                                                        Math.abs(ms480 - cand.duration) < 200
-                                            }
-                                }
-                                // 智能兜底：仅当双方至少有一侧采样数未知（=0）时才允许唯一候选回退
-                                // 但即便是回退，也要进行“理性校验”：时长差距不能太离谱喵！
+                                
+                                // 唯一候选兜底
                                 if (match == null && candidates?.size == 1) {
                                     val single = candidates[0]
-                                    val bothKnown = tSamples > 0 && single.totalSamples > 0
-                                    if (!bothKnown) {
-                                        val pcMs441 = tSamples / 44.1
-                                        val pcMs480 = tSamples / 48.0
-                                        val durationRational =
-                                                tSamples <= 0 ||
-                                                        single.duration <= 0 ||
-                                                        Math.abs(pcMs441 - single.duration) < 200 ||
-                                                        Math.abs(pcMs480 - single.duration) < 200
-                                        if (durationRational) match = single
-                                    }
+                                    val localEffectiveDuration = getEffectiveDuration(single, allLocalSongs)
+                                    val pcMs441 = tSamples / 44.1
+                                    val pcMs480 = tSamples / 48.0
+                                    val durationRational = tSamples <= 0 ||
+                                            localEffectiveDuration <= 0L ||
+                                            Math.abs(pcMs441 - localEffectiveDuration) < 200 ||
+                                            Math.abs(pcMs480 - localEffectiveDuration) < 200
+                                    if (durationRational) match = single
                                 }
 
                                 if (match != null && !existingSongIds.contains(match.id)) {
@@ -350,4 +325,29 @@ object PcDatabaseImporter {
             val rating: Int,
             val coverPath: String?
     )
+
+    private fun getEffectiveDuration(song: Song, allLocalSongs: List<Song>): Long {
+        if (song.isAbPartB) return song.duration
+
+        val fileName = song.fileName.substringBeforeLast(".")
+        val aSuffixes = arrayOf("_A", "_a", "_intro", "_Intro")
+        val bSuffixes = arrayOf("_B", "_b", "_loop", "_Loop")
+
+        for (i in aSuffixes.indices) {
+            if (fileName.endsWith(aSuffixes[i])) {
+                val baseName = fileName.substring(0, fileName.length - aSuffixes[i].length)
+                val targetBName = baseName + bSuffixes[i]
+
+                val bSegment = allLocalSongs.find { 
+                    it.fileName.substringBeforeLast(".") == targetBName &&
+                    it.isAbPartB &&
+                    File(it.filePath).parent == File(song.filePath).parent
+                }
+                if (bSegment != null) {
+                    return song.duration + bSegment.duration
+                }
+            }
+        }
+        return song.duration
+    }
 }

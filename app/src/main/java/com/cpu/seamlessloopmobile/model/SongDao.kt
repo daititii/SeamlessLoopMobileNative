@@ -201,13 +201,12 @@ interface SongDao {
         albumName: String? = null
     ): Long {
         val existingByFingerprint = getSongByFingerprint(songEntity.fileName, songEntity.duration)
-        val existingBySamples = if (songEntity.totalSamples > 0) getSongBySamples(songEntity.fileName, songEntity.totalSamples) else null
         val existingByPath = if (songEntity.filePath.isNotBlank()) getSongByPath(songEntity.filePath) else null
 
         var targetId: Long = 0
 
-        // 逻辑保持一致：指纹、采样数、路径优先级
-        val match = existingByFingerprint ?: existingBySamples ?: existingByPath
+        // 逻辑保持一致：指纹、路径优先级
+        val match = existingByFingerprint ?: existingByPath
 
         val artistId = getOrCreateArtist(artistName)
         val albumId = getOrCreateAlbum(albumName)

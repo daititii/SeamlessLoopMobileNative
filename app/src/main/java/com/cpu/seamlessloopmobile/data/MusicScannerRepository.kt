@@ -88,18 +88,7 @@ class MusicScannerRepository(private val songDao: SongDao) {
         }
         // === 预创建结束 ===
 
-        // 2. 计算 AB 式歌曲的合并采样数：A 段 totalSamples = A + B，匹配 PC 端数据喵！
-        val abCombinedSamples = mutableMapOf<String, Long>()
-        abMarkedSongs.forEach { song ->
-            if (!song.isAbPartB) {
-                val pair = findAbPair(song, abMarkedSongs)
-                if (pair != null) {
-                    val aSamples = AudioScanner.getApproximateSamples(song.filePath, song.duration)
-                    val bSamples = AudioScanner.getApproximateSamples(pair.second.filePath, pair.second.duration)
-                    abCombinedSamples["${song.fileName.lowercase()}|${song.duration}"] = aSamples + bSamples
-                }
-            }
-        }
+
 
         val insertList = mutableListOf<Song>()
         val updateList = mutableListOf<SongMetadataUpdate>()
@@ -118,11 +107,7 @@ class MusicScannerRepository(private val songDao: SongDao) {
                 val resolvedAlbumId = dbSong.song.albumId
                     ?: song.albumEntity?.name?.lowercase()?.let { albumMap[it] }
 
-                val abTotal = abCombinedSamples[fingerprint]
-                val approximateTotal = abTotal
-                    ?: if (dbSong.totalSamples <= 0L)
-                        AudioScanner.getApproximateSamples(song.filePath, song.duration)
-                    else dbSong.totalSamples
+                val approximateTotal = dbSong.totalSamples
 
                 updateList.add(SongMetadataUpdate(
                     songId = dbSong.id,
@@ -150,9 +135,7 @@ class MusicScannerRepository(private val songDao: SongDao) {
             val entities = insertList.map { song ->
                 val aId = song.artistEntity?.name?.lowercase()?.let { artistMap[it] }
                 val alId = song.albumEntity?.name?.lowercase()?.let { albumMap[it] }
-                val total = abCombinedSamples["${song.fileName.lowercase()}|${song.duration}"]
-                    ?: AudioScanner.getApproximateSamples(song.filePath, song.duration)
-                song.song.copy(artistId = aId, albumId = alId, totalSamples = total)
+                song.song.copy(artistId = aId, albumId = alId, totalSamples = 0L)
             }
             val newIds = songDao.insertSongsBatch(entities)
             
