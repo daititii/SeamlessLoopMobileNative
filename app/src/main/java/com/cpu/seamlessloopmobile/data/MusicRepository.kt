@@ -69,8 +69,7 @@ class MusicRepository(
 
     suspend fun getSongCountInPlaylist(playlistId: Int): Int = playlistRepository.getSongCountInPlaylist(playlistId)
 
-    suspend fun syncFolderPlaylist(context: Context, playlist: Playlist, onProgress: (String) -> Unit) = 
-        playlistRepository.syncFolderPlaylist(context, playlist, onProgress)
+
 
     // --- 扫描与探测转发 (MusicScannerRepository) ---
 

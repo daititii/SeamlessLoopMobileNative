@@ -5,124 +5,242 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface SongDao {
-    @Query("SELECT * FROM LoopPoints WHERE IsAbPartB = 0 ORDER BY FileName ASC")
+
+    // --- 核心查询 (返回 POJO) ---
+
+    @Transaction
+    @Query("SELECT * FROM Songs WHERE IsAbPartB = 0 ORDER BY FileName ASC")
     suspend fun getAllSongs(): List<Song>
 
-    @Query("SELECT * FROM LoopPoints WHERE IsAbPartB = 0 ORDER BY FileName ASC")
+    @Transaction
+    @Query("SELECT * FROM Songs WHERE IsAbPartB = 0 ORDER BY FileName ASC")
     fun getAllSongsFlow(): Flow<List<Song>>
 
-    @Query("SELECT * FROM LoopPoints ORDER BY FileName ASC")
+    @Transaction
+    @Query("SELECT * FROM Songs ORDER BY FileName ASC")
     fun getAllSongsRawFlow(): Flow<List<Song>>
 
-    @Query("SELECT * FROM LoopPoints WHERE FileName = :name AND duration = :duration LIMIT 1")
+    @Transaction
+    @Query("SELECT * FROM Songs WHERE FileName = :name AND duration = :duration LIMIT 1")
     suspend fun getSongByFingerprint(name: String, duration: Long): Song?
 
-    @Query("SELECT * FROM LoopPoints WHERE FileName = :name AND TotalSamples = :samples LIMIT 1")
+    @Transaction
+    @Query("SELECT * FROM Songs WHERE FileName = :name AND TotalSamples = :samples LIMIT 1")
     suspend fun getSongBySamples(name: String, samples: Long): Song?
 
-    @Query("SELECT * FROM LoopPoints WHERE FileName = :name AND IsAbPartB = 0")
+    @Transaction
+    @Query("SELECT * FROM Songs WHERE FileName = :name AND IsAbPartB = 0")
     suspend fun getSongsByName(name: String): List<Song>
 
-    @Query("SELECT * FROM LoopPoints WHERE Id = :id LIMIT 1")
+    @Transaction
+    @Query("SELECT * FROM Songs WHERE Id = :id LIMIT 1")
     suspend fun getSongById(id: Long): Song?
 
-    @Query("UPDATE LoopPoints SET LoopStart = :start, LoopEnd = :end, TotalSamples = :total WHERE Id = :songId")
-    suspend fun updateLoopPoints(songId: Long, start: Long, end: Long, total: Long)
-
-    @Query("UPDATE LoopPoints SET LoopStart = :start, LoopEnd = :end, TotalSamples = :total, Rating = :rating, Artist = :artist, Album = :album, DisplayName = :displayName, CoverPath = :coverPath WHERE Id = :songId")
-    suspend fun updateSyncMetadata(songId: Long, start: Long, end: Long, total: Long, rating: Int, artist: String?, album: String?, displayName: String?, coverPath: String?)
-
-    @Query("UPDATE LoopPoints SET Rating = :rating WHERE Id = :songId")
-    suspend fun updateSongRating(songId: Long, rating: Int)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertSong(song: Song): Long
-
-    @Update
-    suspend fun updateSong(song: Song): Int
-
-    @Query("SELECT * FROM LoopPoints WHERE FilePath = :path LIMIT 1")
+    @Transaction
+    @Query("SELECT * FROM Songs WHERE FilePath = :path LIMIT 1")
     suspend fun getSongByPath(path: String): Song?
 
-    @Query("SELECT * FROM LoopPoints")
+    @Transaction
+    @Query("SELECT * FROM Songs")
     suspend fun getAllSongsRaw(): List<Song>
 
     @Transaction
-    suspend fun insertOrUpdateSong(song: Song): Long {
-        // 场景 0：如果传入了 ID，且指纹匹配或指纹不存在，直接信任 ID 进行更新
-        // 但为了严谨，我们还是走指纹发现流程喵
+    @Query("SELECT * FROM Songs WHERE FilePath LIKE :pathPrefix || '%'")
+    suspend fun getSongsByPathPrefix(pathPrefix: String): List<Song>
 
-        val existingByFingerprint = getSongByFingerprint(song.fileName, song.duration)
-        // 尝试通过采样数找（电脑同步过来的幽灵喵）
-        val existingBySamples = if (song.totalSamples > 0) getSongBySamples(song.fileName, song.totalSamples) else null
-        val existingByPath = if (song.filePath.isNotBlank()) getSongByPath(song.filePath) else null
+    // --- 关联表专用操作 ---
 
-        // 场景 1：冲突处理 - 如果指纹（时长）还没对上，但采样数对上了
-        // 我们检查这个已存在的记录是不是没有路径且时长异常（0 或者 等于采样数）的“幽灵”
-        if (existingByFingerprint == null && existingBySamples != null && 
-            (existingBySamples.duration == 0L || existingBySamples.duration == existingBySamples.totalSamples) &&
-            existingBySamples.filePath.isBlank()) {
-             // 这里的幽灵就是我们要找的 PC 循环点，把它扶正！
-             val mergedSong = song.copy(
-                 id = existingBySamples.id,
-                 loopStart = if (song.loopStart == 0L) existingBySamples.loopStart else song.loopStart,
-                 loopEnd = if (song.loopEnd == song.totalSamples) existingBySamples.loopEnd else song.loopEnd
-             )
-             updateSong(mergedSong)
-             return existingBySamples.id
-        }
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertArtist(artist: Artist): Long
 
-        // 场景 1.2：如果两者都存在且互斥，说明我们要把“扫描到的”和“同步来的”进行大合体喵
-        if (existingByFingerprint != null && existingBySamples != null && existingByFingerprint.id != existingBySamples.id) {
-            val finalSong = existingByFingerprint.copy(
-                totalSamples = song.totalSamples,
-                loopStart = if (existingByFingerprint.loopStart == 0L) existingBySamples.loopStart else existingByFingerprint.loopStart,
-                loopEnd = if (existingByFingerprint.loopEnd == 0L || existingByFingerprint.loopEnd == existingByFingerprint.totalSamples) existingBySamples.loopEnd else existingByFingerprint.loopEnd
+    @Query("SELECT * FROM Artists WHERE Name = :name LIMIT 1")
+    suspend fun getArtistByName(name: String): Artist?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAlbum(album: Album): Long
+
+    @Query("SELECT * FROM Albums WHERE Name = :name LIMIT 1")
+    suspend fun getAlbumByName(name: String): Album?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLoopPoint(loopPoint: LoopPoint)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUserRating(userRating: UserRating)
+
+    @Query("UPDATE UserRatings SET Rating = :rating, LastModified = :now WHERE SongId = :songId")
+    suspend fun updateSongRating(songId: Long, rating: Int, now: Long = System.currentTimeMillis())
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertArtistsBatch(artists: List<Artist>): List<Long>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAlbumsBatch(albums: List<Album>): List<Long>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLoopPointsBatch(loopPoints: List<LoopPoint>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUserRatingsBatch(userRatings: List<UserRating>)
+
+    // --- 基础增删改 (针对 Entity) ---
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSongEntity(song: SongEntity): Long
+
+    @Update
+    suspend fun updateSongEntity(song: SongEntity): Int
+
+    @Delete
+    suspend fun deleteSongEntity(song: SongEntity): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSongsBatch(songs: List<SongEntity>): List<Long>
+
+    @Update
+    suspend fun updateSongsBatch(songs: List<SongEntity>): Int
+
+    @Query("DELETE FROM Songs WHERE Id IN (:ids)")
+    suspend fun deleteSongsByIds(ids: List<Long>): Int
+
+    @Query("""
+        UPDATE Songs SET 
+            TotalSamples = :total, 
+            DisplayName = :displayName, 
+            CoverPath = :coverPath, 
+            ArtistId = :artistId, 
+            AlbumId = :albumId,
+            IsAbPartB = :isAbPartB
+        WHERE Id = :id
+    """)
+    suspend fun updateSongSyncFields(id: Long, total: Long, displayName: String?, coverPath: String?, artistId: Long?, albumId: Long?, isAbPartB: Boolean)
+
+    @Transaction
+    suspend fun updateSongsMetadataBatch(updates: List<SongMetadataUpdate>) {
+        if (updates.isEmpty()) return
+        
+        // 1. 主表逐行更新 (SQL 局部手术，避免覆盖无关字段)
+        updates.forEach { update ->
+            updateSongSyncFields(
+                id = update.songId,
+                total = update.total,
+                displayName = update.displayName,
+                coverPath = update.coverPath,
+                artistId = update.artistId,
+                albumId = update.albumId,
+                isAbPartB = update.isAbPartB
             )
-            updateSong(finalSong)
-            deleteSong(existingBySamples) // 删除电脑端的幽灵记录，它的使命完成了喵！
-            return existingByFingerprint.id
         }
+        
+        // 2. 关联表批量 Insert (分层优化，极大减少磁盘 IO 和 SQL 解析开销喵！)
+        val loopPoints = updates.map { LoopPoint(songId = it.songId, loopStart = it.start, loopEnd = it.end) }
+        val ratings = updates.map { UserRating(songId = it.songId, rating = it.rating) }
+        
+        insertLoopPointsBatch(loopPoints)
+        insertUserRatingsBatch(ratings)
+    }
 
-        // 场景 1.5：既找到了指纹，又找到了路径，而且它们不是同一首歌
-        if (existingByFingerprint != null && existingByPath != null && existingByFingerprint.id != existingByPath.id) {
-            deleteSong(existingByPath)
-        }
+    // --- 复杂逻辑：Artist/Album 处理 ---
 
-        // 场景 2：指纹存在，直接更新指纹主体
-        if (existingByFingerprint != null) {
-            updateSong(song.copy(
-                id = existingByFingerprint.id, 
-                mediaId = if (song.mediaId != 0L) song.mediaId else existingByFingerprint.mediaId,
-                filePath = if (song.filePath.isNotBlank()) song.filePath else existingByFingerprint.filePath
-            ))
-            return existingByFingerprint.id
-        }
-
-        // 场景 3：指纹不存在，但路径存在（说明这是一首新剪辑或被大幅改动的歌，仅仅占据了旧位置）
-        if (existingByPath != null) {
-            updateSong(song.copy(
-                id = existingByPath.id,
-                mediaId = if (song.mediaId != 0L) song.mediaId else existingByPath.mediaId
-            ))
-            return existingByPath.id
-        }
-
-        // 场景 4：是个彻头彻尾的新人，直接加进去喵
-        return insertSong(song)
+    @Transaction
+    suspend fun getOrCreateArtist(name: String?): Long? {
+        if (name.isNullOrBlank()) return null
+        val existing = getArtistByName(name)
+        if (existing != null) return existing.id
+        return insertArtist(Artist(name = name))
     }
 
     @Transaction
-    suspend fun insertOrUpdateSongs(songs: List<Song>) {
-        songs.forEach { insertOrUpdateSong(it) }
+    suspend fun getOrCreateAlbum(name: String?): Long? {
+        if (name.isNullOrBlank()) return null
+        val existing = getAlbumByName(name)
+        if (existing != null) return existing.id
+        return insertAlbum(Album(name = name))
     }
 
-    @Delete
-    suspend fun deleteSong(song: Song): Int
+    // --- 复杂逻辑：兼容旧版接口的 insertOrUpdateSong ---
 
-    @Query("DELETE FROM LoopPoints WHERE Id IN (:ids)")
-    suspend fun deleteSongsByIds(ids: List<Long>): Int
+    @Transaction
+    suspend fun updateSyncMetadata(
+        songId: Long, 
+        start: Long, 
+        end: Long, 
+        total: Long, 
+        rating: Int, 
+        artist: String?, 
+        album: String?, 
+        displayName: String?, 
+        coverPath: String?
+    ) {
+        val song = getSongById(songId)?.song ?: return
+        
+        // 1. 更新主表
+        val artistId = getOrCreateArtist(artist)
+        val albumId = getOrCreateAlbum(album)
+        val updatedSong = song.copy(
+            totalSamples = total,
+            displayName = displayName,
+            coverPath = coverPath,
+            artistId = artistId,
+            albumId = albumId
+        )
+        updateSongEntity(updatedSong)
 
-    @Query("SELECT * FROM LoopPoints WHERE FilePath LIKE :pathPrefix || '%'")
-    suspend fun getSongsByPathPrefix(pathPrefix: String): List<Song>
+        // 2. 更新关联表
+        insertLoopPoint(LoopPoint(songId = songId, loopStart = start, loopEnd = end))
+        insertUserRating(UserRating(songId = songId, rating = rating))
+    }
+
+    @Transaction
+    suspend fun insertOrUpdateSong(
+        songEntity: SongEntity, 
+        loopStart: Long = 0, 
+        loopEnd: Long = 0, 
+        rating: Int = 0,
+        artistName: String? = null,
+        albumName: String? = null
+    ): Long {
+        val existingByFingerprint = getSongByFingerprint(songEntity.fileName, songEntity.duration)
+        val existingByPath = if (songEntity.filePath.isNotBlank()) getSongByPath(songEntity.filePath) else null
+
+        var targetId: Long = 0
+
+        // 逻辑保持一致：指纹、路径优先级
+        val match = existingByFingerprint ?: existingByPath
+
+        val artistId = getOrCreateArtist(artistName)
+        val albumId = getOrCreateAlbum(albumName)
+
+        if (match != null) {
+            targetId = match.id
+            val updatedEntity = songEntity.copy(
+                id = targetId,
+                mediaId = if (songEntity.mediaId != 0L) songEntity.mediaId else match.song.mediaId,
+                filePath = if (songEntity.filePath.isNotBlank()) songEntity.filePath else match.song.filePath,
+                artistId = artistId ?: match.song.artistId,
+                albumId = albumId ?: match.song.albumId
+            )
+            updateSongEntity(updatedEntity)
+        } else {
+            targetId = insertSongEntity(songEntity.copy(artistId = artistId, albumId = albumId))
+        }
+
+        // 更新 1:1 关联数据
+        insertLoopPoint(LoopPoint(songId = targetId, loopStart = loopStart, loopEnd = loopEnd))
+        insertUserRating(UserRating(songId = targetId, rating = rating))
+
+        return targetId
+    }
+
+    @Transaction
+    suspend fun insertOrUpdateSong(song: Song): Long {
+        return insertOrUpdateSong(
+            songEntity = song.song,
+            loopStart = song.loopStart,
+            loopEnd = song.loopEnd,
+            rating = song.rating,
+            artistName = song.artist,
+            albumName = song.album
+        )
+    }
 }

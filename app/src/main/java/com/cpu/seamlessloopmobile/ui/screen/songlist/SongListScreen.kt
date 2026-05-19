@@ -38,7 +38,7 @@ fun SongListScreen(
         modifier = Modifier.fillMaxSize(),
         state = listState
     ) {
-        items(songs, key = { it.filePath }) { song ->
+        items(songs, key = { it.id }) { song ->
             val isPlaying = song.filePath == currentPlayingSongPath
             val isSelected = selectedItems.contains(song.filePath)
             

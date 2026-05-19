@@ -3,6 +3,11 @@ package com.cpu.seamlessloopmobile.data
 import android.content.Context
 import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.model.SongDao
+import com.cpu.seamlessloopmobile.model.SongMetadataUpdate
+import com.cpu.seamlessloopmobile.model.LoopPoint
+import com.cpu.seamlessloopmobile.model.UserRating
+import com.cpu.seamlessloopmobile.model.Artist
+import com.cpu.seamlessloopmobile.model.Album
 import com.cpu.seamlessloopmobile.scanner.AudioScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,36 +43,120 @@ class MusicScannerRepository(private val songDao: SongDao) {
     }
 
     /**
-     * 初始同步扫描
+     * 初始同步扫描：极速批量版 (๑•̀ㅂ•́)و✧
      */
     suspend fun getInitialScannedSongs(context: Context): List<Song> = withContext(Dispatchers.IO) {
         val scannedSongs = AudioScanner.scan(context)
-        val dbSongs = songDao.getAllSongs().associateBy { "${it.fileName}|${it.duration}" }
+        // 预热：一次性加载本地所有歌曲，按文件名+时长构建匹配索引
+        val dbSongs = songDao.getAllSongs().associateBy { "${it.fileName.lowercase()}|${it.duration}" }
         
-        // --- 预处理：识别 AB 模式下的 B 段喵 ---
+        // 1. 预处理：识别 AB 模式下的 B 段喵
         val abMarkedSongs = scannedSongs.map { song ->
             val isB = isLikelyAbPartB(song, scannedSongs)
-            if (isB) song.copy(isAbPartB = true) else song
+            if (isB) song.copy(song = song.song.copy(isAbPartB = true)) else song
         }
-        
-        abMarkedSongs.map { song ->
-            val dbSong = dbSongs["${song.fileName}|${song.duration}"]
+
+        // === Artist/Album 批量预创建，构建 name→id 映射 (CPU 大人的 Zip 映射法) ===
+        val ignoredNames = setOf("unknown artist", "unknown album", "<unknown>")
+        val allArtistNames = abMarkedSongs
+            .mapNotNull { it.artistEntity?.name }
+            .filter { it.isNotBlank() && it.lowercase() !in ignoredNames }
+            .toSet()
+        val allAlbumNames = abMarkedSongs
+            .mapNotNull { it.albumEntity?.name }
+            .filter { it.isNotBlank() && it.lowercase() !in ignoredNames }
+            .toSet()
+
+        val artistMap = mutableMapOf<String, Long>()
+        allArtistNames.forEach { name ->
+            songDao.getArtistByName(name)?.let { artistMap[name.lowercase()] = it.id }
+        }
+        val missingArtists = allArtistNames.filter { artistMap[it.lowercase()] == null }
+        if (missingArtists.isNotEmpty()) {
+            val newIds = songDao.insertArtistsBatch(missingArtists.map { Artist(name = it) })
+            missingArtists.zip(newIds).forEach { (name, id) -> artistMap[name.lowercase()] = id }
+        }
+
+        val albumMap = mutableMapOf<String, Long>()
+        allAlbumNames.forEach { name ->
+            songDao.getAlbumByName(name)?.let { albumMap[name.lowercase()] = it.id }
+        }
+        val missingAlbums = allAlbumNames.filter { albumMap[it.lowercase()] == null }
+        if (missingAlbums.isNotEmpty()) {
+            val newIds = songDao.insertAlbumsBatch(missingAlbums.map { Album(name = it) })
+            missingAlbums.zip(newIds).forEach { (name, id) -> albumMap[name.lowercase()] = id }
+        }
+        // === 预创建结束 ===
+
+
+
+        val insertList = mutableListOf<Song>()
+        val updateList = mutableListOf<SongMetadataUpdate>()
+        val result = mutableListOf<Song>()
+        val seenFingerprints = mutableSetOf<String>()
+
+        abMarkedSongs.forEach { song ->
+            val fingerprint = "${song.fileName.lowercase()}|${song.duration}"
+            val dbSong = dbSongs[fingerprint]
+
             if (dbSong != null) {
-                val updatedSong = song.copy(
-                    id = dbSong.id, 
-                    loopStart = dbSong.loopStart, 
-                    loopEnd = dbSong.loopEnd, 
-                    totalSamples = dbSong.totalSamples, 
-                    displayName = dbSong.displayName ?: song.displayName,
-                    isAbPartB = song.isAbPartB // 即使以前不是，现在也要同步更新这个标记喵
-                )
-                songDao.insertOrUpdateSong(updatedSong)
-                updatedSong
-            } else {
-                val newId = songDao.insertOrUpdateSong(song)
-                song.copy(id = newId)
+                // 情况 A：老面孔，准备批量元数据更新
+                // 数据库已有的 artistId/albumId 优先（PC 同步数据），null 时用 MediaStore 扫描结果补充
+                val resolvedArtistId = dbSong.song.artistId
+                    ?: song.artistEntity?.name?.lowercase()?.let { artistMap[it] }
+                val resolvedAlbumId = dbSong.song.albumId
+                    ?: song.albumEntity?.name?.lowercase()?.let { albumMap[it] }
+
+                val approximateTotal = dbSong.totalSamples
+
+                updateList.add(SongMetadataUpdate(
+                    songId = dbSong.id,
+                    total = approximateTotal,
+                    start = dbSong.loopStart,
+                    end = dbSong.loopEnd,
+                    rating = dbSong.rating,
+                    artistId = resolvedArtistId,
+                    albumId = resolvedAlbumId,
+                    displayName = dbSong.displayName,
+                    coverPath = dbSong.coverPath,
+                    isAbPartB = song.isAbPartB
+                ))
+                result.add(song.copy(song = song.song.copy(id = dbSong.id)))
+            } else if (!seenFingerprints.contains(fingerprint)) {
+                // 情况 B：新朋友，且本次扫描中还没见过这个指纹，准备批量插入喵！
+                insertList.add(song)
+                seenFingerprints.add(fingerprint)
             }
         }
+
+        // 2. 批量提交 (Atomic Batch)
+        if (insertList.isNotEmpty()) {
+            // 回填 artistId/albumId 到 SongEntity，确保入库时就有正确的关联喵！
+            val entities = insertList.map { song ->
+                val aId = song.artistEntity?.name?.lowercase()?.let { artistMap[it] }
+                val alId = song.albumEntity?.name?.lowercase()?.let { albumMap[it] }
+                song.song.copy(artistId = aId, albumId = alId, totalSamples = 0L)
+            }
+            val newIds = songDao.insertSongsBatch(entities)
+            
+            val newLoopPoints = mutableListOf<LoopPoint>()
+            val newUserRatings = mutableListOf<UserRating>()
+            
+            insertList.zip(newIds).forEach { (song, id) ->
+                newLoopPoints.add(LoopPoint(songId = id, loopStart = song.loopStart, loopEnd = song.loopEnd))
+                newUserRatings.add(UserRating(songId = id, rating = song.rating))
+                result.add(song.copy(song = song.song.copy(id = id)))
+            }
+            
+            songDao.insertLoopPointsBatch(newLoopPoints)
+            songDao.insertUserRatingsBatch(newUserRatings)
+        }
+        
+        if (updateList.isNotEmpty()) {
+            songDao.updateSongsMetadataBatch(updateList)
+        }
+        
+        result
     }
 
     /**

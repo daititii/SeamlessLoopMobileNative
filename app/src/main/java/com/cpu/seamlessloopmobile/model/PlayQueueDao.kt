@@ -4,11 +4,13 @@ import androidx.room.*
 
 @Dao
 interface PlayQueueDao {
+    @Transaction
     @Query("""
-        SELECT s.* FROM LoopPoints s
-        JOIN PlayQueue pq ON s.Id = pq.SongId
-        ORDER BY pq.SortOrder ASC
-    """)
+        SELECT Songs.* FROM Songs
+        JOIN PlayQueue ON Songs.Id = PlayQueue.SongId
+        ORDER BY PlayQueue.SortOrder ASC
+    """
+    )
     suspend fun getPlayQueueSongs(): List<Song>
 
     @Query("DELETE FROM PlayQueue")
