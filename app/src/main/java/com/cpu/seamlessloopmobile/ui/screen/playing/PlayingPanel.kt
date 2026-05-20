@@ -76,6 +76,10 @@ fun PlayingPanel(
     var tempLoopStart by remember(playingSong?.id) { mutableStateOf(playingSong?.loopStart ?: 0L) }
     var tempLoopEnd by remember(playingSong?.id) { mutableStateOf(playingSong?.loopEnd ?: 0L) }
 
+    LaunchedEffect(playingSong?.id) {
+        viewModel.clearDetectedLoopPoints()
+    }
+
     AnimatedVisibility(
         visible = isVisible && playingSong != null,
         enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -139,41 +143,55 @@ fun PlayingPanel(
                 ) { page ->
                     when (page) {
                         0 -> MainInfoPage(songItem, isPlaying, onRatingClick = { viewModel.cycleSongRating(songItem) }) // 主页只剩封面和歌曲信息
-                        1 -> FineTunePage(
-                            song = songItem,
-                            tempLoopStart = tempLoopStart,
-                            tempLoopEnd = tempLoopEnd,
-                            onStartValueChange = { tempLoopStart = it },
-                            onEndValueChange = { tempLoopEnd = it },
-                            onStartAdjustMs = { deltaMs ->
-                                val sampleRate = NativeAudio.getSampleRate()
-                                val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
-                                val dur = NativeAudio.getDuration()
-                                val actualEnd = if (tempLoopEnd > 0) tempLoopEnd else dur
-                                tempLoopStart = (tempLoopStart + deltaSamples).coerceIn(0, actualEnd)
-                            },
-                            onEndAdjustMs = { deltaMs ->
-                                val sampleRate = NativeAudio.getSampleRate()
-                                val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
-                                val dur = NativeAudio.getDuration()
-                                tempLoopEnd = (tempLoopEnd + deltaSamples).coerceIn(tempLoopStart, dur)
-                            },
-                            onEditClick = { isStart ->
-                                viewModel.showDialog(
-                                    com.cpu.seamlessloopmobile.viewmodel.MusicDialog.LoopEdit(
-                                        isStart = isStart,
-                                        initialSamples = if(isStart) tempLoopStart else tempLoopEnd,
-                                        onConfirm = { newValue ->
-                                            if (isStart) tempLoopStart = newValue
-                                            else tempLoopEnd = newValue
-                                        }
+                        1 -> {
+                            val detectedPoints by viewModel.detectedLoopPoints.collectAsState()
+                            val isDetecting by viewModel.isDetectingLoop.collectAsState()
+                            
+                            FineTunePage(
+                                song = songItem,
+                                tempLoopStart = tempLoopStart,
+                                tempLoopEnd = tempLoopEnd,
+                                detectedPoints = detectedPoints,
+                                isDetecting = isDetecting,
+                                onStartValueChange = { tempLoopStart = it },
+                                onEndValueChange = { tempLoopEnd = it },
+                                onStartAdjustMs = { deltaMs ->
+                                    val sampleRate = NativeAudio.getSampleRate()
+                                    val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
+                                    val dur = NativeAudio.getDuration()
+                                    val actualEnd = if (tempLoopEnd > 0) tempLoopEnd else dur
+                                    tempLoopStart = (tempLoopStart + deltaSamples).coerceIn(0, actualEnd)
+                                },
+                                onEndAdjustMs = { deltaMs ->
+                                    val sampleRate = NativeAudio.getSampleRate()
+                                    val deltaSamples = (sampleRate * deltaMs / 1000.0).toLong()
+                                    val dur = NativeAudio.getDuration()
+                                    tempLoopEnd = (tempLoopEnd + deltaSamples).coerceIn(tempLoopStart, dur)
+                                },
+                                onEditClick = { isStart ->
+                                    viewModel.showDialog(
+                                        com.cpu.seamlessloopmobile.viewmodel.MusicDialog.LoopEdit(
+                                            isStart = isStart,
+                                            initialSamples = if(isStart) tempLoopStart else tempLoopEnd,
+                                            onConfirm = { newValue ->
+                                                if (isStart) tempLoopStart = newValue
+                                                else tempLoopEnd = newValue
+                                            }
+                                        )
                                     )
-                                )
-                            },
-                            onApplyAndListen = {
-                                viewModel.applyAndListenToLoop(songItem, tempLoopStart, tempLoopEnd)
-                            }
-                        )
+                                },
+                                onApplyAndListen = {
+                                    viewModel.applyAndListenToLoop(songItem, tempLoopStart, tempLoopEnd)
+                                },
+                                onDetectClick = {
+                                    viewModel.detectLoopPoints(songItem)
+                                },
+                                onPointSelect = { point ->
+                                    tempLoopStart = point.loopStart
+                                    tempLoopEnd = point.loopEnd
+                                }
+                            )
+                        }
                     }
                 }
 
@@ -185,7 +203,9 @@ fun PlayingPanel(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     // 1. 紧凑型进度条
-                    PlaybackProgressBar(songItem)
+                    PlaybackProgressBar(songItem, onSeekComplete = {
+                        viewModel.refreshMediaSessionPosition()
+                    })
 
                     Spacer(modifier = Modifier.height(16.dp))
 

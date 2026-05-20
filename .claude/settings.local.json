@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(.\\\\gradlew.bat :app:generateDebugBuildConfig 2>&1 | Select-Object -Last 5)"
+    ]
+  }
+}

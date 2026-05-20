@@ -270,25 +270,28 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream *oboeStream
 
     // 更新当前播放时间（进度条）
     int32_t framesRead = read / channels;
-    mCurrentReadFrame.fetch_add(static_cast<int64_t>(framesRead));
-    
+    int64_t currentPos = mCurrentReadFrame.load();
+    int64_t newPos = currentPos + static_cast<int64_t>(framesRead);
+
     // 如果播放超过了循环点，就在 UI 进度上做个模拟回跳（真正的跳转由后台完成）
+    // 改为本地变量取模计算，消除 fetch_add/load/store 之间的 TOCTOU 竞态并于多次溢出安全
     if (mIsLooping.load()) {
         int64_t uiLoopStart = mLoopStartFrame.load();
         int64_t uiLoopEnd = mLoopEndFrame.load();
 
         if (mIsAbMode.load()) {
-            // 在合体模式下，进度的终点实际上是用户期望的绝对位置喵！
             uiLoopStart = mUserLoopStart.load();
             uiLoopEnd = mUserLoopEnd.load();
         }
 
-        if (mCurrentReadFrame.load() >= uiLoopEnd) {
-             if (uiLoopEnd > uiLoopStart) {
-                  mCurrentReadFrame.store(uiLoopStart + (mCurrentReadFrame.load() - uiLoopEnd));
-             }
+        int64_t loopLen = uiLoopEnd - uiLoopStart;
+        if (newPos >= uiLoopEnd && loopLen > 0) {
+            int64_t overflow = newPos - uiLoopEnd;
+            newPos = uiLoopStart + (overflow % loopLen);
         }
     }
+
+    mCurrentReadFrame.store(newPos);
 
     return oboe::DataCallbackResult::Continue;
 }
@@ -484,6 +487,9 @@ void AudioEngine::decodingLoop() {
                 LOGD("DualDecoder: Handover successful at frame %lld", (long long)loopEnd);
                 
                 // --- 循环跳转 (Loop Jump) 检测喵 ---
+                // EVENT_LOOP_JUMP only reports decoder handover completion.
+                // Android-side MediaSession progress is sampled later from mCurrentReadFrame,
+                // so the system UI does not rewind before the new audio position is audible.
                 if (mEventCallback) mEventCallback(2); // EVENT_LOOP_JUMP
             }
         }
@@ -501,9 +507,9 @@ void AudioEngine::decodingLoop() {
 
 bool AudioEngine::writeToFifo(const float* data, int32_t numSamples) {
     if (numSamples <= 0) return true;
-    
+
     std::lock_guard<std::mutex> lock(mFifoMutex);
-    
+
     // 莱芙这次加上最硬的防溢出外壳
     int32_t actualToWrite = numSamples;
     if (mFifoFullCount + numSamples > kFifoSize) {
@@ -511,31 +517,43 @@ bool AudioEngine::writeToFifo(const float* data, int32_t numSamples) {
         // 理想情况下通过 condition 保证这里不会溢出喵
         actualToWrite = static_cast<int32_t>(kFifoSize - mFifoFullCount);
     }
-    
+
     if (actualToWrite > 0) {
-        for (int32_t i = 0; i < actualToWrite; i++) {
-            mFifo[mFifoWritePos] = data[i];
-            mFifoWritePos = (mFifoWritePos + 1) % kFifoSize;
-            mFifoFullCount++;
+        // 环形缓冲区标准 memcpy：比逐样本循环省掉 N 次取模运算
+        size_t firstPart = std::min(static_cast<size_t>(actualToWrite), kFifoSize - mFifoWritePos);
+        std::memcpy(&mFifo[mFifoWritePos], data, firstPart * sizeof(float));
+        if (firstPart < static_cast<size_t>(actualToWrite)) {
+            std::memcpy(&mFifo[0], data + firstPart,
+                        (actualToWrite - static_cast<int32_t>(firstPart)) * sizeof(float));
         }
+        mFifoWritePos = (mFifoWritePos + actualToWrite) % kFifoSize;
+        mFifoFullCount += actualToWrite;
     }
-    
+
     return actualToWrite == numSamples;
 }
 
 int32_t AudioEngine::readFromFifo(float* data, int32_t numSamples) {
     std::lock_guard<std::mutex> lock(mFifoMutex);
-    int32_t read = 0;
-    while (read < numSamples && mFifoFullCount > 0) {
-        data[read] = mFifo[mFifoReadPos];
-        mFifoReadPos = (mFifoReadPos + 1) % kFifoSize;
-        mFifoFullCount--;
-        read++;
+
+    int32_t actualToRead = std::min(numSamples, static_cast<int32_t>(mFifoFullCount));
+
+    if (actualToRead > 0) {
+        // 环形缓冲区标准 memcpy：比逐样本循环省掉 N 次取模运算，尤其关键因为此函数跑在 Oboe 音频回调线程
+        size_t firstPart = std::min(static_cast<size_t>(actualToRead), kFifoSize - mFifoReadPos);
+        std::memcpy(data, &mFifo[mFifoReadPos], firstPart * sizeof(float));
+        if (firstPart < static_cast<size_t>(actualToRead)) {
+            std::memcpy(data + firstPart, &mFifo[0],
+                        (actualToRead - static_cast<int32_t>(firstPart)) * sizeof(float));
+        }
+        mFifoReadPos = (mFifoReadPos + actualToRead) % kFifoSize;
+        mFifoFullCount -= actualToRead;
     }
+
     if (mFifoFullCount < kFifoSize / 2) {
         mFifoCond.notify_one(); // 仓库空出一半了，叫搬运工干活喵！
     }
-    return read;
+    return actualToRead;
 }
 
 void AudioEngine::resetFifo() {

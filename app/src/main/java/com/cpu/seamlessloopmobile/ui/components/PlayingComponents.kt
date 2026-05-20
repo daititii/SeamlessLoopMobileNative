@@ -26,7 +26,6 @@ import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.utils.TimeUtils
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.delay
 
 @Composable
 fun MainInfoPage(
@@ -126,7 +125,7 @@ fun MainInfoPage(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlaybackProgressBar(song: Song) {
+fun PlaybackProgressBar(song: Song, onSeekComplete: (() -> Unit)? = null) {
     val isPreview = LocalInspectionMode.current
     var currentFrame by remember { mutableStateOf(0L) }
     var sliderPosition by remember { mutableStateOf<Float?>(null) }
@@ -160,6 +159,7 @@ fun PlaybackProgressBar(song: Song) {
                         coroutineScope.launch {
                             delay(300) // 让界面先维持拖动后的位置，等底层音频追上来
                             sliderPosition = null
+                            onSeekComplete?.invoke() // 通知外部同步通知栏进度喵！
                         }
                     } else {
                         sliderPosition = null

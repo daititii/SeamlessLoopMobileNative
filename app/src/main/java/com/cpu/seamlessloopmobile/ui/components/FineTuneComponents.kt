@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -16,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalInspectionMode
+import com.cpu.seamlessloopmobile.jni.LoopPoint
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.model.Song
 
@@ -24,12 +26,16 @@ fun FineTunePage(
     song: Song, 
     tempLoopStart: Long,
     tempLoopEnd: Long,
+    detectedPoints: List<LoopPoint>? = null,
+    isDetecting: Boolean = false,
     onStartValueChange: (Long) -> Unit,
     onEndValueChange: (Long) -> Unit,
     onStartAdjustMs: (Double) -> Unit,
     onEndAdjustMs: (Double) -> Unit,
     onEditClick: (Boolean) -> Unit,
-    onApplyAndListen: () -> Unit
+    onApplyAndListen: () -> Unit,
+    onDetectClick: () -> Unit = {},
+    onPointSelect: (LoopPoint) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -69,6 +75,75 @@ fun FineTunePage(
                 onAdjustMs = onEndAdjustMs,
                 onEditClick = { onEditClick(false) }
             )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // --- 自动检测区域喵 ---
+        if (isDetecting) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = Color(0xFFBB86FC),
+                strokeWidth = 2.dp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        } else {
+            OutlinedButton(
+                onClick = onDetectClick,
+                modifier = Modifier.fillMaxWidth().height(36.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBB86FC).copy(alpha = 0.5f)),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFBB86FC), modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.size(4.dp))
+                Text("自动探测循环点", color = Color(0xFFBB86FC), fontSize = 12.sp)
+            }
+            
+            detectedPoints?.let { points ->
+                if (points.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("探测结果 (点击应用):", color = Color.Gray, fontSize = 10.sp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            points.take(5).forEach { point ->
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { onPointSelect(point) },
+                                    color = Color(0xFF2D2D3D),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(vertical = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            String.format("%.1f%%", point.score * 100),
+                                            color = Color.White,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            "相似度",
+                                            color = Color.Gray,
+                                            fontSize = 8.sp,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))

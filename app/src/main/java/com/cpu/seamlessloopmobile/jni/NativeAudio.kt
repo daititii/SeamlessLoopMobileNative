@@ -3,6 +3,7 @@ package com.cpu.seamlessloopmobile.jni
 object NativeAudio {
     init {
         System.loadLibrary("seamlessloopmobile")
+        System.loadLibrary("loopfinder")
     }
 
     // 事件常量喵！
@@ -47,4 +48,8 @@ object NativeAudio {
     external fun getAudioFileDuration(fd: Int, offset: Long, length: Long): Long
     // 用于扫描阶段获取文件的实际采样率喵！
     external fun getAudioFileSampleRate(fd: Int, offset: Long, length: Long): Int
+
+    // 自动寻找循环点喵！
+    @JvmStatic
+    external fun analyzeLoopPoints(filePath: String, topN: Int): Array<LoopPoint>?
 }

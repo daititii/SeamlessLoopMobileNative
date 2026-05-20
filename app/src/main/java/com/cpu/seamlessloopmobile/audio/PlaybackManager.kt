@@ -57,6 +57,9 @@ class PlaybackManager(
                     }
                     NativeAudio.EVENT_LOOP_JUMP -> {
                         android.util.Log.d("PlaybackManager", "🔄 底层报告：完成了一次完美的循环跳转喵！")
+                        // This event only means the decoder handover is done. System-visible
+                        // progress is sampled by PlaybackService's 250ms sync job so the
+                        // notification/lock screen never rewinds before that position is audible.
                     }
                 }
             }
@@ -118,7 +121,11 @@ class PlaybackManager(
     }
 
     override fun seekTo(position: Long) {
-        NativeAudio.seekTo(position)
+        // position 来自 MediaSession (通知栏等)，单位是 PlaybackState 中存的毫秒
+        // 底层 NativeAudio.seekTo 需要帧数，这里做转换
+        val sr = NativeAudio.getSampleRate().let { if (it > 0) it else 44100 }
+        val framePos = position * sr / 1000L
+        NativeAudio.seekTo(framePos)
         currentSong?.let {
             updateMediaSessionState(it, isPlaying, isAbMode)
         }
@@ -126,6 +133,36 @@ class PlaybackManager(
 
     override fun setLooping(looping: Boolean) {
         NativeAudio.setLooping(looping)
+    }
+
+    fun updatePosition() {
+        if (_state.value != AudioPlayState.PLAYING) return
+        // 底层返回帧数，但 PlaybackState 需存毫秒以与 METADATA_KEY_DURATION 同单位，
+        // 否则通知栏进度条会因单位不一致而错位或溢出
+        val posMs = framesToPlaybackPositionMs(NativeAudio.getCurrentPosition(), NativeAudio.getSampleRate())
+        // 从零构建 PlaybackState，不依赖 controller 的异步缓存，防止读到过时状态导致 setPlaybackState 被忽略喵！
+        val extras = android.os.Bundle().apply {
+            putBoolean("is_ab_mode", isAbMode)
+            putInt("play_mode", settingsManager.playMode.ordinal)
+        }
+        val newState = android.support.v4.media.session.PlaybackStateCompat.Builder()
+            .setActions(
+                android.support.v4.media.session.PlaybackStateCompat.ACTION_PLAY or
+                android.support.v4.media.session.PlaybackStateCompat.ACTION_PAUSE or
+                android.support.v4.media.session.PlaybackStateCompat.ACTION_PLAY_PAUSE or
+                android.support.v4.media.session.PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+                android.support.v4.media.session.PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                android.support.v4.media.session.PlaybackStateCompat.ACTION_SEEK_TO or
+                android.support.v4.media.session.PlaybackStateCompat.ACTION_STOP
+            )
+            .setState(
+                android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING,
+                posMs,
+                1.0f
+            )
+            .setExtras(extras)
+            .build()
+        mediaSession.setPlaybackState(newState)
     }
 
     fun updateMediaSessionState(song: Song, isPlaying: Boolean, isAbMode: Boolean = false, error: String? = null) {
@@ -143,6 +180,9 @@ class PlaybackManager(
             .build()
         mediaSession.setMetadata(metadata)
 
+        // 底层 getCurrentPosition 返回帧数，PlaybackState 需存毫秒以与 METADATA_KEY_DURATION 保持一致
+        val posMs = framesToPlaybackPositionMs(NativeAudio.getCurrentPosition(), NativeAudio.getSampleRate())
+
         val stateBuilder = android.support.v4.media.session.PlaybackStateCompat.Builder()
             .setActions(
                 android.support.v4.media.session.PlaybackStateCompat.ACTION_PLAY or
@@ -154,9 +194,9 @@ class PlaybackManager(
                 android.support.v4.media.session.PlaybackStateCompat.ACTION_STOP
             )
             .setState(
-                if (isPlaying) android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING 
+                if (isPlaying) android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING
                 else android.support.v4.media.session.PlaybackStateCompat.STATE_PAUSED,
-                NativeAudio.getCurrentPosition(), 
+                posMs,
                 1.0f
             )
         
