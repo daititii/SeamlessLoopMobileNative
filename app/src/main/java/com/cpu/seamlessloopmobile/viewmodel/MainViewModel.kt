@@ -9,6 +9,8 @@ import com.cpu.seamlessloopmobile.model.Playlist
 import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.data.MusicRepository
+import com.cpu.seamlessloopmobile.jni.LoopPoint
+import com.cpu.seamlessloopmobile.jni.NativeAudio
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -201,6 +203,35 @@ class MainViewModel(
     private val _isPlayingPanelVisible = MutableLiveData(false)
     val isPlayingPanelVisible: LiveData<Boolean> = _isPlayingPanelVisible
 
+    // --- 循环检测状态喵 ---
+    private val _detectedLoopPoints = kotlinx.coroutines.flow.MutableStateFlow<List<LoopPoint>?>(null)
+    val detectedLoopPoints: kotlinx.coroutines.flow.StateFlow<List<LoopPoint>?> = _detectedLoopPoints
+
+    private val _isDetectingLoop = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val isDetectingLoop: kotlinx.coroutines.flow.StateFlow<Boolean> = _isDetectingLoop
+
+    fun detectLoopPoints(song: Song) {
+        viewModelScope.launch {
+            _isDetectingLoop.value = true
+            _detectedLoopPoints.value = null
+            try {
+                val results = withContext(Dispatchers.Default) {
+                    NativeAudio.analyzeLoopPoints(song.filePath, 5)
+                }
+                _detectedLoopPoints.value = results?.toList()
+            } catch (e: Exception) {
+                android.util.Log.e("MainViewModel", "❌ 循环检测失败: ${e.message}")
+            } finally {
+                _isDetectingLoop.value = false
+            }
+        }
+    }
+
+    fun clearDetectedLoopPoints() {
+        _detectedLoopPoints.value = null
+        _isDetectingLoop.value = false
+    }
+
     // --- 对话框中台控制喵 ---
     private val _currentDialog = MutableLiveData<MusicDialog?>(null)
     val currentDialog: LiveData<MusicDialog?> = _currentDialog
@@ -299,6 +330,7 @@ class MainViewModel(
     fun skipToNext() = mediaControlManager.skipToNext()
     fun skipToPrevious() = mediaControlManager.skipToPrevious()
     fun seekTo(pos: Long) = mediaControlManager.seekTo(pos)
+    fun refreshMediaSessionPosition() = mediaControlManager.refreshPosition()
 
     fun setPlayMode(mode: PlayMode) {
         _playMode.value = mode

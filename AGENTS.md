@@ -19,8 +19,11 @@ gradlew.bat connectedAndroidTest               # 需要设备
 
 - **导航**：自定义 `MusicUiState` 密封类 + `AnimatedContent`，未使用 Navigation 组件（虽依赖 navigation-compose）
 - **服务**：`PlaybackService` (MediaBrowserService) 后台播放，`MediaControlManager` 管理媒体会话
-- **ViewModel**：`MainViewModel` 作为协调者，通过 `MainViewModelFactory` 注入 `LibraryViewModel`、`SelectionViewModel`、`PlaylistViewModel` 三个子 ViewModel（公开为 `lateinit var` 字段）
-- **Native 层**：`app/src/main/cpp/` — Oboe 1.9.3 + NDK 解码器(minimp3)，JNI 桥接 `native-lib.cpp` ↔ `NativeAudio.kt`
+- **ViewModel**：`MainViewModel` 作为协调者，通过 `MainViewModelFactory` 注入三个子 ViewModel；同时负责**自动循环点探测**逻辑的调度与状态管理
+- **Native 层**：`app/src/main/cpp/` — 包含两个核心引擎：
+    1. **播放引擎**：Oboe 1.9.3 + NDK 解码器(minimp3)
+    2. **探测引擎**：`loopfinder` (基于 FFT/Chroma 分析)
+    - 统一通过 `NativeAudio.kt` 进行 JNI 桥接
 - **UI**：Jetpack Compose + Material3，状态通过 ViewModel 的 LiveData + MediaControlManager 的 StateFlow/SharedFlow 驱动
 - **对话框**：统一 `MusicDialog` 密封类 + `CentralizedDialogHost` 集中管理
 
@@ -67,6 +70,7 @@ gradlew.bat connectedAndroidTest               # 需要设备
 - **配置缓存**：`org.gradle.configuration-cache=true`（默认开启，缓存问题可临时禁用）
 - **调试安装**：`android.injected.testOnly=false` 解决调试弹窗
 - **双指纹去重**：`insertOrUpdateSong` 先用 fileName+duration 匹配，失败再用 fileName+totalSamples 匹配；不依赖文件路径
+- **Native 库加载**：`NativeAudio` 需同时加载 `seamlessloopmobile` 和 `loopfinder` 两个原生库
 - **A/B 过滤**：含 `isAbPartB=true` 的歌曲默认在 UI 列表查询中被排除（由 `SongDao` 查询逻辑保证）
 
 ## 包结构速查

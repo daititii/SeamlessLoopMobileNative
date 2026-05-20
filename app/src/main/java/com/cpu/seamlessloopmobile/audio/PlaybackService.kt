@@ -10,6 +10,7 @@ import com.cpu.seamlessloopmobile.data.MusicRepository
 import com.cpu.seamlessloopmobile.db.AppDatabase
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import android.content.Intent
 
@@ -27,6 +28,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private var mediaSession: MediaSessionCompat? = null
     private var notify: Notify? = null
     private val queueManager = QueueManager()
+    private lateinit var systemProgressSyncController: SystemMediaProgressSyncController
 
     inner class PlaybackBinder : android.os.Binder() {
         fun getService(): PlaybackService = this@PlaybackService
@@ -111,6 +113,12 @@ class PlaybackService : MediaBrowserServiceCompat() {
             notificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         )
 
+        systemProgressSyncController = SystemMediaProgressSyncController(serviceScope) {
+            // Keep notification/lock-screen progress sourced from the native position sampled
+            // on the service thread. This avoids treating decoder loop handover as audible rewind.
+            playbackManager?.updatePosition()
+        }
+
         playbackManager = PlaybackManager(
             context = this,
             coroutineScope = serviceScope,
@@ -128,6 +136,15 @@ class PlaybackService : MediaBrowserServiceCompat() {
         }
 
         // 莱芙帮大人找回上次的记忆喵！
+        val manager = playbackManager!!
+        serviceScope.launch {
+            // The service owns system progress sync, so background and lock-screen playback keep
+            // updating even when no Activity/MediaControlManager is connected.
+            manager.state.collect { state ->
+                systemProgressSyncController.onPlaybackStateChanged(state)
+            }
+        }
+
         restoreLastSession()
 
         mediaSession?.setCallback(object : MediaSessionCompat.Callback() {
@@ -322,6 +339,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     }
 
     fun stopForegroundCompletely() {
+        systemProgressSyncController.onPlaybackStateChanged(AudioPlayState.IDLE)
         if (wakeLock?.isHeld == true) wakeLock?.release()
         audioFocusManager.abandonFocus()
         playbackManager?.stop()
@@ -359,6 +377,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     }
 
     override fun onDestroy() {
+        systemProgressSyncController.dispose()
         if (wakeLock?.isHeld == true) wakeLock?.release()
         headsetPlugReceiver.unregister(this)
         mediaSession?.release()

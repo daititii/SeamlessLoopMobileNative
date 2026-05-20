@@ -177,4 +177,8 @@ class MediaControlManager(private val context: Context) {
     fun sendCustomAction(action: String, args: Bundle?) {
         mediaController?.transportControls?.sendCustomAction(action, args)
     }
+
+    fun refreshPosition() {
+        playbackService?.playbackManager?.updatePosition()
+    }
 }
