@@ -19,7 +19,7 @@ gradlew.bat connectedAndroidTest               # 需要设备
 
 - **导航**：自定义 `MusicUiState` 密封类 + `AnimatedContent`，未使用 Navigation 组件（虽依赖 navigation-compose）
 - **服务**：`PlaybackService` (MediaBrowserService) 后台播放，`MediaControlManager` 管理媒体会话
-- **ViewModel**：`MainViewModel` 作为协调者，通过 `MainViewModelFactory` 注入三个子 ViewModel；同时负责**自动循环点探测**逻辑的调度与状态管理
+- **ViewModel**：`MainViewModel` 作为协调者，由 `MainViewModelFactory` 创建并通过属性赋值持有三个子 ViewModel（`LibraryViewModel`、`SelectionViewModel`、`PlaylistViewModel`）；同时负责**自动循环点探测**逻辑的调度与状态管理
 - **Native 层**：`app/src/main/cpp/` — 包含两个核心引擎：
     1. **播放引擎**：Oboe 1.9.3 + NDK 解码器(minimp3)
     2. **探测引擎**：`loopfinder` (基于 FFT/Chroma 分析)
@@ -46,14 +46,14 @@ gradlew.bat connectedAndroidTest               # 需要设备
 | `PlayQueue` | `PlayQueueItem` | 持久化当前播放队列 |
 
 **DAO 层**（3 个，都在 `model/`）：
-- `SongDao` — 247 行，最复杂。含 `insertOrUpdateSong()`（双指纹匹配：fileName+duration 和 fileName+totalSamples）、`updateSongsMetadataBatch()`（批量同步）、`getOrCreateArtist/Album()`、`Song` POJO（`@Relation` 聚合 SongEntity+Artist+Album+LoopPoint+UserRating）
+- `SongDao` — 最复杂的 DAO。含 `insertOrUpdateSong()`（双指纹匹配：优先 fileName+duration，回退 filePath）、`updateSongsMetadataBatch()`（批量同步）、`getOrCreateArtist/Album()`、`Song` POJO（`@Relation` 聚合 SongEntity+Artist+Album+LoopPoint+UserRating）
 - `PlaylistDao` — 含 `clearAndSyncPlaylist()`、`addSongsToPlaylist()`（去重）
 - `PlayQueueDao` — `replacePlayQueue()` 事务方法
 
 **Repository 层**（`data/`，5 文件）：
 - `MusicRepository` — Facade，聚合 3 个子 Repository + PlayQueueDao
 - `SongRepository` — 歌曲 CRUD
-- `PlaylistRepository` — 播放列表 CRUD，含 `syncFolderPlaylist()`（A/B 检测、PC song 匹配、过期清理）
+- `PlaylistRepository` — 播放列表基础 CRUD（A/B 检测、PC song 匹配等逻辑在 MusicScannerRepository 中）
 - `MusicScannerRepository` — 扫描逻辑，含 `getInitialScannedSongs()`（全量扫描+批量更新+Artist/Album 预创建+A/B 标记+双指纹匹配）、`findAbPair()` / `findAbPairRobust()`（DB + MediaStore）
 - `SettingsManager` — 单例 `getInstance(context)`，Gson 序列化，持久化 lastSongPath/lastPosition/playMode/isAbMode 等
 
@@ -69,7 +69,7 @@ gradlew.bat connectedAndroidTest               # 需要设备
 - **CMake**：3.22.1，C++17，prefab 启用
 - **配置缓存**：`org.gradle.configuration-cache=true`（默认开启，缓存问题可临时禁用）
 - **调试安装**：`android.injected.testOnly=false` 解决调试弹窗
-- **双指纹去重**：`insertOrUpdateSong` 先用 fileName+duration 匹配，失败再用 fileName+totalSamples 匹配；不依赖文件路径
+- **双指纹去重**：`insertOrUpdateSong` 先用 fileName+duration 匹配，失败再用 filePath 匹配
 - **Native 库加载**：`NativeAudio` 需同时加载 `seamlessloopmobile` 和 `loopfinder` 两个原生库
 - **A/B 过滤**：含 `isAbPartB=true` 的歌曲默认在 UI 列表查询中被排除（由 `SongDao` 查询逻辑保证）
 
@@ -77,15 +77,15 @@ gradlew.bat connectedAndroidTest               # 需要设备
 
 | 路径 | 职责 |
 |------|------|
-| `audio/` | PlaybackService, PlaybackManager (IMultiPlayer), MediaControlManager, QueueManager, AudioFocusManager, Notify, HeadsetPlugReceiver 等 12 文件 |
+| `audio/` | PlaybackService, PlaybackManager (IMultiPlayer), MediaControlManager, QueueManager, AudioFocusManager, Notify, HeadsetPlugReceiver, SystemMediaProgressSyncController 等 |
 | `data/` | MusicRepository + SongRepository + PlaylistRepository + MusicScannerRepository + SettingsManager |
 | `db/` | AppDatabase + DateConverter + PcDatabaseImporter（实体/DAO 已移到 model/） |
 | `model/` | 9 个 Room 实体 + 3 个 DAO + Song(Lookup POJO) + SongMetadataUpdate + LibraryItem + Folder 等 15 文件 |
 | `ui/screen/` | MainScreen + HomeScreen + CategoryScreen + SongListScreen + PlayingPanel |
 | `ui/components/` | CentralizedDialogHost, MiniPlayer, PlayingComponents, FineTuneComponents, ListItems |
 | `viewmodel/` | MainViewModel + LibraryViewModel + SelectionViewModel + PlaylistViewModel + MainViewModelFactory |
-| `scanner/` | AudioScanner（Object，MediaStore 扫描+采样点计数） |
-| `jni/` | NativeAudio（Kotlin object，JNI 入口） |
+| `scanner/` | AudioScanner（Object，MediaStore 扫描；采样点在后续原生层处理） |
+| `jni/` | NativeAudio（Kotlin object，JNI 入口）、LoopPoint（原生层返回的数据类） |
 | `utils/` | TimeUtils |
 
 ## 注意
