@@ -15,8 +15,8 @@ import org.junit.Test
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
 class SystemMediaProgressSyncControllerTest {
-    @OptIn(DelicateCoroutinesApi::class)
     private val testDispatcher = newSingleThreadContext("system-progress-sync-test")
 
     @After

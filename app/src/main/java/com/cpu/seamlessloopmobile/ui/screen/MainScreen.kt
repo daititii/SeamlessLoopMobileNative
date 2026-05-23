@@ -18,13 +18,14 @@ import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import com.cpu.seamlessloopmobile.viewmodel.MusicUiState
 import androidx.activity.compose.BackHandler
 
-import androidx.compose.material.icons.filled.*
-import androidx.compose.foundation.clickable
 import com.cpu.seamlessloopmobile.ui.components.app.MiniPlayer
 import com.cpu.seamlessloopmobile.ui.components.app.CentralizedDialogHost
 import com.cpu.seamlessloopmobile.ui.components.app.PlayingPanel
 import com.cpu.seamlessloopmobile.ui.components.app.MultiSelectBar
+
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -33,20 +34,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material.icons.Icons
 import androidx.compose.ui.text.font.FontWeight
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.ui.graphics.Color
 
 // Grid & Pager imports
 import androidx.compose.foundation.pager.rememberPagerState
@@ -74,11 +71,9 @@ fun MainScreen(
     val isSelectionMode by viewModel.isSelectionMode.observeAsState(false)
     val selectedItems by viewModel.selectedItems.observeAsState(emptySet())
     val selectedPlaylists by viewModel.selectedPlaylists.observeAsState(emptySet())
-    val playbackState by viewModel.playbackState.collectAsState()
     val audioPlayState by viewModel.audioPlayState.collectAsState()
     val isPlayingPanelVisible by viewModel.isPlayingPanelVisible.observeAsState(false)
     val syncStatus by viewModel.syncStatus.collectAsState()
-    val libraryStats by viewModel.libraryStats.collectAsState()
     val selectedFolders by viewModel.selectedFolders.observeAsState(emptySet())
     
     // --- 导航滚动位置记忆中心喵 ---
@@ -242,7 +237,7 @@ fun MainScreen(
                                         CategoryListItem(
                                             title = playlist.name,
                                             subtitle = "${count}首" + if (playlist.isFolderLinked == 1) " · 联动" else "",
-                                            icon = Icons.Default.QueueMusic,
+                                            icon = Icons.AutoMirrored.Filled.QueueMusic,
                                             isSelected = isSelected,
                                             isSelectionMode = isSelectionMode,
                                             onClick = {
@@ -349,7 +344,7 @@ fun MainScreen(
                                         if (!isSelectionMode) viewModel.setSelectionMode(true)
                                         viewModel.toggleSelection(song.filePath)
                                     },
-                                    onShowMoreOptions = { song ->
+                                    onShowMoreOptions = { _ ->
                                         // TODO
                                     },
                                     listState = songListScrollStates.getOrPut("${state.type}_${state.title}") {

@@ -518,6 +518,7 @@ class MainViewModel(
     }
 
     @Deprecated("Use Tab navigation instead")
+    @Suppress("DEPRECATION")
     fun openCategory(title: String, items: List<Folder>) = navigateTo(MusicUiState.CategoryFolders(title, items))
     fun openSongList(title: String, songs: List<Song>, type: MusicUiState.ListType, original: List<Folder>? = null) 
         = navigateTo(MusicUiState.SongList(title, songs, type, original))
