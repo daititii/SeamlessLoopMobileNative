@@ -15,6 +15,10 @@ gradlew.bat testDebugUnitTest --tests "com.cpu.seamlessloopmobile.viewmodel.Play
 gradlew.bat connectedAndroidTest               # 需要设备
 ```
 
+**测试前提**：`PcDatabaseImporterTest` 需要 `app/src/test/resources/pc_db_samples/pc_3nf_sample.db` 存在才能运行（仅 `pc_3nf_sample.db` 存在且有内容）；若文件缺失则测试静默跳过。
+
+**快速部署**（需 root 设备）：`run.bat` — adb push → pm install → am start。
+
 ## 架构要点
 
 - **导航**：自定义 `MusicUiState` 密封类 + `AnimatedContent`，未使用 Navigation 组件（虽依赖 navigation-compose）
@@ -29,6 +33,7 @@ gradlew.bat connectedAndroidTest               # 需要设备
   2. **探测引擎**：`loopfinder` (基于 FFT/Chroma 分析)
 
   - 统一通过 `NativeAudio.kt` 进行 JNI 桥接
+  - 注意：`NativeAudio` 的 `init` 块中需同时加载 `seamlessloopmobile` 和 `loopfinder` 两个原生库
 
 - **UI**：Jetpack Compose + Material3，状态通过 ViewModel 的 LiveData + MediaControlManager 的 StateFlow/SharedFlow 驱动
 
@@ -69,18 +74,26 @@ gradlew.bat connectedAndroidTest               # 需要设备
 **扫描流程**：
 `AudioScanner.scan()` (MediaStore) → `MusicScannerRepository.getInitialScannedSongs()` → 双指纹匹配 → Artist/Album 预创建 → 批量写入 → A/B 标记（文件后缀 _B/_b/_loop/_Loop 设 `isAbPartB=true`，被大多数查询过滤）
 
-**PC 数据库导入**：`PcDatabaseImporter`（顶层 object），支持 3NF 和 flat 两种 schema，三级流程（预加载 → 容差匹配 → 事务批量写入）
+**PC 数据库导入**：`PcDatabaseImporter`（顶层 object），支持 3NF 和 flat 两种 schema，三级流程（预加载 → 容差匹配 → 事务批量写入）。注意：测试时可以覆盖 `ioDispatcher`/`mainDispatcher` 属性为 `Dispatchers.Unconfined` 来避免死锁。
 
 ## 开发注意事项
 
+- **Kotlin 源码目录**：所有 Kotlin 文件实际放在 `app/src/main/java/` 下（非 `kotlin/`），这是历史遗留的目录结构。搜索源码时需注意。
+- **Kotlin Android 插件被注释**：`app/build.gradle.kts` 中 `alias(libs.plugins.kotlin.android)` 被注释掉了（AGP 9.x 内置 Kotlin 支持 + compose-compiler 插件足以编译）。
 - **Room KSP**：`ksp { arg("room.generateKotlin", "true") }`，构建前需生成代码
 - **Robolectric 测试**：`@Config(sdk = [34])`，JVM 模拟 Android 环境
 - **CMake**：3.22.1，C++17，prefab 启用
 - **配置缓存**：`org.gradle.configuration-cache=true`（默认开启，缓存问题可临时禁用）
 - **调试安装**：`android.injected.testOnly=false` 解决调试弹窗
+- **JVM 参数**：`org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=512m -Xss4m`
+- **KSP 兼容**：`android.disallowKotlinSourceSets=false` 解决 KSP 与 AGP 9.0+ 内置 Kotlin 的 sourceSets 兼容冲突
+- **代码风格**：`kotlin.code.style=official`
 - **双指纹去重**：`insertOrUpdateSong` 先用 fileName+duration 匹配，失败再用 filePath 匹配
 - **Native 库加载**：`NativeAudio` 需同时加载 `seamlessloopmobile` 和 `loopfinder` 两个原生库
 - **A/B 过滤**：含 `isAbPartB=true` 的歌曲默认在 UI 列表查询中被排除（由 `SongDao` 查询逻辑保证）
+- **GEMINI.md**：为 `AGENTS.md` 的过时副本，应忽略之。
+- **PcDatabaseImporter 测试**：需要 `app/src/test/resources/pc_db_samples/pc_3nf_sample.db` 存在（目前仅 `pc_3nf_sample.db` 存在，`pc_flat_sample.db` 不存在），测试中会覆盖 `ioDispatcher` 和 `mainDispatcher`。
+- **快速部署**：项目根目录下的 `run.bat` 提供 root 设备的 adb push + pm install + am start 一键部署流程。
 
 ## 包结构速查
 
