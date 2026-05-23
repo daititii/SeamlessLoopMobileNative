@@ -28,6 +28,7 @@ import com.cpu.seamlessloopmobile.ui.theme.SeamlessLoopColors
  * 循环微调面板，已完美融入 CPU 大人的 SeamlessLoopTheme 主题系统喵！(๑•̀ㅂ•́)و✧
  */
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun FineTunePage(
     song: Song, 
     tempLoopStart: Long,
@@ -120,7 +121,7 @@ fun FineTunePage(
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
                                         Text(
-                                            String.format("%.1f%%", point.score * 100),
+                                            String.format(java.util.Locale.US, "%.1f%%", point.score * 100),
                                             color = SeamlessLoopColors.White,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
@@ -201,7 +202,7 @@ fun TuneSectionBox(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        String.format("%.3fs", seconds),
+                        String.format(java.util.Locale.US, "%.3fs", seconds),
                         color = SeamlessLoopColors.Gray,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium
@@ -264,6 +265,7 @@ fun TuneGridButton(text: String, modifier: Modifier = Modifier, onClick: () -> U
 
 @Preview(showBackground = true, backgroundColor = 0xFF1E1E2E)
 @Composable
+@Suppress("SdCardPath")
 fun FineTunePagePreview() {
     Box(modifier = Modifier.background(Color(0xFF1E1E2E))) {
         FineTunePage(
