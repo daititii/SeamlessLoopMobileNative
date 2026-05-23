@@ -12,7 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.cpu.seamlessloopmobile.model.Folder
-import com.cpu.seamlessloopmobile.ui.components.FolderListItem
+import com.cpu.seamlessloopmobile.ui.components.common.FolderListItem
 import androidx.compose.ui.graphics.Color
 
 import androidx.compose.foundation.lazy.LazyListState

@@ -1,4 +1,4 @@
-package com.cpu.seamlessloopmobile.ui.components
+package com.cpu.seamlessloopmobile.ui.components.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +22,9 @@ import com.cpu.seamlessloopmobile.viewmodel.PlayMode
 import com.cpu.seamlessloopmobile.utils.TimeUtils
 import kotlinx.coroutines.delay
 
+/**
+ * 底部迷你控制栏，已移动至 ui/components/app/ 包下，完全状态驱动喵！(๑•̀ㅂ•́)و✧
+ */
 @Composable
 fun MiniPlayer(
     viewModel: MainViewModel,
@@ -50,7 +53,6 @@ fun MiniPlayer(
         }
     }
     
-    // 采样率暂定 44100，实际可从 PM 获取喵
     val sampleRate = 44100L 
 
     Column(
@@ -60,9 +62,8 @@ fun MiniPlayer(
             .clickable { onClick() }
             .padding(bottom = 8.dp)
     ) {
-        // 进度条喵
         LinearProgressIndicator(
-            progress = if (totalDuration > 0) currentPosition.toFloat() / totalDuration else 0f,
+            progress = { if (totalDuration > 0) currentPosition.toFloat() / totalDuration else 0f },
             modifier = Modifier.fillMaxWidth().height(2.dp),
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
@@ -103,7 +104,7 @@ fun MiniPlayer(
 
             IconButton(
                 onClick = { 
-                    if (isError) { /* 可以在这里加个重试或重置逻辑喵 */ }
+                    if (isError) { }
                     else if (isPlaying) viewModel.pause() 
                     else viewModel.play() 
                 },
@@ -137,9 +138,6 @@ fun MiniPlayer(
 @Composable
 fun MiniPlayerPreview() {
     MaterialTheme {
-        // 由于 MiniPlayer 依赖 MainViewModel，预览时很难模拟整个 VM。
-        // 但莱芙发现 MiniPlayer 的逻辑可以抽离，这里先为您放一个空的模拟。
-        // 为了让预览能动起来，通常我们会建议把 UI 和逻辑分开喵。
         Text("MiniPlayer 预览需要模拟 ViewModel 状态", modifier = Modifier.padding(16.dp))
     }
 }

@@ -15,7 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cpu.seamlessloopmobile.model.Song
-import com.cpu.seamlessloopmobile.ui.components.SongListItem
+import com.cpu.seamlessloopmobile.ui.components.common.SongListItem
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.ExperimentalFoundationApi
 

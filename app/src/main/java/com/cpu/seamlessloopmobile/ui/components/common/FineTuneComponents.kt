@@ -1,4 +1,4 @@
-package com.cpu.seamlessloopmobile.ui.components
+package com.cpu.seamlessloopmobile.ui.components.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,7 +20,11 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import com.cpu.seamlessloopmobile.jni.LoopPoint
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.model.Song
+import com.cpu.seamlessloopmobile.ui.theme.SeamlessLoopColors
 
+/**
+ * 循环微调面板，已完美融入 CPU 大人的 SeamlessLoopTheme 主题系统喵！(๑•̀ㅂ•́)و✧
+ */
 @Composable
 fun FineTunePage(
     song: Song, 
@@ -43,10 +47,9 @@ fun FineTunePage(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 标题稍微写小点喵
         Text(
             "循环参数调节 (A-B)",
-            style = MaterialTheme.typography.titleSmall.copy(color = Color.LightGray)
+            style = MaterialTheme.typography.titleSmall.copy(color = SeamlessLoopColors.LightGray)
         )
         
         Spacer(modifier = Modifier.height(8.dp))
@@ -56,7 +59,7 @@ fun FineTunePage(
             TuneSectionBox(
                 label = "循环起点 (A)",
                 samples = tempLoopStart,
-                accentColor = Color(0xFF8FBBD9),
+                accentColor = SeamlessLoopColors.PointAccentA,
                 onValueChange = onStartValueChange,
                 onAdjustMs = onStartAdjustMs,
                 onEditClick = { onEditClick(true) }
@@ -70,7 +73,7 @@ fun FineTunePage(
             TuneSectionBox(
                 label = "循环终点 (B)",
                 samples = tempLoopEnd,
-                accentColor = Color(0xFFF398AF),
+                accentColor = SeamlessLoopColors.PointAccentB,
                 onValueChange = onEndValueChange,
                 onAdjustMs = onEndAdjustMs,
                 onEditClick = { onEditClick(false) }
@@ -83,7 +86,7 @@ fun FineTunePage(
         if (isDetecting) {
             CircularProgressIndicator(
                 modifier = Modifier.size(24.dp),
-                color = Color(0xFFBB86FC),
+                color = SeamlessLoopColors.PurpleAccent,
                 strokeWidth = 2.dp
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -91,13 +94,13 @@ fun FineTunePage(
             OutlinedButton(
                 onClick = onDetectClick,
                 modifier = Modifier.fillMaxWidth().height(36.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBB86FC).copy(alpha = 0.5f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, SeamlessLoopColors.PurpleAccent.copy(alpha = 0.5f)),
                 shape = RoundedCornerShape(8.dp),
                 contentPadding = PaddingValues(0.dp)
             ) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFBB86FC), modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = SeamlessLoopColors.PurpleAccent, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.size(4.dp))
-                Text("自动探测循环点", color = Color(0xFFBB86FC), fontSize = 12.sp)
+                Text("自动探测循环点", color = SeamlessLoopColors.PurpleAccent, fontSize = 12.sp)
             }
             
             detectedPoints?.let { points ->
@@ -107,7 +110,7 @@ fun FineTunePage(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("探测结果 (点击应用):", color = Color.Gray, fontSize = 10.sp)
+                        Text("探测结果 (点击应用):", color = SeamlessLoopColors.Gray, fontSize = 10.sp)
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -117,7 +120,7 @@ fun FineTunePage(
                                     modifier = Modifier
                                         .weight(1f)
                                         .clickable { onPointSelect(point) },
-                                    color = Color(0xFF2D2D3D),
+                                    color = SeamlessLoopColors.ComponentDarkBg,
                                     shape = RoundedCornerShape(4.dp)
                                 ) {
                                     Column(
@@ -126,14 +129,14 @@ fun FineTunePage(
                                     ) {
                                         Text(
                                             String.format("%.1f%%", point.score * 100),
-                                            color = Color.White,
+                                            color = SeamlessLoopColors.White,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
                                             maxLines = 1
                                         )
                                         Text(
                                             "相似度",
-                                            color = Color.Gray,
+                                            color = SeamlessLoopColors.Gray,
                                             fontSize = 8.sp,
                                             maxLines = 1
                                         )
@@ -151,13 +154,13 @@ fun FineTunePage(
         Button(
             onClick = onApplyAndListen,
             modifier = Modifier.fillMaxWidth().height(40.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF353545)),
+            colors = ButtonDefaults.buttonColors(containerColor = SeamlessLoopColors.ButtonDarkBg),
             shape = RoundedCornerShape(8.dp),
             contentPadding = PaddingValues(0.dp)
         ) {
-            Icon(Icons.Default.Hearing, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+            Icon(Icons.Default.Hearing, contentDescription = null, tint = SeamlessLoopColors.White, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.size(4.dp))
-            Text("应用并试听", color = Color.White, fontSize = 13.sp)
+            Text("应用并试听", color = SeamlessLoopColors.White, fontSize = 13.sp)
         }
     }
 }
@@ -177,24 +180,22 @@ fun TuneSectionBox(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = Color(0xFF1E1E2E).copy(alpha = 0.5f),
+        color = SeamlessLoopColors.DarkBgGradientStart.copy(alpha = 0.5f),
         shape = RoundedCornerShape(10.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+        border = androidx.compose.foundation.BorderStroke(1.dp, SeamlessLoopColors.White.copy(alpha = 0.1f))
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // 标签靠左侧喵
             Text(
                 label, 
-                color = Color.LightGray, 
+                color = SeamlessLoopColors.LightGray, 
                 fontSize = 11.sp, 
                 modifier = Modifier.align(Alignment.Start)
             )
             
-            // 采样数与时间点击区域
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -213,7 +214,7 @@ fun TuneSectionBox(
                 
                 Text(
                     String.format("%.3fs", seconds),
-                    color = Color.Gray,
+                    color = SeamlessLoopColors.Gray,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -263,81 +264,12 @@ fun TuneGridButton(text: String, modifier: Modifier = Modifier, onClick: () -> U
         modifier = modifier
             .height(30.dp)
             .clickable { onClick() },
-        color = Color(0xFF2D2D3D),
+        color = SeamlessLoopColors.ComponentDarkBg,
         shape = RoundedCornerShape(4.dp)
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(text, color = Color.LightGray, fontSize = 10.sp, fontWeight = FontWeight.Normal)
+            Text(text, color = SeamlessLoopColors.LightGray, fontSize = 10.sp, fontWeight = FontWeight.Normal)
         }
-    }
-}
-
-@Composable
-fun LoopEditDialog(
-    visible: Boolean,
-    isStart: Boolean,
-    samplesValue: String,
-    timeValue: String,
-    onValueSamplesChange: (String) -> Unit,
-    onValueTimeChange: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit
-) {
-    if (visible) {
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { 
-                Text(
-                    text = if (isStart) "修改循环起点 (A)" else "修改循环终点 (B)", 
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                ) 
-            },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = samplesValue,
-                        onValueChange = onValueSamplesChange,
-                        label = { Text("采样数 (Samples)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, 
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFFBB86FC),
-                            unfocusedBorderColor = Color.Gray.copy(alpha = 0.5f)
-                        )
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = timeValue,
-                        onValueChange = onValueTimeChange,
-                        label = { Text("时间 (Seconds)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, 
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFFBB86FC),
-                            unfocusedBorderColor = Color.Gray.copy(alpha = 0.5f)
-                        )
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = onConfirm) {
-                    Text("确定", color = Color(0xFFBB86FC), fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = onDismiss) {
-                    Text("取消", color = Color.Gray)
-                }
-            },
-            containerColor = Color(0xFF1E1E2E),
-            shape = RoundedCornerShape(16.dp)
-        )
     }
 }
 

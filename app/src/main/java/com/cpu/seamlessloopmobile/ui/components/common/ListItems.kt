@@ -1,4 +1,4 @@
-package com.cpu.seamlessloopmobile.ui.components
+package com.cpu.seamlessloopmobile.ui.components.common
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background

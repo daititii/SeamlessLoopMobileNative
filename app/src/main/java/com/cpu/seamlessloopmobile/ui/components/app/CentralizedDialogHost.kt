@@ -1,4 +1,4 @@
-package com.cpu.seamlessloopmobile.ui.components
+package com.cpu.seamlessloopmobile.ui.components.app
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,7 +17,12 @@ import java.util.Locale
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import com.cpu.seamlessloopmobile.viewmodel.MusicDialog
+import com.cpu.seamlessloopmobile.ui.components.common.LoopEditDialog
 
+/**
+ * 全局对话框中台托管中心喵！(๑•̀ㅂ•́)و✧
+ * 已移动至 ui/components/app/ 目录。
+ */
 @Composable
 fun CentralizedDialogHost(viewModel: MainViewModel) {
     val currentDialog by viewModel.currentDialog.observeAsState()
@@ -202,9 +207,6 @@ fun CentralizedDialogHostPreview() {
             Spacer(modifier = Modifier.height(8.dp))
             Text("由于它依赖 ViewModel 状态，直接预览较为复杂。")
             Text("莱芙建议您直接在各个子组件（如 LoopEditDialog）中查看预览。")
-            
-            // 莱芙为您演示一个简单的模拟弹窗预览思路
-            // 如果需要观察具体的弹窗样式，可以临时在这里硬编码调用一个 Dialog 喵！
         }
     }
 }

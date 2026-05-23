@@ -22,9 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.filled.CheckCircle
 import com.cpu.seamlessloopmobile.model.Playlist
-import com.cpu.seamlessloopmobile.ui.components.CategoryCard
-import com.cpu.seamlessloopmobile.ui.components.PlaylistCard
-import com.cpu.seamlessloopmobile.ui.components.SectionHeader
+import com.cpu.seamlessloopmobile.ui.components.common.CategoryCard
+import com.cpu.seamlessloopmobile.ui.components.common.PlaylistCard
+import com.cpu.seamlessloopmobile.ui.components.common.SectionHeader
 
 @Composable
 fun HomeScreen(

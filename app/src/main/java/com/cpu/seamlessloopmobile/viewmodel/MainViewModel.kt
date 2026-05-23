@@ -169,7 +169,7 @@ class MainViewModel(
     val folders: StateFlow<List<Folder>> get() = library.folders
     val albums: StateFlow<List<Folder>> get() = library.albums
     val artists: StateFlow<List<Folder>> get() = library.artists
-    val syncStatus: StateFlow<String> get() = library.syncStatus
+    val syncStatus: StateFlow<com.cpu.seamlessloopmobile.ui.state.DataUiState<String>> get() = library.syncStatus
     val libraryStats: StateFlow<com.cpu.seamlessloopmobile.data.SettingsManager.LibraryStats> get() = library.stats
     val favorites: StateFlow<List<Song>> get() = library.favorites
 

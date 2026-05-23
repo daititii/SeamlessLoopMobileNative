@@ -23,9 +23,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.filled.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.items
-import com.cpu.seamlessloopmobile.ui.components.MiniPlayer
-import com.cpu.seamlessloopmobile.ui.components.CentralizedDialogHost
-import com.cpu.seamlessloopmobile.ui.screen.playing.PlayingPanel
+import com.cpu.seamlessloopmobile.ui.components.app.MiniPlayer
+import com.cpu.seamlessloopmobile.ui.components.app.CentralizedDialogHost
+import com.cpu.seamlessloopmobile.ui.components.app.PlayingPanel
+import com.cpu.seamlessloopmobile.ui.components.app.MultiSelectBar
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.collectAsState
@@ -118,8 +119,18 @@ fun MainScreen(
                 title = { 
                     Column {
                         Text(titleStr)
-                        if (syncStatus.isNotEmpty()) {
-                            Text(syncStatus, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        when (val status = syncStatus) {
+                            is com.cpu.seamlessloopmobile.ui.state.DataUiState.Loading -> {
+                                Text("🔍 寻找新曲子中...", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            }
+                            is com.cpu.seamlessloopmobile.ui.state.DataUiState.Error -> {
+                                Text("❌ 扫描失败: ${status.message}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                            }
+                            is com.cpu.seamlessloopmobile.ui.state.DataUiState.Success -> {
+                                if (status.data.isNotEmpty()) {
+                                    Text(status.data, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
                         }
                     }
                 },
@@ -261,115 +272,23 @@ fun MainScreen(
             }
 
             // --- 多选操作悬浮窗喵 ---
-            if (isSelectionMode) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp)
-                ) {
-                    Surface(
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        tonalElevation = 8.dp,
-                        shadowElevation = 8.dp
-                    ) {
-                        androidx.compose.foundation.layout.Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (selectedPlaylists.isNotEmpty()) {
-                                Text(
-                                    text = "已选 ${selectedPlaylists.size} 个歌单",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.padding(end = 16.dp)
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
-                                IconButton(onClick = { 
-                                    viewModel.showDialog(
-                                        com.cpu.seamlessloopmobile.viewmodel.MusicDialog.ConfirmDeletePlaylist(
-                                            playlist = com.cpu.seamlessloopmobile.model.Playlist(name = "选中的 ${selectedPlaylists.size} 个歌单"),
-                                            onConfirm = { viewModel.deleteSelectedPlaylists() }
-                                        )
-                                    )
-                                }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "删除歌单")
-                                }
-                                IconButton(onClick = { viewModel.clearSelection() }) {
-                                    Icon(Icons.Default.Close, contentDescription = "取消选择")
-                                }
-                            } else if (selectedFolders.isNotEmpty()) {
-                                Text(
-                                    text = "已选 ${selectedFolders.size} 个文件夹",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.padding(end = 16.dp)
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
-                                 IconButton(onClick = { 
-                                    viewModel.showDialog(
-                                        com.cpu.seamlessloopmobile.viewmodel.MusicDialog.ImportFoldersOptions(
-                                            count = selectedFolders.size,
-                                            onIndividual = { viewModel.importSelectedFoldersIndividually() },
-                                            onMerge = { 
-                                                viewModel.showDialog(
-                                                    com.cpu.seamlessloopmobile.viewmodel.MusicDialog.MergeFoldersName { name ->
-                                                        viewModel.importSelectedFoldersAsSinglePlaylist(name)
-                                                    }
-                                                )
-                                            }
-                                        )
-                                    )
-                                }) {
-                                    Icon(Icons.Default.PlaylistAdd, contentDescription = "导入文件夹")
-                                }
-                                IconButton(onClick = { viewModel.clearSelection() }) {
-                                    Icon(Icons.Default.Close, contentDescription = "取消选择")
-                                }
-                            } else {
-                                Text(
-                                    text = "已选 ${selectedItems.size} 首",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.padding(end = 16.dp)
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
-                                IconButton(onClick = { 
-                                    val dialog = if (playlists.isNotEmpty()) {
-                                        com.cpu.seamlessloopmobile.viewmodel.MusicDialog.AddToPlaylist(
-                                            playlists = playlists,
-                                            onAdd = { p -> viewModel.addSelectedToPlaylist(p.id) },
-                                            onCreateNew = {
-                                                viewModel.showDialog(
-                                                    com.cpu.seamlessloopmobile.viewmodel.MusicDialog.CreatePlaylist { name ->
-                                                        viewModel.createPlaylistWithSelected(name)
-                                                    }
-                                                )
-                                            }
-                                        )
-                                    } else {
-                                        com.cpu.seamlessloopmobile.viewmodel.MusicDialog.CreatePlaylist { name ->
-                                            viewModel.createPlaylistWithSelected(name)
-                                        }
-                                    }
-                                    viewModel.showDialog(dialog)
-                                }) {
-                                    Icon(Icons.Default.PlaylistAdd, contentDescription = "添加到歌单")
-                                }
-
-                                IconButton(onClick = { 
-                                    viewModel.selectAll(songsInCurrentPage)
-                                }) {
-                                    Icon(Icons.Default.SelectAll, contentDescription = "全选")
-                                }
-                                
-                                IconButton(onClick = { 
-                                    viewModel.clearSelection()
-                                }) {
-                                    Icon(Icons.Default.Close, contentDescription = "取消选择")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            MultiSelectBar(
+                isSelectionMode = isSelectionMode,
+                selectedItems = selectedItems,
+                selectedPlaylists = selectedPlaylists,
+                selectedFolders = selectedFolders,
+                playlists = playlists,
+                songsInCurrentPage = songsInCurrentPage,
+                onClearSelection = { viewModel.clearSelection() },
+                onSelectAll = { songs -> viewModel.selectAll(songs) },
+                onDeleteSelectedPlaylists = { viewModel.deleteSelectedPlaylists() },
+                onImportFoldersIndividually = { viewModel.importSelectedFoldersIndividually() },
+                onImportFoldersAsSinglePlaylist = { name -> viewModel.importSelectedFoldersAsSinglePlaylist(name) },
+                onAddSelectedToPlaylist = { playlistId -> viewModel.addSelectedToPlaylist(playlistId) },
+                onCreatePlaylistWithSelected = { name -> viewModel.createPlaylistWithSelected(name) },
+                onShowDialog = { dialog -> viewModel.showDialog(dialog) },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
     }
 }
