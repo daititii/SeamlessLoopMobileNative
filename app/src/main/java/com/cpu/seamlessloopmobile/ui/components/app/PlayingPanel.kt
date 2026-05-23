@@ -39,6 +39,7 @@ import com.cpu.seamlessloopmobile.ui.components.common.PlaybackProgressBar
 import com.cpu.seamlessloopmobile.ui.components.common.PlaybackControls
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.ui.theme.SeamlessLoopColors
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * 全屏音频播放核心面板，已移动至 ui/components/app/ 目录并融入 SeamlessLoopTheme 配色喵！(๑•̀ㅂ•́)و✧
@@ -52,6 +53,7 @@ fun PlayingPanel(
     onNext: () -> Unit,
     onPrev: () -> Unit
 ) {
+    val context = LocalContext.current
     val currentSongIndex by viewModel.currentSongIndex.observeAsState(-1)
     val playlist by viewModel.currentPlaylist.observeAsState(emptyList())
     val audioPlayState by viewModel.audioPlayState.collectAsState()
@@ -184,7 +186,7 @@ fun PlayingPanel(
                                     viewModel.applyAndListenToLoop(songItem, tempLoopStart, tempLoopEnd)
                                 },
                                 onDetectClick = {
-                                    viewModel.detectLoopPoints(songItem)
+                                    viewModel.detectLoopPoints(context, songItem)
                                 },
                                 onPointSelect = { point ->
                                     tempLoopStart = point.loopStart

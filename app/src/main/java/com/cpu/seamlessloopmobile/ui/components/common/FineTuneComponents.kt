@@ -3,7 +3,9 @@ package com.cpu.seamlessloopmobile.ui.components.common
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Hearing
@@ -44,41 +46,31 @@ fun FineTunePage(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            "循环参数调节 (A-B)",
-            style = MaterialTheme.typography.titleSmall.copy(color = SeamlessLoopColors.LightGray)
+        Spacer(modifier = Modifier.height(4.dp))
+
+        TuneSectionBox(
+            label = "循环起点 (A)",
+            samples = tempLoopStart,
+            accentColor = SeamlessLoopColors.PointAccentA,
+            onValueChange = onStartValueChange,
+            onAdjustMs = onStartAdjustMs,
+            onEditClick = { onEditClick(true) }
         )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 起点 A (使用 weight 1 分摊空间)
-        Box(modifier = Modifier.weight(1f)) {
-            TuneSectionBox(
-                label = "循环起点 (A)",
-                samples = tempLoopStart,
-                accentColor = SeamlessLoopColors.PointAccentA,
-                onValueChange = onStartValueChange,
-                onAdjustMs = onStartAdjustMs,
-                onEditClick = { onEditClick(true) }
-            )
-        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 终点 B (使用 weight 1 分摊空间)
-        Box(modifier = Modifier.weight(1f)) {
-            TuneSectionBox(
-                label = "循环终点 (B)",
-                samples = tempLoopEnd,
-                accentColor = SeamlessLoopColors.PointAccentB,
-                onValueChange = onEndValueChange,
-                onAdjustMs = onEndAdjustMs,
-                onEditClick = { onEditClick(false) }
-            )
-        }
+        TuneSectionBox(
+            label = "循环终点 (B)",
+            samples = tempLoopEnd,
+            accentColor = SeamlessLoopColors.PointAccentB,
+            onValueChange = onEndValueChange,
+            onAdjustMs = onEndAdjustMs,
+            onEditClick = { onEditClick(false) }
+        )
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -185,48 +177,45 @@ fun TuneSectionBox(
         border = androidx.compose.foundation.BorderStroke(1.dp, SeamlessLoopColors.White.copy(alpha = 0.1f))
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                label, 
-                color = SeamlessLoopColors.LightGray, 
-                fontSize = 11.sp, 
-                modifier = Modifier.align(Alignment.Start)
-            )
-            
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onEditClick() }
-                    .padding(vertical = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    samples.toString(),
-                    color = accentColor,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold
+                    label,
+                    color = SeamlessLoopColors.LightGray,
+                    fontSize = 11.sp,
+                    modifier = Modifier.align(Alignment.CenterStart)
                 )
-                
-                Spacer(modifier = Modifier.height(6.dp))
-                
-                Text(
-                    String.format("%.3fs", seconds),
-                    color = SeamlessLoopColors.Gray,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium
-                )
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .clickable { onEditClick() },
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        samples.toString(),
+                        color = accentColor,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        String.format("%.3fs", seconds),
+                        color = SeamlessLoopColors.Gray,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
 
             HorizontalDivider(
-                thickness = 1.dp, 
-                color = accentColor.copy(alpha = 0.3f), 
+                thickness = 1.dp,
+                color = accentColor.copy(alpha = 0.3f),
                 modifier = Modifier.fillMaxWidth(0.5f)
             )
-            
-            Spacer(modifier = Modifier.height(8.dp))
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             // 第一排: 最小/现/最大
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {

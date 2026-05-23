@@ -15,6 +15,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.FileInputStream
+import android.content.Context
+import android.net.Uri
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.StateFlow
 
@@ -210,18 +215,112 @@ class MainViewModel(
     private val _isDetectingLoop = kotlinx.coroutines.flow.MutableStateFlow(false)
     val isDetectingLoop: kotlinx.coroutines.flow.StateFlow<Boolean> = _isDetectingLoop
 
-    fun detectLoopPoints(song: Song) {
+    fun detectLoopPoints(context: Context, song: Song) {
         viewModelScope.launch {
             _isDetectingLoop.value = true
             _detectedLoopPoints.value = null
+            
+            // 缓存文件引用，方便 finally 中确保删除喵！
+            var tempFile: File? = null
+            
             try {
-                val results = withContext(Dispatchers.Default) {
-                    NativeAudio.analyzeLoopPoints(song.filePath, 5)
+                val results = withContext(Dispatchers.IO) {
+                    // 1. 提取文件的真实扩展名（优先使用 fileName 保证 content:// 等路径的真实格式不丢失喵！）
+                    var ext = File(song.fileName).extension
+                    if (ext.isEmpty()) {
+                        ext = File(song.filePath).extension
+                    }
+                    val extension = if (ext.isNotEmpty()) ".$ext" else ".mp3"
+                    val cacheDir = context.cacheDir
+                    val tFile = File(cacheDir, "loop_detect_${System.currentTimeMillis()}$extension")
+                    tempFile = tFile
+                    
+                    // 2. 将数据安全拷贝至 app 私有缓存文件中喵！
+                    var inputStream: InputStream? = null
+                    var outputStream: FileOutputStream? = null
+                    val copied = try {
+                        inputStream = if (song.filePath.startsWith("content://")) {
+                            context.contentResolver.openInputStream(Uri.parse(song.filePath))
+                        } else if (song.mediaId > 0) {
+                            val mediaUri = android.content.ContentUris.withAppendedId(
+                                android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                                song.mediaId
+                            )
+                            try {
+                                context.contentResolver.openInputStream(mediaUri)
+                            } catch (me: Exception) {
+                                android.util.Log.w("MainViewModel", "⚠️ MediaStore URI 打开失败，尝试回退物理路径: ${me.message}")
+                                FileInputStream(File(song.filePath))
+                            }
+                        } else {
+                            FileInputStream(File(song.filePath))
+                        }
+                        
+                        if (inputStream != null) {
+                            outputStream = FileOutputStream(tFile)
+                            val buffer = ByteArray(1024 * 64) // 64KB 缓冲区
+                            var bytesRead: Int
+                            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                outputStream.write(buffer, 0, bytesRead)
+                            }
+                            outputStream.flush()
+                            true
+                        } else {
+                            false
+                        }
+                    } catch (ioe: Exception) {
+                        android.util.Log.e("MainViewModel", "❌ 复制音频文件出错: ${ioe.message}")
+                        false
+                    } finally {
+                        try { inputStream?.close() } catch (_: Exception) {}
+                        try { outputStream?.close() } catch (_: Exception) {}
+                    }
+                    
+                    if (!copied) {
+                        throw java.io.IOException("无法成功复制源音频文件 (´w｀)")
+                    }
+                    
+                    // 3. 将 fopen 完美可读的私有文件路径传给 Native 计算喵！
+                    NativeAudio.analyzeLoopPoints(tFile.absolutePath, 5)
                 }
+                
                 _detectedLoopPoints.value = results?.toList()
+                
+                withContext(Dispatchers.Main) {
+                    if (results.isNullOrEmpty()) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "唔……CPU 大人，这首歌曲好像没有探测到合适的循环点呢 (´w｀)",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        android.widget.Toast.makeText(
+                            context,
+                            "太棒了！CPU 大人，莱芙为您找到了 ${results.size} 个循环点候选列表喵！(๑•̀ㅂ•́)و✧",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
             } catch (e: Exception) {
                 android.util.Log.e("MainViewModel", "❌ 循环检测失败: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "对不起，CPU 大人！探测过程中发生了一点小失误：${e.message} ㅠㅠ",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
             } finally {
+                // 4. 无论如何，都必须确保临时文件已被彻底毁灭，杜绝磁盘残留垃圾喵！
+                try {
+                    tempFile?.let {
+                        if (it.exists()) {
+                            it.delete()
+                        }
+                    }
+                } catch (de: Exception) {
+                    android.util.Log.e("MainViewModel", "❌ 删除临时分析文件失败: ${de.message}")
+                }
                 _isDetectingLoop.value = false
             }
         }
