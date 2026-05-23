@@ -251,7 +251,7 @@ bool AudioEngine::isPlaying() const {
 oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream *oboeStream,
                                                    void *audioData,
                                                    int32_t numFrames) {
-    float *floatData = static_cast<float *>(audioData);
+    auto *floatData = static_cast<float *>(audioData);
     int32_t channels = mChannelCount.load();
     int32_t samplesNeeded = numFrames * channels;
 
