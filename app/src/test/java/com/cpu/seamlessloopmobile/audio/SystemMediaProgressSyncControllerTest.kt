@@ -46,7 +46,7 @@ class SystemMediaProgressSyncControllerTest {
         assertEquals(1, tickCount.get())
 
         controller.onPlaybackStateChanged(AudioPlayState.PLAYING)
-        kotlinx.coroutines.delay(10L)
+        withContext(testDispatcher) {}
         assertTrue(controller.isRunning)
         assertEquals("PLAYING twice must not start a duplicate sync loop", 1, tickCount.get())
 

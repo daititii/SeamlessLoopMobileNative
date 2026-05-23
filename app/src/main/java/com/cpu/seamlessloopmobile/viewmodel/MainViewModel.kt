@@ -37,6 +37,7 @@ sealed class MusicUiState {
     object Home : MusicUiState()
     
     // 一级分类展开
+    @Deprecated("Use Tab navigation instead")
     data class CategoryFolders(val title: String, val items: List<Folder>) : MusicUiState()
     
     // 二级歌曲列表
@@ -516,6 +517,7 @@ class MainViewModel(
         }
     }
 
+    @Deprecated("Use Tab navigation instead")
     fun openCategory(title: String, items: List<Folder>) = navigateTo(MusicUiState.CategoryFolders(title, items))
     fun openSongList(title: String, songs: List<Song>, type: MusicUiState.ListType, original: List<Folder>? = null) 
         = navigateTo(MusicUiState.SongList(title, songs, type, original))

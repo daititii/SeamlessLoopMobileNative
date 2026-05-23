@@ -221,12 +221,15 @@ fun SongListItem(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FolderListItem(
-    folder: Folder,
+fun CategoryListItem(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     isSelected: Boolean,
     isPlaying: Boolean = false,
+    isSelectionMode: Boolean = false,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit = {}
 ) {
     Surface(
         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer 
@@ -244,8 +247,15 @@ fun FolderListItem(
                 )
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() },
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
             Icon(
-                imageVector = Icons.Default.Folder,
+                imageVector = icon,
                 contentDescription = null,
                 tint = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                 modifier = Modifier.size(24.dp)
@@ -253,19 +263,19 @@ fun FolderListItem(
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = folder.name,
+                    text = title,
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal
                 )
                 Text(
-                    text = "${folder.songs.size} 首歌曲",
+                    text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isSelected || isPlaying) MaterialTheme.colorScheme.primary.copy(alpha=0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             
-            if (isSelected) {
+            if (isSelected && !isSelectionMode) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = null,
@@ -339,13 +349,14 @@ fun SongListItemPreview() {
 
 @Preview(showBackground = true)
 @Composable
-fun FolderListItemPreview() {
+fun CategoryListItemPreview() {
     MaterialTheme {
-        FolderListItem(
-            folder = Folder(name = "音乐文件夹", path = "/sdcard/music", songCount = 0, songs = emptyList()),
+        CategoryListItem(
+            title = "音乐文件夹",
+            subtitle = "10 首歌曲",
+            icon = Icons.Default.Folder,
             isSelected = false,
-            onClick = {},
-            onLongClick = {}
+            onClick = {}
         )
     }
 }
