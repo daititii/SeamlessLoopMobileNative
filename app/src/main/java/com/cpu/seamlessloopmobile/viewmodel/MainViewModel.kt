@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.cpu.seamlessloopmobile.model.Folder
 import com.cpu.seamlessloopmobile.model.Playlist
 import com.cpu.seamlessloopmobile.model.Song
+import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.data.MusicRepository
 import com.cpu.seamlessloopmobile.data.SettingsManager
 import com.cpu.seamlessloopmobile.jni.LoopPoint
@@ -19,7 +20,6 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.FileInputStream
 import android.content.Context
-import android.net.Uri
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.core.net.toUri
@@ -181,7 +181,7 @@ class MainViewModel(
     val favorites: StateFlow<List<Song>> get() = library.favorites
 
     val playlists: StateFlow<List<Playlist>> get() = playlist.playlists
-    val playlistsWithCounts: StateFlow<List<com.cpu.seamlessloopmobile.data.PlaylistDao.PlaylistWithCount>> get() = playlist.playlistsWithCounts
+    val playlistsWithCounts: StateFlow<List<PlaylistDao.PlaylistWithCount>> get() = playlist.playlistsWithCounts
 
     val isSelectionMode: LiveData<Boolean> get() = selection.isSelectionMode
     val selectedItems: LiveData<Set<String>> get() = selection.selectedItems
@@ -457,7 +457,7 @@ class MainViewModel(
     fun addSelectedToPlaylist(playlistId: Int) {
         val selectedPaths = selectedItems.value ?: return
         viewModelScope.launch {
-            val songs = allSongs.value ?: return@launch
+            val songs = allSongs.value
             val selectedSongIds = songs.filter { it.filePath in selectedPaths }.map { it.id }
             playlist.addSongsToPlaylist(playlistId, selectedSongIds) {
                 selection.clearSelection()
@@ -468,7 +468,7 @@ class MainViewModel(
     fun createPlaylistWithSelected(name: String) {
         val selectedPaths = selectedItems.value ?: return
         viewModelScope.launch {
-            val songs = allSongs.value ?: return@launch
+            val songs = allSongs.value
             val selectedSongIds = songs.filter { it.filePath in selectedPaths }.map { it.id }
             playlist.createPlaylist(name, selectedSongIds) {
                 selection.clearSelection()
