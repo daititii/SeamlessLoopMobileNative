@@ -28,6 +28,7 @@ import com.cpu.seamlessloopmobile.ui.components.common.CategoryListItem
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import com.cpu.seamlessloopmobile.viewmodel.MusicUiState
 import androidx.activity.compose.BackHandler
+import com.cpu.seamlessloopmobile.ui.components.common.TopAppBarSearchBar
 
 import com.cpu.seamlessloopmobile.ui.components.app.MiniPlayer
 import com.cpu.seamlessloopmobile.ui.components.app.CentralizedDialogHost
@@ -86,7 +87,6 @@ fun MainScreen(
     val isPlayingPanelVisible by viewModel.isPlayingPanelVisible.observeAsState(false)
     val syncStatus by viewModel.syncStatus.collectAsState()
     val selectedFolders by viewModel.selectedFolders.observeAsState(emptySet())
-    val isSearchPanelVisible by viewModel.isSearchPanelVisible.observeAsState(false)
     val isSettingsPanelVisible by viewModel.isSettingsPanelVisible.observeAsState(false)
 
     var searchQuery by remember { mutableStateOf("") }
@@ -157,33 +157,55 @@ fun MainScreen(
                 val showBack = uiState !is MusicUiState.Home
 
                 TopAppBar(
-                    title = { 
-                        Column {
-                            Text(titleStr)
-                            when (val status = syncStatus) {
-                                is com.cpu.seamlessloopmobile.ui.state.DataUiState.Loading -> {
-                                    Text("🔍 寻找新曲子中...", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                }
-                                is com.cpu.seamlessloopmobile.ui.state.DataUiState.Error -> {
-                                    Text("❌ 扫描失败: ${status.message}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                                }
-                                is com.cpu.seamlessloopmobile.ui.state.DataUiState.Success -> {
-                                    if (status.data.isNotEmpty()) {
-                                        Text(status.data, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    title = {
+                        if (isSelectionMode) {
+                            val selectionTitle = when {
+                                selectedItems.isNotEmpty() -> "已选择 ${selectedItems.size} 首歌曲"
+                                selectedFolders.isNotEmpty() -> "已选择 ${selectedFolders.size} 个文件夹"
+                                selectedPlaylists.isNotEmpty() -> "已选择 ${selectedPlaylists.size} 个歌单"
+                                else -> "已选择 ${selectedItems.size + selectedFolders.size + selectedPlaylists.size} 项"
+                            }
+                            Text(selectionTitle, fontWeight = FontWeight.Bold)
+                        } else {
+                            val currentUiState = uiState
+                            if (currentUiState is MusicUiState.SongList && currentUiState.type == MusicUiState.ListType.SEARCH) {
+                                TopAppBarSearchBar(
+                                    value = searchQuery,
+                                    onValueChange = { searchQuery = it }
+                                )
+                            } else {
+                                Column {
+                                    Text(titleStr)
+                                    when (val status = syncStatus) {
+                                        is com.cpu.seamlessloopmobile.ui.state.DataUiState.Loading -> {
+                                            Text("🔍 寻找新曲子中...", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                        }
+                                        is com.cpu.seamlessloopmobile.ui.state.DataUiState.Error -> {
+                                            Text("❌ 扫描失败: ${status.message}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                        }
+                                        is com.cpu.seamlessloopmobile.ui.state.DataUiState.Success -> {
+                                            if (status.data.isNotEmpty()) {
+                                                Text(status.data, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     },
                     navigationIcon = {
-                        if (showBack) {
+                        if (isSelectionMode) {
+                            IconButton(onClick = { viewModel.clearSelection() }) {
+                                Icon(Icons.Default.Close, contentDescription = "取消选择")
+                            }
+                        } else if (showBack) {
                             IconButton(onClick = { viewModel.goBack() }) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                             }
                         }
                     },
                     actions = {
-                        if (uiState is MusicUiState.Home) {
+                        if (!isSelectionMode && uiState is MusicUiState.Home) {
                             IconButton(onClick = { 
                                 viewModel.openSongList("搜索音乐", emptyList(), MusicUiState.ListType.SEARCH)
                             }) {
@@ -395,8 +417,7 @@ fun MainScreen(
                                         androidx.compose.foundation.lazy.LazyListState()
                                     },
                                     isSearchType = state.type == MusicUiState.ListType.SEARCH,
-                                    searchQuery = searchQuery,
-                                    onSearchQueryChange = { searchQuery = it }
+                                    searchQuery = searchQuery
                                 )
                             }
                         }

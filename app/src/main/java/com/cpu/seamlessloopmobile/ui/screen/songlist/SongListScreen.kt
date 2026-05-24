@@ -1,7 +1,6 @@
 package com.cpu.seamlessloopmobile.ui.screen.songlist
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -9,23 +8,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.ui.components.common.SongListItem
-import kotlinx.coroutines.delay
 
 /**
  * 歌曲大列表通用屏幕，现已完美兼职全屏搜索大页面喵！🚀
@@ -44,72 +38,11 @@ fun SongListScreen(
     listState: LazyListState = rememberLazyListState(),
     // --- 极简复用搜索参数喵！🔍 ---
     isSearchType: Boolean = false,
-    searchQuery: String = "",
-    onSearchQueryChange: (String) -> Unit = {}
+    searchQuery: String = ""
 ) {
-    val focusRequester = remember { FocusRequester() }
-
-    // 进入页面时自动聚焦并弹起软键盘喵
-    if (isSearchType) {
-        LaunchedEffect(Unit) {
-            delay(150) // 腾出少量时间给转场过渡动画喵
-            focusRequester.requestFocus()
-        }
-    }
-
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
-        // 如果是搜索列表类型，在顶部渲染出精致又高级的输入框喵
-        if (isSearchType) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f))
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-            ) {
-                TextField(
-                    value = searchQuery,
-                    onValueChange = onSearchQueryChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester),
-                    placeholder = { Text("搜索歌名、歌手或专辑喵...", fontSize = 14.sp) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { onSearchQueryChange("") }) {
-                                Icon(
-                                    imageVector = Icons.Default.Clear,
-                                    contentDescription = "清除",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
-                        disabledContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    shape = RoundedCornerShape(24.dp)
-                )
-            }
-            Divider(
-                thickness = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-        }
-
         // 核心 LazyColumn 歌曲列表
         Box(
             modifier = Modifier
