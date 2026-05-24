@@ -12,6 +12,7 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 import com.cpu.seamlessloopmobile.jni.NativeAudio
@@ -101,7 +102,13 @@ fun CentralizedDialogHost(viewModel: MainViewModel) {
                         }
                         items(dialog.playlists) { playlist ->
                             ListItem(
-                                headlineContent = { Text(playlist.name) },
+                                headlineContent = {
+                                    Text(
+                                        text = playlist.name,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
                                 leadingContent = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null) },
                                 modifier = Modifier.clickable { 
                                     dialog.onAdd(playlist)

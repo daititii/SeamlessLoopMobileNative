@@ -94,6 +94,8 @@ fun MainInfoPage(
                 color = SeamlessLoopColors.Gray,
                 fontSize = 16.sp
             ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center
         )
 

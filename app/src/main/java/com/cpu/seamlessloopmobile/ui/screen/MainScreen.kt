@@ -23,6 +23,14 @@ import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import com.cpu.seamlessloopmobile.viewmodel.MusicUiState
 import androidx.activity.compose.BackHandler
 import com.cpu.seamlessloopmobile.ui.screen.search.SearchScreen
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.graphics.Color
 
 import com.cpu.seamlessloopmobile.ui.components.app.MiniPlayer
 import com.cpu.seamlessloopmobile.ui.components.app.CentralizedDialogHost
@@ -108,43 +116,8 @@ fun MainScreen(
         }
     }
 
-    // --- Material3 ModalNavigationDrawer 原生侧边设置面板集成喵！⚙️ ---
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    
-    // 双向同步侧边栏可见状态
-    LaunchedEffect(isSettingsPanelVisible) {
-        if (isSettingsPanelVisible) {
-            drawerState.open()
-        } else {
-            drawerState.close()
-        }
-    }
-    
-    LaunchedEffect(drawerState.currentValue) {
-        val isVisible = drawerState.currentValue == DrawerValue.Open
-        if (isSettingsPanelVisible != isVisible) {
-            viewModel.setSettingsPanelVisible(isVisible)
-        }
-    }
-
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = false, // 禁用边缘侧滑手势，防止与 ViewPager 的左右滑动手势冲突喵！
-        drawerContent = {
-            ModalDrawerSheet(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(0.85f)
-            ) {
-                val context = androidx.compose.ui.platform.LocalContext.current
-                SettingsScreen(
-                    onClose = { viewModel.setSettingsPanelVisible(false) },
-                    onRescan = { viewModel.scanLibrary(context) },
-                    onSyncPc = onSyncPc
-                )
-            }
-        }
-    ) {
+    // --- 自定义侧边设置面板集成喵！⚙️ ---
+    Box(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize()) {
             Scaffold(
                 topBar = {
@@ -376,6 +349,53 @@ fun MainScreen(
                         onShowDialog = { dialog -> viewModel.showDialog(dialog) },
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
+                }
+            }
+        }
+
+        // --- Layer 2: 侧边设置面板遮罩层与滑入面板喵！⚙️ ---
+        AnimatedVisibility(
+            visible = isSettingsPanelVisible,
+            enter = fadeIn(animationSpec = tween(300)),
+            exit = fadeOut(animationSpec = tween(300))
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // 可点击遮罩背景
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.32f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { viewModel.setSettingsPanelVisible(false) }
+                        )
+                )
+
+                // 侧边设置抽屉（滑入滑出）
+                AnimatedVisibility(
+                    visible = isSettingsPanelVisible,
+                    enter = slideInHorizontally(
+                        animationSpec = tween(300),
+                        initialOffsetX = { -it }
+                    ),
+                    exit = slideOutHorizontally(
+                        animationSpec = tween(300),
+                        targetOffsetX = { -it }
+                    ),
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(0.85f)
+                        .align(Alignment.CenterStart)
+                ) {
+                    ModalDrawerSheet(modifier = Modifier.fillMaxSize()) {
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        SettingsScreen(
+                            onClose = { viewModel.setSettingsPanelVisible(false) },
+                            onRescan = { viewModel.scanLibrary(context) },
+                            onSyncPc = onSyncPc
+                        )
+                    }
                 }
             }
         }

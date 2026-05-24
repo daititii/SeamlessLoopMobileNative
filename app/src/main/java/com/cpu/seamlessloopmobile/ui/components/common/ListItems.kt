@@ -265,12 +265,16 @@ fun CategoryListItem(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal
+                    fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (isSelected || isPlaying) MaterialTheme.colorScheme.primary.copy(alpha=0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (isSelected || isPlaying) MaterialTheme.colorScheme.primary.copy(alpha=0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             
