@@ -1,13 +1,9 @@
 package com.cpu.seamlessloopmobile.ui.screen
 
 import com.cpu.seamlessloopmobile.ui.screen.settings.SettingsScreen
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import com.cpu.seamlessloopmobile.model.Song
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
+import com.cpu.seamlessloopmobile.model.Folder
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -15,8 +11,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
@@ -28,7 +22,7 @@ import com.cpu.seamlessloopmobile.ui.components.common.CategoryListItem
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import com.cpu.seamlessloopmobile.viewmodel.MusicUiState
 import androidx.activity.compose.BackHandler
-import com.cpu.seamlessloopmobile.ui.components.common.TopAppBarSearchBar
+import com.cpu.seamlessloopmobile.ui.screen.search.SearchScreen
 
 import com.cpu.seamlessloopmobile.ui.components.app.MiniPlayer
 import com.cpu.seamlessloopmobile.ui.components.app.CentralizedDialogHost
@@ -36,7 +30,6 @@ import com.cpu.seamlessloopmobile.ui.components.app.PlayingPanel
 import com.cpu.seamlessloopmobile.ui.components.app.MultiSelectBar
 
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
@@ -57,7 +50,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 
-// Grid & Pager imports
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.pager.HorizontalPager
 
@@ -89,51 +81,21 @@ fun MainScreen(
     val selectedFolders by viewModel.selectedFolders.observeAsState(emptySet())
     val isSettingsPanelVisible by viewModel.isSettingsPanelVisible.observeAsState(false)
 
-    var searchQuery by remember { mutableStateOf("") }
-    var filteredSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
-
-    // --- 300ms 响应式搜索防抖过滤机制喵！🔍 ---
-    LaunchedEffect(searchQuery, allSongs) {
-        if (searchQuery.isBlank()) {
-            filteredSongs = emptyList()
-        } else {
-            kotlinx.coroutines.delay(300)
-            filteredSongs = allSongs.filter { song ->
-                song.fileName.lowercase().contains(searchQuery.lowercase()) ||
-                song.displayName.lowercase().contains(searchQuery.lowercase()) ||
-                song.artist.lowercase().contains(searchQuery.lowercase()) ||
-                song.album.lowercase().contains(searchQuery.lowercase())
-            }
-        }
-    }
-
-    // 退出搜索页面时自动重置搜索框喵！
-    LaunchedEffect(uiState) {
-        val currentUiState = uiState
-        if (currentUiState !is MusicUiState.SongList || currentUiState.type != MusicUiState.ListType.SEARCH) {
-            searchQuery = ""
-        }
-    }
-    
     // --- 导航滚动位置记忆中心喵 ---
     val categoryScrollStates = remember { mutableMapOf<String, androidx.compose.foundation.lazy.LazyListState>() }
     val songListScrollStates = remember { mutableMapOf<String, androidx.compose.foundation.lazy.LazyListState>() }
 
     // 计算当前页面展示的歌曲，用于“全选”喵
-    val songsInCurrentPage = remember(uiState, allSongs, folders, albums, artists) {
-        when (val state = uiState) {
-            is MusicUiState.SongList -> {
-                when (state.type) {
-                    MusicUiState.ListType.ALL_SONGS -> allSongs
-                    MusicUiState.ListType.FOLDER -> folders.find { it.name == state.title }?.songs ?: state.songs
-                    MusicUiState.ListType.ALBUM -> albums.find { it.name == state.title }?.songs ?: state.songs
-                    MusicUiState.ListType.ARTIST -> artists.find { it.name == state.title }?.songs ?: state.songs
-                    MusicUiState.ListType.FAVORITES -> favorites
-                    else -> state.songs
-                }
-            }
-            else -> emptyList()
-        }
+    val songsInCurrentPage = remember(uiState, allSongs, folders, albums, artists, favorites) {
+        resolveSongsForState(
+            state = uiState,
+            allSongs = allSongs,
+            folders = folders,
+            albums = albums,
+            artists = artists,
+            favorites = favorites,
+            filteredSongs = emptyList() // 搜索由独立大页面托管，此处无搜曲任务喵
+        )
     }
 
     // --- 接管返回键喵 ---
@@ -146,344 +108,274 @@ fun MainScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            topBar = {
-                val titleStr = when (val state = uiState) {
-                    is MusicUiState.Home -> "Seamless Loop"
-                    is MusicUiState.SongList -> state.title
-                    else -> "Seamless Loop"
-                }
-                val showBack = uiState !is MusicUiState.Home
+    // --- Material3 ModalNavigationDrawer 原生侧边设置面板集成喵！⚙️ ---
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    
+    // 双向同步侧边栏可见状态
+    LaunchedEffect(isSettingsPanelVisible) {
+        if (isSettingsPanelVisible) {
+            drawerState.open()
+        } else {
+            drawerState.close()
+        }
+    }
+    
+    LaunchedEffect(drawerState.currentValue) {
+        val isVisible = drawerState.currentValue == DrawerValue.Open
+        if (isSettingsPanelVisible != isVisible) {
+            viewModel.setSettingsPanelVisible(isVisible)
+        }
+    }
 
-                TopAppBar(
-                    title = {
-                        if (isSelectionMode) {
-                            val selectionTitle = when {
-                                selectedItems.isNotEmpty() -> "已选择 ${selectedItems.size} 首歌曲"
-                                selectedFolders.isNotEmpty() -> "已选择 ${selectedFolders.size} 个文件夹"
-                                selectedPlaylists.isNotEmpty() -> "已选择 ${selectedPlaylists.size} 个歌单"
-                                else -> "已选择 ${selectedItems.size + selectedFolders.size + selectedPlaylists.size} 项"
-                            }
-                            Text(selectionTitle, fontWeight = FontWeight.Bold)
-                        } else {
-                            val currentUiState = uiState
-                            if (currentUiState is MusicUiState.SongList && currentUiState.type == MusicUiState.ListType.SEARCH) {
-                                TopAppBarSearchBar(
-                                    value = searchQuery,
-                                    onValueChange = { searchQuery = it }
-                                )
-                            } else {
-                                Column {
-                                    Text(titleStr)
-                                    when (val status = syncStatus) {
-                                        is com.cpu.seamlessloopmobile.ui.state.DataUiState.Loading -> {
-                                            Text("🔍 寻找新曲子中...", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                        }
-                                        is com.cpu.seamlessloopmobile.ui.state.DataUiState.Error -> {
-                                            Text("❌ 扫描失败: ${status.message}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                                        }
-                                        is com.cpu.seamlessloopmobile.ui.state.DataUiState.Success -> {
-                                            if (status.data.isNotEmpty()) {
-                                                Text(status.data, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        if (isSelectionMode) {
-                            IconButton(onClick = { viewModel.clearSelection() }) {
-                                Icon(Icons.Default.Close, contentDescription = "取消选择")
-                            }
-                        } else if (showBack) {
-                            IconButton(onClick = { viewModel.goBack() }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                            }
-                        }
-                    },
-                    actions = {
-                        if (!isSelectionMode && uiState is MusicUiState.Home) {
-                            IconButton(onClick = { 
-                                viewModel.openSongList("搜索音乐", emptyList(), MusicUiState.ListType.SEARCH)
-                            }) {
-                                Icon(Icons.Default.Search, contentDescription = "搜索")
-                            }
-                            IconButton(onClick = { viewModel.setSettingsPanelVisible(true) }) {
-                                Icon(Icons.Default.Settings, contentDescription = "设置")
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = false, // 禁用边缘侧滑手势，防止与 ViewPager 的左右滑动手势冲突喵！
+        drawerContent = {
+            ModalDrawerSheet(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(0.85f)
+            ) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                SettingsScreen(
+                    onClose = { viewModel.setSettingsPanelVisible(false) },
+                    onRescan = { viewModel.scanLibrary(context) },
+                    onSyncPc = onSyncPc
                 )
-            },
-            bottomBar = {
-                if (!isSelectionMode) {
-                    MiniPlayer(
-                        viewModel = viewModel,
-                        onClick = { viewModel.setPlayingPanelVisible(true) }
-                    )
-                }
             }
-        ) { paddingValues ->
-            val coroutineScope = rememberCoroutineScope()
-            
-            Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-                // 1. 扁平 Tab 导航底层 (在进入二级页时我们不销毁它以保持状态)
-                Column(modifier = Modifier.fillMaxSize()) {
-                    val tabs = listOf("歌单", "专辑", "歌手", "文件夹")
-                    val pagerState = rememberPagerState { tabs.size }
-                    
-                    ScrollableTabRow(
-                        selectedTabIndex = pagerState.currentPage,
-                        edgePadding = 16.dp,
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        tabs.forEachIndexed { index, title ->
-                            Tab(
-                                selected = pagerState.currentPage == index,
-                                onClick = {
-                                    coroutineScope.launch {
-                                        pagerState.animateScrollToPage(index)
-                                    }
-                                },
-                                text = { Text(title, fontWeight = FontWeight.Bold) }
+        }
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Scaffold(
+                topBar = {
+                    val currentUiState = uiState
+                    when {
+                        isSelectionMode -> SelectionAppBar(
+                            selectedItemsCount = selectedItems.size,
+                            selectedFoldersCount = selectedFolders.size,
+                            selectedPlaylistsCount = selectedPlaylists.size,
+                            onCloseSelectionClick = { viewModel.clearSelection() }
+                        )
+                        currentUiState is MusicUiState.Search -> {} // 搜索页自己掌控顶部栏喵！
+                        currentUiState is MusicUiState.Home -> HomeAppBar(
+                            syncStatus = syncStatus,
+                            onSettingsClick = { viewModel.setSettingsPanelVisible(true) },
+                            onSearchClick = { viewModel.navigateTo(MusicUiState.Search) }
+                        )
+                        currentUiState is MusicUiState.SongList -> SongListAppBar(
+                            title = currentUiState.title,
+                            syncStatus = syncStatus,
+                            onBackClick = { viewModel.goBack() },
+                            onSearchClick = { viewModel.navigateTo(MusicUiState.Search) }
+                        )
+                        else -> {}
+                    }
+                },
+                bottomBar = {
+                    if (!isSelectionMode) {
+                        MiniPlayer(
+                            viewModel = viewModel,
+                            onClick = { viewModel.setPlayingPanelVisible(true) }
+                        )
+                    }
+                }
+            ) { paddingValues ->
+                val coroutineScope = rememberCoroutineScope()
+                
+                Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+                    // 1. 扁平 Tab 导航底层 (在进入二级页时我们不销毁它以保持状态)
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        val tabs = listOf("歌单", "专辑", "歌手", "文件夹")
+                        val pagerState = rememberPagerState { tabs.size }
+                        
+                        ScrollableTabRow(
+                            selectedTabIndex = pagerState.currentPage,
+                            edgePadding = 16.dp,
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            tabs.forEachIndexed { index, title ->
+                                Tab(
+                                    selected = pagerState.currentPage == index,
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            pagerState.animateScrollToPage(index)
+                                        }
+                                    },
+                                    text = { Text(title, fontWeight = FontWeight.Bold) }
+                                )
+                            }
+                        }
+                        
+                        // 专辑、歌手、文件夹三者具备高度重合逻辑，在这里使用精美循环大幅精简代码喵！(๑•̀ㅂ•́)و✧
+                        val categories = remember(albums, artists, folders) {
+                            listOf(
+                                Triple(albums, MusicUiState.ListType.ALBUM, "专辑"),
+                                Triple(artists, MusicUiState.ListType.ARTIST, "歌手"),
+                                Triple(folders, MusicUiState.ListType.FOLDER, "文件夹")
                             )
                         }
-                    }
-                    
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxWidth().weight(1f)
-                    ) { page ->
-                        when (page) {
-                            0 -> { // 歌单 Tab (全部歌曲 + 已评分 + 自定义歌单列表)
-                                val playlistPairs = playlistsWithCounts.map { it.playlist to it.songCount }
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(bottom = 80.dp)
-                                ) {
-                                    // 1. 全部歌曲
-                                    item {
-                                        CategoryListItem(
-                                            title = "全部歌曲",
-                                            subtitle = "${allSongs.size} 首歌曲",
-                                            icon = Icons.Default.MusicNote,
-                                            isSelected = false,
-                                            onClick = {
-                                                viewModel.openSongList("全部歌曲", allSongs, MusicUiState.ListType.ALL_SONGS)
-                                            }
-                                        )
-                                    }
-                                    
-                                    // 2. 已评分
-                                    item {
-                                        CategoryListItem(
-                                            title = "已评分",
-                                            subtitle = "${favorites.size} 首歌曲",
-                                            icon = Icons.Default.Star,
-                                            isSelected = false,
-                                            onClick = {
-                                                viewModel.openSongList("已评分", favorites, MusicUiState.ListType.FAVORITES)
-                                            }
-                                        )
-                                    }
 
-                                    // 3. 自定义歌单列表
-                                    items(playlistPairs) { (playlist, count) ->
-                                        val isSelected = selectedPlaylists.contains(playlist.id)
-                                        CategoryListItem(
-                                            title = playlist.name,
-                                            subtitle = "${count}首" + if (playlist.isFolderLinked == 1) " · 联动" else "",
-                                            icon = Icons.AutoMirrored.Filled.QueueMusic,
-                                            isSelected = isSelected,
-                                            isSelectionMode = isSelectionMode,
-                                            onClick = {
-                                                if (isSelectionMode) {
-                                                    viewModel.togglePlaylistSelection(playlist.id)
-                                                } else {
-                                                    viewModel.openPlaylist(playlist)
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxWidth().weight(1f)
+                        ) { page ->
+                            when (page) {
+                                0 -> { // 歌单 Tab (全部歌曲 + 已评分 + 自定义歌单列表)
+                                    val playlistPairs = playlistsWithCounts.map { it.playlist to it.songCount }
+                                    LazyColumn(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(bottom = 80.dp)
+                                    ) {
+                                        // 1. 全部歌曲
+                                        item {
+                                            CategoryListItem(
+                                                title = "全部歌曲",
+                                                subtitle = "${allSongs.size} 首歌曲",
+                                                icon = Icons.Default.MusicNote,
+                                                isSelected = false,
+                                                onClick = {
+                                                    viewModel.openSongList("全部歌曲", allSongs, MusicUiState.ListType.ALL_SONGS)
                                                 }
-                                            },
-                                            onLongClick = { viewModel.togglePlaylistSelection(playlist.id) }
-                                        )
+                                            )
+                                        }
+                                        
+                                        // 2. 已评分
+                                        item {
+                                            CategoryListItem(
+                                                title = "已评分",
+                                                subtitle = "${favorites.size} 首歌曲",
+                                                icon = Icons.Default.Star,
+                                                isSelected = false,
+                                                onClick = {
+                                                    viewModel.openSongList("已评分", favorites, MusicUiState.ListType.FAVORITES)
+                                                }
+                                            )
+                                        }
+
+                                        // 3. 自定义歌单列表
+                                        items(playlistPairs) { (playlist, count) ->
+                                            val isSelected = selectedPlaylists.contains(playlist.id)
+                                            CategoryListItem(
+                                                title = playlist.name,
+                                                subtitle = "${count}首" + if (playlist.isFolderLinked == 1) " · 联动" else "",
+                                                icon = Icons.AutoMirrored.Filled.QueueMusic,
+                                                isSelected = isSelected,
+                                                isSelectionMode = isSelectionMode,
+                                                onClick = {
+                                                    if (isSelectionMode) {
+                                                        viewModel.togglePlaylistSelection(playlist.id)
+                                                    } else {
+                                                        viewModel.openPlaylist(playlist)
+                                                    }
+                                                },
+                                                onLongClick = { viewModel.togglePlaylistSelection(playlist.id) }
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                            1 -> { // 专辑 Tab
-                                val currentPlayingPath = currentPlaylist.getOrNull(currentSongIndex)?.filePath
-                                CategoryScreen(
-                                    items = albums,
-                                    currentPlayingPath = currentPlayingPath,
-                                    onOpenFolder = { folder ->
-                                        viewModel.openSongList(folder.name, folder.songs, MusicUiState.ListType.ALBUM, albums)
-                                    },
-                                    isSelectionMode = isSelectionMode,
-                                    selectedFolders = selectedFolders,
-                                    onToggleFolderSelection = { folder -> viewModel.toggleFolderSelection(folder) },
-                                    listState = categoryScrollStates.getOrPut("专辑") { 
-                                        androidx.compose.foundation.lazy.LazyListState() 
-                                    }
-                                )
-                            }
-                            2 -> { // 歌手 Tab
-                                val currentPlayingPath = currentPlaylist.getOrNull(currentSongIndex)?.filePath
-                                CategoryScreen(
-                                    items = artists,
-                                    currentPlayingPath = currentPlayingPath,
-                                    onOpenFolder = { folder ->
-                                        viewModel.openSongList(folder.name, folder.songs, MusicUiState.ListType.ARTIST, artists)
-                                    },
-                                    isSelectionMode = isSelectionMode,
-                                    selectedFolders = selectedFolders,
-                                    onToggleFolderSelection = { folder -> viewModel.toggleFolderSelection(folder) },
-                                    listState = categoryScrollStates.getOrPut("歌手") { 
-                                        androidx.compose.foundation.lazy.LazyListState() 
-                                    }
-                                )
-                            }
-                            3 -> { // 文件夹 Tab
-                                val currentPlayingPath = currentPlaylist.getOrNull(currentSongIndex)?.filePath
-                                CategoryScreen(
-                                    items = folders,
-                                    currentPlayingPath = currentPlayingPath,
-                                    onOpenFolder = { folder ->
-                                        viewModel.openSongList(folder.name, folder.songs, MusicUiState.ListType.FOLDER, folders)
-                                    },
-                                    isSelectionMode = isSelectionMode,
-                                    selectedFolders = selectedFolders,
-                                    onToggleFolderSelection = { folder -> viewModel.toggleFolderSelection(folder) },
-                                    listState = categoryScrollStates.getOrPut("文件夹") { 
-                                        androidx.compose.foundation.lazy.LazyListState() 
-                                    }
-                                )
+                                else -> {
+                                    val (items, type, label) = categories[page - 1]
+                                    val currentPlayingPath = currentPlaylist.getOrNull(currentSongIndex)?.filePath
+                                    CategoryScreen(
+                                        items = items,
+                                        currentPlayingPath = currentPlayingPath,
+                                        onOpenFolder = { folder ->
+                                            viewModel.openSongList(folder.name, folder.songs, type, items)
+                                        },
+                                        isSelectionMode = isSelectionMode,
+                                        selectedFolders = selectedFolders,
+                                        onToggleFolderSelection = { folder -> viewModel.toggleFolderSelection(folder) },
+                                        listState = categoryScrollStates.getOrPut(label) { 
+                                            androidx.compose.foundation.lazy.LazyListState() 
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                // 2. 二级 SongList 页面 Overlay (使用 AnimatedContent 控制淡入淡出，盖在 Pager 上方)
-                AnimatedContent(
-                    targetState = uiState,
-                    transitionSpec = {
-                        fadeIn() togetherWith fadeOut()
-                    },
-                    label = "MainScreenNavigation",
-                    modifier = Modifier.fillMaxSize()
-                ) { state ->
-                    when (state) {
-                        is MusicUiState.SongList -> {
-                             val songsToShow = when (state.type) {
-                                MusicUiState.ListType.ALL_SONGS -> allSongs
-                                MusicUiState.ListType.FOLDER -> folders.find { it.name == state.title }?.songs ?: state.songs
-                                MusicUiState.ListType.ALBUM -> albums.find { it.name == state.title }?.songs ?: state.songs
-                                MusicUiState.ListType.ARTIST -> artists.find { it.name == state.title }?.songs ?: state.songs
-                                MusicUiState.ListType.FAVORITES -> favorites
-                                MusicUiState.ListType.SEARCH -> filteredSongs
-                                else -> state.songs
-                            }
-
-                            val currentPlayingPath = currentPlaylist.getOrNull(currentSongIndex)?.filePath
-                            
-                            Surface(
-                                modifier = Modifier.fillMaxSize(),
-                                color = MaterialTheme.colorScheme.background
-                            ) {
-                                SongListScreen(
-                                    songs = songsToShow,
-                                    currentPlayingSongPath = currentPlayingPath,
-                                    isSelectionMode = isSelectionMode,
-                                    selectedItems = selectedItems,
-                                    onPlaySong = { song ->
-                                        val index = songsToShow.indexOf(song)
-                                        viewModel.updateCurrentPlaylist(songsToShow, index)
-                                        playSong(song)
-                                    },
-                                    onToggleSelection = { song ->
-                                        if (!isSelectionMode) viewModel.setSelectionMode(true)
-                                        viewModel.toggleSelection(song.filePath)
-                                    },
-                                    onShowMoreOptions = { _ ->
-                                        // TODO
-                                    },
-                                    listState = songListScrollStates.getOrPut("${state.type}_${state.title}") {
-                                        androidx.compose.foundation.lazy.LazyListState()
-                                    },
-                                    isSearchType = state.type == MusicUiState.ListType.SEARCH,
-                                    searchQuery = searchQuery
+                    // 2. 二级 SongList 页面 Overlay (使用 AnimatedContent 控制淡入淡出，盖在 Pager 上方)
+                    AnimatedContent(
+                        targetState = uiState,
+                        transitionSpec = {
+                            fadeIn() togetherWith fadeOut()
+                        },
+                        label = "MainScreenNavigation",
+                        modifier = Modifier.fillMaxSize()
+                    ) { state ->
+                        when (state) {
+                            is MusicUiState.Search -> {
+                                SearchScreen(
+                                    viewModel = viewModel,
+                                    playSong = playSong
                                 )
                             }
-                        }
-                        else -> {
-                            Spacer(modifier = Modifier.fillMaxSize())
+                            is MusicUiState.SongList -> {
+                                val songsToShow = resolveSongsForState(
+                                    state = state,
+                                    allSongs = allSongs,
+                                    folders = folders,
+                                    albums = albums,
+                                    artists = artists,
+                                    favorites = favorites,
+                                    filteredSongs = emptyList() // 搜索已独立由 SearchScreen 托管喵
+                                )
+
+                                val currentPlayingPath = currentPlaylist.getOrNull(currentSongIndex)?.filePath
+                                
+                                Surface(
+                                    modifier = Modifier.fillMaxSize(),
+                                    color = MaterialTheme.colorScheme.background
+                                ) {
+                                    SongListScreen(
+                                        songs = songsToShow,
+                                        currentPlayingSongPath = currentPlayingPath,
+                                        isSelectionMode = isSelectionMode,
+                                        selectedItems = selectedItems,
+                                        onPlaySong = { song ->
+                                            val index = songsToShow.indexOf(song)
+                                            viewModel.updateCurrentPlaylist(songsToShow, index)
+                                            playSong(song)
+                                        },
+                                        onToggleSelection = { song ->
+                                            if (!isSelectionMode) viewModel.setSelectionMode(true)
+                                            viewModel.toggleSelection(song.filePath)
+                                        },
+                                        onShowMoreOptions = { _ ->
+                                            // TODO: 更多选项
+                                        },
+                                        listState = songListScrollStates.getOrPut("${state.type}_${state.title}") {
+                                            androidx.compose.foundation.lazy.LazyListState()
+                                        }
+                                    )
+                                }
+                            }
+                            else -> {
+                                Spacer(modifier = Modifier.fillMaxSize())
+                            }
                         }
                     }
-                }
 
-                // --- 多选操作悬浮页喵 ---
-                MultiSelectBar(
-                    isSelectionMode = isSelectionMode,
-                    selectedItems = selectedItems,
-                    selectedPlaylists = selectedPlaylists,
-                    selectedFolders = selectedFolders,
-                    playlists = playlists,
-                    songsInCurrentPage = songsInCurrentPage,
-                    onClearSelection = { viewModel.clearSelection() },
-                    onSelectAll = { songs -> viewModel.selectAll(songs) },
-                    onDeleteSelectedPlaylists = { viewModel.deleteSelectedPlaylists() },
-                    onImportFoldersIndividually = { viewModel.importSelectedFoldersIndividually() },
-                    onImportFoldersAsSinglePlaylist = { name -> viewModel.importSelectedFoldersAsSinglePlaylist(name) },
-                    onAddSelectedToPlaylist = { playlistId -> viewModel.addSelectedToPlaylist(playlistId) },
-                    onCreatePlaylistWithSelected = { name -> viewModel.createPlaylistWithSelected(name) },
-                    onShowDialog = { dialog -> viewModel.showDialog(dialog) },
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
-                // --- 左侧滑入的设置面板喵！⚙️ ---
-                AnimatedVisibility(
-                    visible = isSettingsPanelVisible,
-                    enter = slideInHorizontally(initialOffsetX = { -it }) + fadeIn(),
-                    exit = slideOutHorizontally(targetOffsetX = { -it }) + fadeOut()
-                ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        // 半透明遮罩底色喵，点击关闭面板
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clickable(
-                                    indication = null,
-                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                                ) { viewModel.setSettingsPanelVisible(false) },
-                            color = Color.Black.copy(alpha = 0.4f)
-                        ) {}
-
-                        // 设置侧滑主体
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .fillMaxWidth(0.85f)
-                                .align(Alignment.CenterStart)
-                                .clickable(
-                                    indication = null,
-                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                                ) {}, // 拦截任何穿透点击喵！
-                            color = MaterialTheme.colorScheme.surface,
-                            shadowElevation = 8.dp
-                        ) {
-                            val context = androidx.compose.ui.platform.LocalContext.current
-                            SettingsScreen(
-                                onClose = { viewModel.setSettingsPanelVisible(false) },
-                                onRescan = { viewModel.scanLibrary(context) },
-                                onSyncPc = onSyncPc
-                            )
-                        }
-                    }
+                    // --- 多选操作悬浮页喵 ---
+                    MultiSelectBar(
+                        isSelectionMode = isSelectionMode,
+                        selectedItems = selectedItems,
+                        selectedPlaylists = selectedPlaylists,
+                        selectedFolders = selectedFolders,
+                        playlists = playlists,
+                        songsInCurrentPage = songsInCurrentPage,
+                        onClearSelection = { viewModel.clearSelection() },
+                        onSelectAll = { songs -> viewModel.selectAll(songs) },
+                        onDeleteSelectedPlaylists = { viewModel.deleteSelectedPlaylists() },
+                        onImportFoldersIndividually = { viewModel.importSelectedFoldersIndividually() },
+                        onImportFoldersAsSinglePlaylist = { name -> viewModel.importSelectedFoldersAsSinglePlaylist(name) },
+                        onAddSelectedToPlaylist = { playlistId -> viewModel.addSelectedToPlaylist(playlistId) },
+                        onCreatePlaylistWithSelected = { name -> viewModel.createPlaylistWithSelected(name) },
+                        onShowDialog = { dialog -> viewModel.showDialog(dialog) },
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    )
                 }
             }
         }
@@ -501,6 +393,34 @@ fun MainScreen(
 
     // --- 全局对话框托管 ---
     CentralizedDialogHost(viewModel)
+}
+
+/**
+ * 抽取统一的歌曲解析辅助函数喵，消除了 redundant 逻辑，维持代码极其精简！(๑•̀ㅂ•́)و✧
+ */
+private fun resolveSongsForState(
+    state: MusicUiState,
+    allSongs: List<Song>,
+    folders: List<Folder>,
+    albums: List<Folder>,
+    artists: List<Folder>,
+    favorites: List<Song>,
+    filteredSongs: List<Song>
+): List<Song> {
+    return when (state) {
+        is MusicUiState.SongList -> {
+            when (state.type) {
+                MusicUiState.ListType.ALL_SONGS -> allSongs
+                MusicUiState.ListType.FOLDER -> folders.find { it.name == state.title }?.songs ?: state.songs
+                MusicUiState.ListType.ALBUM -> albums.find { it.name == state.title }?.songs ?: state.songs
+                MusicUiState.ListType.ARTIST -> artists.find { it.name == state.title }?.songs ?: state.songs
+                MusicUiState.ListType.FAVORITES -> favorites
+                MusicUiState.ListType.SEARCH -> filteredSongs
+                else -> state.songs
+            }
+        }
+        else -> emptyList()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
