@@ -1,11 +1,22 @@
 package com.cpu.seamlessloopmobile.ui.screen
 
+import com.cpu.seamlessloopmobile.ui.screen.settings.SettingsScreen
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import com.cpu.seamlessloopmobile.model.Song
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
@@ -75,6 +86,34 @@ fun MainScreen(
     val isPlayingPanelVisible by viewModel.isPlayingPanelVisible.observeAsState(false)
     val syncStatus by viewModel.syncStatus.collectAsState()
     val selectedFolders by viewModel.selectedFolders.observeAsState(emptySet())
+    val isSearchPanelVisible by viewModel.isSearchPanelVisible.observeAsState(false)
+    val isSettingsPanelVisible by viewModel.isSettingsPanelVisible.observeAsState(false)
+
+    var searchQuery by remember { mutableStateOf("") }
+    var filteredSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+
+    // --- 300ms 响应式搜索防抖过滤机制喵！🔍 ---
+    LaunchedEffect(searchQuery, allSongs) {
+        if (searchQuery.isBlank()) {
+            filteredSongs = emptyList()
+        } else {
+            kotlinx.coroutines.delay(300)
+            filteredSongs = allSongs.filter { song ->
+                song.fileName.lowercase().contains(searchQuery.lowercase()) ||
+                song.displayName.lowercase().contains(searchQuery.lowercase()) ||
+                song.artist.lowercase().contains(searchQuery.lowercase()) ||
+                song.album.lowercase().contains(searchQuery.lowercase())
+            }
+        }
+    }
+
+    // 退出搜索页面时自动重置搜索框喵！
+    LaunchedEffect(uiState) {
+        val currentUiState = uiState
+        if (currentUiState !is MusicUiState.SongList || currentUiState.type != MusicUiState.ListType.SEARCH) {
+            searchQuery = ""
+        }
+    }
     
     // --- 导航滚动位置记忆中心喵 ---
     val categoryScrollStates = remember { mutableMapOf<String, androidx.compose.foundation.lazy.LazyListState>() }
@@ -98,13 +137,12 @@ fun MainScreen(
     }
 
     // --- 接管返回键喵 ---
-    BackHandler(enabled = isPlayingPanelVisible || isSelectionMode || uiState !is MusicUiState.Home) {
-        if (isPlayingPanelVisible) {
-            viewModel.setPlayingPanelVisible(false)
-        } else if (isSelectionMode) {
-            viewModel.clearSelection()
-        } else {
-            viewModel.goBack()
+    BackHandler(enabled = isSettingsPanelVisible || isPlayingPanelVisible || isSelectionMode || uiState !is MusicUiState.Home) {
+        when {
+            isSettingsPanelVisible -> viewModel.setSettingsPanelVisible(false)
+            isPlayingPanelVisible -> viewModel.setPlayingPanelVisible(false)
+            isSelectionMode -> viewModel.clearSelection()
+            else -> viewModel.goBack()
         }
     }
 
@@ -146,8 +184,13 @@ fun MainScreen(
                     },
                     actions = {
                         if (uiState is MusicUiState.Home) {
-                            IconButton(onClick = onSyncPc) {
-                                Icon(Icons.Default.Sync, contentDescription = "同步电脑端")
+                            IconButton(onClick = { 
+                                viewModel.openSongList("搜索音乐", emptyList(), MusicUiState.ListType.SEARCH)
+                            }) {
+                                Icon(Icons.Default.Search, contentDescription = "搜索")
+                            }
+                            IconButton(onClick = { viewModel.setSettingsPanelVisible(true) }) {
+                                Icon(Icons.Default.Settings, contentDescription = "设置")
                             }
                         }
                     },
@@ -315,12 +358,13 @@ fun MainScreen(
                 ) { state ->
                     when (state) {
                         is MusicUiState.SongList -> {
-                            val songsToShow = when (state.type) {
+                             val songsToShow = when (state.type) {
                                 MusicUiState.ListType.ALL_SONGS -> allSongs
                                 MusicUiState.ListType.FOLDER -> folders.find { it.name == state.title }?.songs ?: state.songs
                                 MusicUiState.ListType.ALBUM -> albums.find { it.name == state.title }?.songs ?: state.songs
                                 MusicUiState.ListType.ARTIST -> artists.find { it.name == state.title }?.songs ?: state.songs
                                 MusicUiState.ListType.FAVORITES -> favorites
+                                MusicUiState.ListType.SEARCH -> filteredSongs
                                 else -> state.songs
                             }
 
@@ -349,7 +393,10 @@ fun MainScreen(
                                     },
                                     listState = songListScrollStates.getOrPut("${state.type}_${state.title}") {
                                         androidx.compose.foundation.lazy.LazyListState()
-                                    }
+                                    },
+                                    isSearchType = state.type == MusicUiState.ListType.SEARCH,
+                                    searchQuery = searchQuery,
+                                    onSearchQueryChange = { searchQuery = it }
                                 )
                             }
                         }
@@ -377,6 +424,46 @@ fun MainScreen(
                     onShowDialog = { dialog -> viewModel.showDialog(dialog) },
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
+                // --- 左侧滑入的设置面板喵！⚙️ ---
+                AnimatedVisibility(
+                    visible = isSettingsPanelVisible,
+                    enter = slideInHorizontally(initialOffsetX = { -it }) + fadeIn(),
+                    exit = slideOutHorizontally(targetOffsetX = { -it }) + fadeOut()
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        // 半透明遮罩底色喵，点击关闭面板
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable(
+                                    indication = null,
+                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                                ) { viewModel.setSettingsPanelVisible(false) },
+                            color = Color.Black.copy(alpha = 0.4f)
+                        ) {}
+
+                        // 设置侧滑主体
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(0.85f)
+                                .align(Alignment.CenterStart)
+                                .clickable(
+                                    indication = null,
+                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                                ) {}, // 拦截任何穿透点击喵！
+                            color = MaterialTheme.colorScheme.surface,
+                            shadowElevation = 8.dp
+                        ) {
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            SettingsScreen(
+                                onClose = { viewModel.setSettingsPanelVisible(false) },
+                                onRescan = { viewModel.scanLibrary(context) },
+                                onSyncPc = onSyncPc
+                            )
+                        }
+                    }
+                }
             }
         }
     }

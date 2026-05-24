@@ -35,6 +35,7 @@ enum class PlayMode {
  */
 sealed class MusicUiState {
     object Home : MusicUiState()
+    object Search : MusicUiState()
     
     // 一级分类展开
     @Deprecated("Use Tab navigation instead")
@@ -48,7 +49,7 @@ sealed class MusicUiState {
         val originalItems: List<Folder>? = null 
     ) : MusicUiState()
     
-    enum class ListType { PLAYLIST, FOLDER, ALL_SONGS, ALBUM, ARTIST, FAVORITES }
+    enum class ListType { PLAYLIST, FOLDER, ALL_SONGS, ALBUM, ARTIST, FAVORITES, SEARCH }
 }
 
 /**
@@ -211,6 +212,21 @@ class MainViewModel(
     // --- 播放器面板显示控制 ---
     private val _isPlayingPanelVisible = MutableLiveData(false)
     val isPlayingPanelVisible: LiveData<Boolean> = _isPlayingPanelVisible
+
+    // --- 侧滑面板可见性控制喵！🚀 ---
+    private val _isSearchPanelVisible = MutableLiveData(false)
+    val isSearchPanelVisible: LiveData<Boolean> = _isSearchPanelVisible
+
+    private val _isSettingsPanelVisible = MutableLiveData(false)
+    val isSettingsPanelVisible: LiveData<Boolean> = _isSettingsPanelVisible
+
+    fun setSearchPanelVisible(visible: Boolean) {
+        _isSearchPanelVisible.value = visible
+    }
+
+    fun setSettingsPanelVisible(visible: Boolean) {
+        _isSettingsPanelVisible.value = visible
+    }
 
     // --- 循环检测状态喵 ---
     private val _detectedLoopPoints = MutableStateFlow<List<LoopPoint>?>(null)
