@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import com.cpu.seamlessloopmobile.ui.state.DataUiState
 
 @Composable
@@ -67,7 +68,11 @@ fun SongListAppBar(
     TopAppBar(
         title = {
             Column {
-                Text(title)
+                Text(
+                    text = title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 SyncStatusSmallText(syncStatus = syncStatus)
             }
         },
