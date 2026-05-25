@@ -201,6 +201,16 @@ fun CentralizedDialogHost(viewModel: MainViewModel) {
             )
         }
 
+        is MusicDialog.LoopCandidates -> {
+            com.cpu.seamlessloopmobile.ui.components.common.LoopCandidatesDialog(
+                candidates = dialog.candidates,
+                sampleRate = dialog.sampleRate,
+                onSelect = dialog.onSelect,
+                onReanalyze = dialog.onReanalyze,
+                onDismiss = { viewModel.dismissDialog() }
+            )
+        }
+
         null -> { /* 无弹窗显示 */ }
     }
 }

@@ -71,6 +71,9 @@ interface SongDao {
     @Query("UPDATE UserRatings SET Rating = :rating, LastModified = :now WHERE SongId = :songId")
     suspend fun updateSongRating(songId: Long, rating: Int, now: Long = System.currentTimeMillis())
 
+    @Query("UPDATE Songs SET LoopCandidatesJson = :json WHERE Id = :songId")
+    suspend fun updateLoopCandidatesJson(songId: Long, json: String?)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertArtistsBatch(artists: List<Artist>): List<Long>
 

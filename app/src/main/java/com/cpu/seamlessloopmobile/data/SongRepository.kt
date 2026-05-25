@@ -49,6 +49,11 @@ class SongRepository(private val songDao: SongDao) {
         songDao.updateSongRating(song.id, rating)
     }
 
+    suspend fun updateLoopCandidatesJson(song: Song, json: String?): Song = withContext(Dispatchers.IO) {
+        songDao.updateLoopCandidatesJson(song.id, json)
+        songDao.getSongById(song.id) ?: song
+    }
+
     /**
      * 应急修复：通过路径去系统库找寻 MediaID。
      */

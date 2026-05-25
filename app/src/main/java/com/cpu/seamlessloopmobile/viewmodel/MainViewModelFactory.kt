@@ -28,11 +28,14 @@ class MainViewModelFactory(
             val libraryVM = LibraryViewModel(repository, scope, settingsManager)
             val selectionVM = SelectionViewModel()
             val playlistVM = PlaylistViewModel(repository, scope, settingsManager)
+            val loopDetectionRepo = com.cpu.seamlessloopmobile.data.LoopDetectionRepository(repository, context.applicationContext)
+            val loopDetectionVM = LoopDetectionViewModel(loopDetectionRepo, mediaControl, scope)
             
             // 设置子管家引用
             viewModel.library = libraryVM
             viewModel.selection = selectionVM
             viewModel.playlist = playlistVM
+            viewModel.loopDetection = loopDetectionVM
             
             return viewModel as T
         }

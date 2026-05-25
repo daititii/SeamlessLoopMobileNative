@@ -48,6 +48,8 @@ class MusicRepository(
 
     suspend fun updateSongRating(song: Song, rating: Int) = songRepository.updateSongRating(song, rating)
 
+    suspend fun updateLoopCandidatesJson(song: Song, json: String?): Song = songRepository.updateLoopCandidatesJson(song, json)
+
     // --- 歌单相关转发 (PlaylistRepository) ---
 
     suspend fun getAllPlaylists(): List<Playlist> = playlistRepository.getAllPlaylists()

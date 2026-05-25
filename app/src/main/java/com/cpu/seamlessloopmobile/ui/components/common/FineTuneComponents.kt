@@ -19,7 +19,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalInspectionMode
-import com.cpu.seamlessloopmobile.jni.LoopPoint
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.ui.theme.SeamlessLoopColors
@@ -33,7 +32,6 @@ fun FineTunePage(
     song: Song, 
     tempLoopStart: Long,
     tempLoopEnd: Long,
-    detectedPoints: List<LoopPoint>? = null,
     isDetecting: Boolean = false,
     onStartValueChange: (Long) -> Unit,
     onEndValueChange: (Long) -> Unit,
@@ -41,8 +39,7 @@ fun FineTunePage(
     onEndAdjustMs: (Double) -> Unit,
     onEditClick: (Boolean) -> Unit,
     onApplyAndListen: () -> Unit,
-    onDetectClick: () -> Unit = {},
-    onPointSelect: (LoopPoint) -> Unit = {}
+    onDetectClick: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -94,51 +91,6 @@ fun FineTunePage(
                 Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = SeamlessLoopColors.PurpleAccent, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.size(4.dp))
                 Text("自动探测循环点", color = SeamlessLoopColors.PurpleAccent, fontSize = 12.sp)
-            }
-            
-            detectedPoints?.let { points ->
-                if (points.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("探测结果 (点击应用):", color = SeamlessLoopColors.Gray, fontSize = 10.sp)
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            points.take(5).forEach { point ->
-                                Surface(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable { onPointSelect(point) },
-                                    color = SeamlessLoopColors.ComponentDarkBg,
-                                    shape = RoundedCornerShape(4.dp)
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(vertical = 4.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Text(
-                                            String.format(java.util.Locale.US, "%.1f%%", point.score * 100),
-                                            color = SeamlessLoopColors.White,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1
-                                        )
-                                        Text(
-                                            "相似度",
-                                            color = SeamlessLoopColors.Gray,
-                                            fontSize = 8.sp,
-                                            maxLines = 1
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
 

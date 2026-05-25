@@ -132,14 +132,12 @@ fun PlayingPanel(
                     when (page) {
                         0 -> MainInfoPage(songItem, isPlaying, onRatingClick = { viewModel.cycleSongRating(songItem) })
                         1 -> {
-                            val detectedPoints by viewModel.detectedLoopPoints.collectAsState()
                             val isDetecting by viewModel.isDetectingLoop.collectAsState()
                             
                             FineTunePage(
                                 song = songItem,
                                 tempLoopStart = tempLoopStart,
                                 tempLoopEnd = tempLoopEnd,
-                                detectedPoints = detectedPoints,
                                 isDetecting = isDetecting,
                                 onStartValueChange = { tempLoopStart = it },
                                 onEndValueChange = { tempLoopEnd = it },
@@ -173,10 +171,6 @@ fun PlayingPanel(
                                 },
                                 onDetectClick = {
                                     viewModel.detectLoopPoints(context, songItem)
-                                },
-                                onPointSelect = { point ->
-                                    tempLoopStart = point.loopStart
-                                    tempLoopEnd = point.loopEnd
                                 }
                             )
                         }

@@ -12,6 +12,8 @@ import com.cpu.seamlessloopmobile.data.MusicRepository
 import com.cpu.seamlessloopmobile.data.SettingsManager
 import com.cpu.seamlessloopmobile.jni.LoopPoint
 import com.cpu.seamlessloopmobile.jni.NativeAudio
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -88,6 +90,15 @@ sealed class MusicDialog {
         val playlist: Playlist, 
         val onConfirm: () -> Unit
     ) : MusicDialog()
+
+    // 7. 自动探测循环点候选列表弹窗
+    data class LoopCandidates(
+        val song: Song,
+        val candidates: List<LoopPoint>,
+        val sampleRate: Int,
+        val onSelect: (LoopPoint) -> Unit,
+        val onReanalyze: () -> Unit
+    ) : MusicDialog()
 }
 
 /**
@@ -102,6 +113,7 @@ class MainViewModel(
     lateinit var library: LibraryViewModel
     lateinit var selection: SelectionViewModel
     lateinit var playlist: PlaylistViewModel
+    lateinit var loopDetection: LoopDetectionViewModel
     private var settingsManager: SettingsManager? = null
 
     init {
@@ -228,127 +240,59 @@ class MainViewModel(
         _isSettingsPanelVisible.value = visible
     }
 
-    // --- 循环检测状态喵 ---
-    private val _detectedLoopPoints = MutableStateFlow<List<LoopPoint>?>(null)
-    val detectedLoopPoints: StateFlow<List<LoopPoint>?> = _detectedLoopPoints
+    // --- 循环检测状态只读流代理喵 ---
+    val detectedLoopPoints: StateFlow<List<LoopPoint>?> get() = loopDetection.detectedLoopPoints
+    val isDetectingLoop: StateFlow<Boolean> get() = loopDetection.isDetectingLoop
 
-    private val _isDetectingLoop = MutableStateFlow(false)
-    val isDetectingLoop: StateFlow<Boolean> = _isDetectingLoop
-
-    fun detectLoopPoints(context: Context, song: Song) {
-        viewModelScope.launch {
-            _isDetectingLoop.value = true
-            _detectedLoopPoints.value = null
-            
-            // 缓存文件引用，方便 finally 中确保删除喵！
-            var tempFile: File? = null
-            
-            try {
-                val results = withContext(Dispatchers.IO) {
-                    // 1. 提取文件的真实扩展名（优先使用 fileName 保证 content:// 等路径的真实格式不丢失喵！）
-                    var ext = File(song.fileName).extension
-                    if (ext.isEmpty()) {
-                        ext = File(song.filePath).extension
-                    }
-                    val extension = if (ext.isNotEmpty()) ".$ext" else ".mp3"
-                    val cacheDir = context.cacheDir
-                    val tFile = File(cacheDir, "loop_detect_${System.currentTimeMillis()}$extension")
-                    tempFile = tFile
-                    
-                    // 2. 将数据安全拷贝至 app 私有缓存文件中喵！
-                    var inputStream: InputStream? = null
-                    var outputStream: FileOutputStream? = null
-                    val copied = try {
-                        inputStream = if (song.filePath.startsWith("content://")) {
-                            context.contentResolver.openInputStream(song.filePath.toUri())
-                        } else if (song.mediaId > 0) {
-                            val mediaUri = android.content.ContentUris.withAppendedId(
-                                android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                                song.mediaId
-                            )
-                            try {
-                                context.contentResolver.openInputStream(mediaUri)
-                            } catch (me: Exception) {
-                                android.util.Log.w("MainViewModel", "⚠️ MediaStore URI 打开失败，尝试回退物理路径: ${me.message}")
-                                FileInputStream(File(song.filePath))
-                            }
-                        } else {
-                            FileInputStream(File(song.filePath))
-                        }
-                        
-                        if (inputStream != null) {
-                            outputStream = FileOutputStream(tFile)
-                            val buffer = ByteArray(1024 * 64) // 64KB 缓冲区
-                            var bytesRead: Int
-                            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                                outputStream.write(buffer, 0, bytesRead)
-                            }
-                            outputStream.flush()
-                            true
-                        } else {
-                            false
-                        }
-                    } catch (ioe: Exception) {
-                        android.util.Log.e("MainViewModel", "❌ 复制音频文件出错: ${ioe.message}")
-                        false
-                    } finally {
-                        try { inputStream?.close() } catch (_: Exception) {}
-                        try { outputStream?.close() } catch (_: Exception) {}
-                    }
-                    
-                    if (!copied) {
-                        throw java.io.IOException("无法成功复制源音频文件 (´w｀)")
-                    }
-                    
-                    // 3. 将 fopen 完美可读的私有文件路径传给 Native 计算喵！
-                    NativeAudio.analyzeLoopPoints(tFile.absolutePath, 5)
-                }
-                
-                _detectedLoopPoints.value = results?.toList()
-                
-                withContext(Dispatchers.Main) {
-                    if (results.isNullOrEmpty()) {
-                        android.widget.Toast.makeText(
-                            context,
-                            "唔……CPU 大人，这首歌曲好像没有探测到合适的循环点呢 (´w｀)",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
-                    } else {
-                        android.widget.Toast.makeText(
-                            context,
-                            "太棒了！CPU 大人，莱芙为您找到了 ${results.size} 个循环点候选列表喵！(๑•̀ㅂ•́)و✧",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("MainViewModel", "❌ 循环检测失败: ${e.message}")
-                withContext(Dispatchers.Main) {
-                    android.widget.Toast.makeText(
-                        context,
-                        "对不起，CPU 大人！探测过程中发生了一点小失误：${e.message} ㅠㅠ",
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
-                }
-            } finally {
-                // 4. 无论如何，都必须确保临时文件已被彻底毁灭，杜绝磁盘残留垃圾喵！
-                try {
-                    tempFile?.let {
-                        if (it.exists()) {
-                            it.delete()
-                        }
-                    }
-                } catch (de: Exception) {
-                    android.util.Log.e("MainViewModel", "❌ 删除临时分析文件失败: ${de.message}")
-                }
-                _isDetectingLoop.value = false
+    fun detectLoopPoints(context: Context, song: Song, forceReanalyze: Boolean = false) {
+        loopDetection.detectLoopPoints(
+            context = context,
+            song = song,
+            forceReanalyze = forceReanalyze,
+            onFinished = { updatedSong, candidates, sampleRate ->
+                updateSongInPlaylist(updatedSong)
+                showLoopCandidatesDialog(context, updatedSong, candidates, sampleRate)
+            },
+            onError = { message ->
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
             }
+        )
+    }
+
+    /**
+     * 弹出循环点候选列表弹窗喵！
+     */
+    private fun showLoopCandidatesDialog(context: Context, song: Song, candidates: List<LoopPoint>, sampleRate: Int) {
+        showDialog(MusicDialog.LoopCandidates(
+            song = song,
+            candidates = candidates,
+            sampleRate = sampleRate,
+            onSelect = { point ->
+                loopDetection.applyAndListenToLoopFromEnd(song, point) { updatedSong ->
+                    updateSongInPlaylist(updatedSong)
+                }
+            },
+            onReanalyze = {
+                dismissDialog()
+                detectLoopPoints(context, song, forceReanalyze = true)
+            }
+        ))
+    }
+
+    /**
+     * 更新本地 currentPlaylist 中指定歌曲的数据副本喵！
+     */
+    private fun updateSongInPlaylist(updatedSong: Song) {
+        val currentList = _currentPlaylist.value?.toMutableList() ?: return
+        val index = currentList.indexOfFirst { it.id == updatedSong.id }
+        if (index != -1) {
+            currentList[index] = updatedSong
+            _currentPlaylist.postValue(currentList)
         }
     }
 
     fun clearDetectedLoopPoints() {
-        _detectedLoopPoints.value = null
-        _isDetectingLoop.value = false
+        loopDetection.clearDetectedLoopPoints()
     }
 
     // --- 对话框中台控制喵 ---
