@@ -51,10 +51,7 @@ class MainActivity : ComponentActivity() {
         viewModel.initSettings(settingsManager)
 
         setContent {
-            val darkTheme = isSystemInDarkTheme()
-            val colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()
-            
-            MaterialTheme(colorScheme = colorScheme) {
+            com.cpu.seamlessloopmobile.ui.theme.SeamlessLoopTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

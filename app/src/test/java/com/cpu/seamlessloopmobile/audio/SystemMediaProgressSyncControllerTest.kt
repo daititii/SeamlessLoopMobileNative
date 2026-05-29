@@ -15,8 +15,8 @@ import org.junit.Test
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
 class SystemMediaProgressSyncControllerTest {
-    @OptIn(DelicateCoroutinesApi::class)
     private val testDispatcher = newSingleThreadContext("system-progress-sync-test")
 
     @After
@@ -46,7 +46,7 @@ class SystemMediaProgressSyncControllerTest {
         assertEquals(1, tickCount.get())
 
         controller.onPlaybackStateChanged(AudioPlayState.PLAYING)
-        kotlinx.coroutines.delay(10L)
+        withContext(testDispatcher) {}
         assertTrue(controller.isRunning)
         assertEquals("PLAYING twice must not start a duplicate sync loop", 1, tickCount.get())
 

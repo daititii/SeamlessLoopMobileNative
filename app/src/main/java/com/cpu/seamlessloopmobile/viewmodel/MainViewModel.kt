@@ -9,14 +9,22 @@ import com.cpu.seamlessloopmobile.model.Playlist
 import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.data.MusicRepository
+import com.cpu.seamlessloopmobile.data.SettingsManager
 import com.cpu.seamlessloopmobile.jni.LoopPoint
 import com.cpu.seamlessloopmobile.jni.NativeAudio
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlinx.coroutines.flow.collect
+import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.FileInputStream
+import android.content.Context
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.core.net.toUri
 
 enum class PlayMode {
     LIST_LOOP,    // 列表循环
@@ -29,8 +37,10 @@ enum class PlayMode {
  */
 sealed class MusicUiState {
     object Home : MusicUiState()
+    object Search : MusicUiState()
     
     // 一级分类展开
+    @Deprecated("Use Tab navigation instead")
     data class CategoryFolders(val title: String, val items: List<Folder>) : MusicUiState()
     
     // 二级歌曲列表
@@ -41,7 +51,7 @@ sealed class MusicUiState {
         val originalItems: List<Folder>? = null 
     ) : MusicUiState()
     
-    enum class ListType { PLAYLIST, FOLDER, ALL_SONGS, ALBUM, ARTIST, FAVORITES }
+    enum class ListType { PLAYLIST, FOLDER, ALL_SONGS, ALBUM, ARTIST, FAVORITES, SEARCH }
 }
 
 /**
@@ -80,6 +90,15 @@ sealed class MusicDialog {
         val playlist: Playlist, 
         val onConfirm: () -> Unit
     ) : MusicDialog()
+
+    // 7. 自动探测循环点候选列表弹窗
+    data class LoopCandidates(
+        val song: Song,
+        val candidates: List<LoopPoint>,
+        val sampleRate: Int,
+        val onSelect: (LoopPoint) -> Unit,
+        val onReanalyze: () -> Unit
+    ) : MusicDialog()
 }
 
 /**
@@ -88,13 +107,14 @@ sealed class MusicDialog {
  * 现在的 MainViewModel 只负责整体架构的指挥和 UI 状态的同步。
  */
 class MainViewModel(
-    private val repository: com.cpu.seamlessloopmobile.data.MusicRepository,
+    private val repository: MusicRepository,
     private val mediaControlManager: com.cpu.seamlessloopmobile.audio.MediaControlManager
 ) : ViewModel() {
     lateinit var library: LibraryViewModel
     lateinit var selection: SelectionViewModel
     lateinit var playlist: PlaylistViewModel
-    private var settingsManager: com.cpu.seamlessloopmobile.data.SettingsManager? = null
+    lateinit var loopDetection: LoopDetectionViewModel
+    private var settingsManager: SettingsManager? = null
 
     init {
         // 莱芙现在变聪明了，不在构造函数里乱连天线了喵！
@@ -129,10 +149,11 @@ class MainViewModel(
     val metadata = mediaControlManager.metadata
     val currentPosition = mediaControlManager.currentPosition
     val totalDuration = mediaControlManager.totalDuration
+    @Suppress("unused")
     val isConnected = mediaControlManager.isConnected
     val audioPlayState = mediaControlManager.audioPlayState
 
-    fun initSettings(manager: com.cpu.seamlessloopmobile.data.SettingsManager) {
+    fun initSettings(manager: SettingsManager) {
         this.settingsManager = manager
         
         // --- 修复：启动时把存在小本本里的播放模式读出来给 UI 喵！ ---
@@ -169,8 +190,8 @@ class MainViewModel(
     val folders: StateFlow<List<Folder>> get() = library.folders
     val albums: StateFlow<List<Folder>> get() = library.albums
     val artists: StateFlow<List<Folder>> get() = library.artists
-    val syncStatus: StateFlow<String> get() = library.syncStatus
-    val libraryStats: StateFlow<com.cpu.seamlessloopmobile.data.SettingsManager.LibraryStats> get() = library.stats
+    val syncStatus: StateFlow<com.cpu.seamlessloopmobile.ui.state.DataUiState<String>> get() = library.syncStatus
+    val libraryStats: StateFlow<SettingsManager.LibraryStats> get() = library.stats
     val favorites: StateFlow<List<Song>> get() = library.favorites
 
     val playlists: StateFlow<List<Playlist>> get() = playlist.playlists
@@ -192,6 +213,7 @@ class MainViewModel(
 
     // --- 页面状态喵 ---
     private val _currentOpenPlaylist = MutableLiveData<Playlist?>(null)
+    @Suppress("unused")
     val currentOpenPlaylist: LiveData<Playlist?> = _currentOpenPlaylist
 
     private val _uiState = MutableLiveData<MusicUiState>(MusicUiState.Home)
@@ -203,33 +225,74 @@ class MainViewModel(
     private val _isPlayingPanelVisible = MutableLiveData(false)
     val isPlayingPanelVisible: LiveData<Boolean> = _isPlayingPanelVisible
 
-    // --- 循环检测状态喵 ---
-    private val _detectedLoopPoints = kotlinx.coroutines.flow.MutableStateFlow<List<LoopPoint>?>(null)
-    val detectedLoopPoints: kotlinx.coroutines.flow.StateFlow<List<LoopPoint>?> = _detectedLoopPoints
+    // --- 侧滑面板可见性控制喵！🚀 ---
+    private val _isSearchPanelVisible = MutableLiveData(false)
+    val isSearchPanelVisible: LiveData<Boolean> = _isSearchPanelVisible
 
-    private val _isDetectingLoop = kotlinx.coroutines.flow.MutableStateFlow(false)
-    val isDetectingLoop: kotlinx.coroutines.flow.StateFlow<Boolean> = _isDetectingLoop
+    private val _isSettingsPanelVisible = MutableLiveData(false)
+    val isSettingsPanelVisible: LiveData<Boolean> = _isSettingsPanelVisible
 
-    fun detectLoopPoints(song: Song) {
-        viewModelScope.launch {
-            _isDetectingLoop.value = true
-            _detectedLoopPoints.value = null
-            try {
-                val results = withContext(Dispatchers.Default) {
-                    NativeAudio.analyzeLoopPoints(song.filePath, 5)
-                }
-                _detectedLoopPoints.value = results?.toList()
-            } catch (e: Exception) {
-                android.util.Log.e("MainViewModel", "❌ 循环检测失败: ${e.message}")
-            } finally {
-                _isDetectingLoop.value = false
+    fun setSearchPanelVisible(visible: Boolean) {
+        _isSearchPanelVisible.value = visible
+    }
+
+    fun setSettingsPanelVisible(visible: Boolean) {
+        _isSettingsPanelVisible.value = visible
+    }
+
+    // --- 循环检测状态只读流代理喵 ---
+    val detectedLoopPoints: StateFlow<List<LoopPoint>?> get() = loopDetection.detectedLoopPoints
+    val isDetectingLoop: StateFlow<Boolean> get() = loopDetection.isDetectingLoop
+
+    fun detectLoopPoints(context: Context, song: Song, forceReanalyze: Boolean = false) {
+        loopDetection.detectLoopPoints(
+            context = context,
+            song = song,
+            forceReanalyze = forceReanalyze,
+            onFinished = { updatedSong, candidates, sampleRate ->
+                updateSongInPlaylist(updatedSong)
+                showLoopCandidatesDialog(context, updatedSong, candidates, sampleRate)
+            },
+            onError = { message ->
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
             }
+        )
+    }
+
+    /**
+     * 弹出循环点候选列表弹窗喵！
+     */
+    private fun showLoopCandidatesDialog(context: Context, song: Song, candidates: List<LoopPoint>, sampleRate: Int) {
+        showDialog(MusicDialog.LoopCandidates(
+            song = song,
+            candidates = candidates,
+            sampleRate = sampleRate,
+            onSelect = { point ->
+                loopDetection.applyAndListenToLoopFromEnd(song, point) { updatedSong ->
+                    updateSongInPlaylist(updatedSong)
+                }
+            },
+            onReanalyze = {
+                dismissDialog()
+                detectLoopPoints(context, song, forceReanalyze = true)
+            }
+        ))
+    }
+
+    /**
+     * 更新本地 currentPlaylist 中指定歌曲的数据副本喵！
+     */
+    private fun updateSongInPlaylist(updatedSong: Song) {
+        val currentList = _currentPlaylist.value?.toMutableList() ?: return
+        val index = currentList.indexOfFirst { it.id == updatedSong.id }
+        if (index != -1) {
+            currentList[index] = updatedSong
+            _currentPlaylist.postValue(currentList)
         }
     }
 
     fun clearDetectedLoopPoints() {
-        _detectedLoopPoints.value = null
-        _isDetectingLoop.value = false
+        loopDetection.clearDetectedLoopPoints()
     }
 
     // --- 对话框中台控制喵 ---
@@ -249,7 +312,7 @@ class MainViewModel(
     // --- 核心业务接口转发喵 ---
     // (APlayer 重构：这些现在都是自动响应的，不需要手动拉水闸了喵！🚀)
 
-    fun scanLibrary(context: android.content.Context) = library.scanLibrary(context)
+    fun scanLibrary(context: Context) = library.scanLibrary(context)
 
     fun setSelectionMode(enabled: Boolean) = selection.setSelectionMode(enabled)
     fun toggleSelection(id: String) = selection.toggleSelection(id)
@@ -291,7 +354,7 @@ class MainViewModel(
 
         if (index == -1) {
             // 不在现有的列表里？那才去翻翻全家桶喵
-            val allList = library.allSongs.value ?: emptyList()
+            val allList = library.allSongs.value
             index = allList.indexOfFirst { it.filePath == song.filePath }
             if (index != -1) {
                 listToUse = allList
@@ -316,6 +379,7 @@ class MainViewModel(
         if (index != -1) _currentSongIndex.value = index
     }
 
+    @Suppress("unused")
     fun togglePlayPause() {
         if (audioPlayState.value == com.cpu.seamlessloopmobile.audio.AudioPlayState.PLAYING) {
             mediaControlManager.pause()
@@ -354,7 +418,7 @@ class MainViewModel(
     fun addSelectedToPlaylist(playlistId: Int) {
         val selectedPaths = selectedItems.value ?: return
         viewModelScope.launch {
-            val songs = allSongs.value ?: return@launch
+            val songs = allSongs.value
             val selectedSongIds = songs.filter { it.filePath in selectedPaths }.map { it.id }
             playlist.addSongsToPlaylist(playlistId, selectedSongIds) {
                 selection.clearSelection()
@@ -365,7 +429,7 @@ class MainViewModel(
     fun createPlaylistWithSelected(name: String) {
         val selectedPaths = selectedItems.value ?: return
         viewModelScope.launch {
-            val songs = allSongs.value ?: return@launch
+            val songs = allSongs.value
             val selectedSongIds = songs.filter { it.filePath in selectedPaths }.map { it.id }
             playlist.createPlaylist(name, selectedSongIds) {
                 selection.clearSelection()
@@ -373,6 +437,7 @@ class MainViewModel(
         }
     }
 
+    @Suppress("unused")
     fun deletePlaylist(p: Playlist) {
         playlist.deletePlaylist(p)
         val currentState = _uiState.value
@@ -412,6 +477,8 @@ class MainViewModel(
         }
     }
 
+    @Deprecated("Use Tab navigation instead")
+    @Suppress("DEPRECATION")
     fun openCategory(title: String, items: List<Folder>) = navigateTo(MusicUiState.CategoryFolders(title, items))
     fun openSongList(title: String, songs: List<Song>, type: MusicUiState.ListType, original: List<Folder>? = null) 
         = navigateTo(MusicUiState.SongList(title, songs, type, original))
@@ -446,6 +513,7 @@ class MainViewModel(
         mediaControlManager.sendCustomAction("APPLY_LOOP_POINTS", bundle)
     }
     
+    @Suppress("unused")
     fun findAbPair(song: Song): Pair<Song, Song>? {
         // UI 层现在即使在 library 里找不到也没关系，因为我们要实现“点 A 放全曲”喵！
         // 我们改用一个同步包裹的探测（或者引导大人在真正播放时才去加载）
@@ -453,16 +521,9 @@ class MainViewModel(
         
         // 修正：我们直接利用库里的 findAbPairRobust 逻辑，但为了方便 UI 同步显示图标，
         // 我们给 library 增加一个全局感知能力，或者在这里直接搜全家桶喵
-        val allSongsInDb = library.allSongs.value ?: emptyList() 
-        // 注意：library.allSongs 已经被 DAO 过滤了，所以里面没有 B！
-        // 莱芙在这里必须手动去 repository 申请一次“全域探测”喵
-        
-        // 由于这个函数被 UI 的 Composable 调用频繁，我们不能直接在这里起协程喵。
-        // 我们建议在 PlaybackManager 加载时已经处理好了合体逻辑，
-        // 这里的 findAbPair 仅用于 UI 上的 [AB Loop] 标签显示喵。
         
         // 方案：让 library 提供一个未过滤的版本，或者干脆在这里通过文件名推断！
-        return repository.findAbPair(song, library.allSongsRaw.value ?: emptyList())
+        return repository.findAbPair(song, library.allSongsRaw.value)
     }
 
     fun cycleSongRating(song: Song) {

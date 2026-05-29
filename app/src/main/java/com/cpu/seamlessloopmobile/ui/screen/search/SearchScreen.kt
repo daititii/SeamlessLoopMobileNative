@@ -1,0 +1,114 @@
+package com.cpu.seamlessloopmobile.ui.screen.search
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.ui.Modifier
+import com.cpu.seamlessloopmobile.model.Song
+import com.cpu.seamlessloopmobile.ui.components.common.TopAppBarSearchBar
+import com.cpu.seamlessloopmobile.ui.screen.songlist.SongListScreen
+import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
+import kotlinx.coroutines.delay
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchScreen(
+    viewModel: MainViewModel,
+    playSong: (Song) -> Unit
+) {
+    val allSongs by viewModel.allSongs.collectAsState()
+    val isSelectionMode by viewModel.isSelectionMode.observeAsState(false)
+    val selectedItems by viewModel.selectedItems.observeAsState(emptySet())
+    val currentPlaylist by viewModel.currentPlaylist.observeAsState(emptyList())
+    val currentSongIndex by viewModel.currentSongIndex.observeAsState(-1)
+
+    var searchQuery by remember { mutableStateOf("") }
+    var filteredSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+
+    // --- 300ms 响应式搜索防抖过滤机制喵！🔍 ---
+    LaunchedEffect(searchQuery, allSongs) {
+        if (searchQuery.isBlank()) {
+            filteredSongs = emptyList()
+        } else {
+            delay(300)
+            filteredSongs = allSongs.filter { song ->
+                song.fileName.lowercase().contains(searchQuery.lowercase()) ||
+                song.displayName.lowercase().contains(searchQuery.lowercase()) ||
+                song.artist.lowercase().contains(searchQuery.lowercase()) ||
+                song.album.lowercase().contains(searchQuery.lowercase())
+            }
+        }
+    }
+
+    // 接管物理返回键，点击时返回上一级（Home 页面）
+    BackHandler {
+        if (isSelectionMode) {
+            viewModel.clearSelection()
+        } else {
+            viewModel.goBack()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    TopAppBarSearchBar(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it }
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = {
+                        if (isSelectionMode) {
+                            viewModel.clearSelection()
+                        } else {
+                            viewModel.goBack()
+                        }
+                    }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            val currentPlayingPath = currentPlaylist.getOrNull(currentSongIndex)?.filePath
+            
+            SongListScreen(
+                songs = filteredSongs,
+                currentPlayingSongPath = currentPlayingPath,
+                isSelectionMode = isSelectionMode,
+                selectedItems = selectedItems,
+                onPlaySong = { song ->
+                    val index = filteredSongs.indexOf(song)
+                    viewModel.updateCurrentPlaylist(filteredSongs, index)
+                    playSong(song)
+                },
+                onToggleSelection = { song ->
+                    if (!isSelectionMode) viewModel.setSelectionMode(true)
+                    viewModel.toggleSelection(song.filePath)
+                },
+                onShowMoreOptions = { _ ->
+                    // TODO: 更多选项
+                },
+                isSearchType = true,
+                searchQuery = searchQuery
+            )
+        }
+    }
+}

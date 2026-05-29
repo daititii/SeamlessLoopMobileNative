@@ -23,8 +23,8 @@ class LibraryViewModel(
     private val settingsManager: SettingsManager? = null
 ) {
 
-    private val _syncStatus = MutableStateFlow<String>("")
-    val syncStatus: StateFlow<String> = _syncStatus
+    private val _syncStatus = MutableStateFlow<com.cpu.seamlessloopmobile.ui.state.DataUiState<String>>(com.cpu.seamlessloopmobile.ui.state.DataUiState.Success(""))
+    val syncStatus: StateFlow<com.cpu.seamlessloopmobile.ui.state.DataUiState<String>> = _syncStatus
 
     private val _folders = MutableStateFlow<List<Folder>>(emptyList())
     val folders: StateFlow<List<Folder>> = _folders
@@ -101,19 +101,21 @@ class LibraryViewModel(
      */
     fun scanLibrary(context: Context) {
         coroutineScope.launch {
-            _syncStatus.value = "🔍 寻找新曲子中..."
+            _syncStatus.value = com.cpu.seamlessloopmobile.ui.state.DataUiState.Loading
             // 扫描完成后，数据库会发生变化，Room Flow 会自动通知到 UI 喵！🚀
-            withContext(Dispatchers.IO) {
-                // 1. 先进行大扫除，清理掉不见了的本地魂灵喵
-                val cleanedCount = repository.cleanupStaleSongs(context)
-                if (cleanedCount > 0) {
-                    android.util.Log.d("LibraryViewModel", "🧹 大扫除完成，清理了 $cleanedCount 条失效记录喵！")
+            try {
+                withContext(Dispatchers.IO) {
+                    val cleanedCount = repository.cleanupStaleSongs(context)
+                    if (cleanedCount > 0) {
+                        android.util.Log.d("LibraryViewModel", "🧹 大扫除完成，清理了 $cleanedCount 条失效记录喵！")
+                    }
+                    repository.getInitialScannedSongs(context)
                 }
-                
-                // 2. 再进行常规扫描
-                repository.getInitialScannedSongs(context)
+                _syncStatus.value = com.cpu.seamlessloopmobile.ui.state.DataUiState.Success("")
+            } catch (e: Exception) {
+                android.util.Log.e("LibraryViewModel", "❌ 扫描出错: ${e.message}")
+                _syncStatus.value = com.cpu.seamlessloopmobile.ui.state.DataUiState.Error(e.message ?: "未知错误")
             }
-            _syncStatus.value = ""
         }
     }
 

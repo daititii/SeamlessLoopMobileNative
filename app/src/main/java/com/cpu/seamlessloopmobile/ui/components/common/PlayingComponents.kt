@@ -1,4 +1,4 @@
-package com.cpu.seamlessloopmobile.ui.components
+package com.cpu.seamlessloopmobile.ui.components.common
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -24,9 +24,13 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.utils.TimeUtils
+import com.cpu.seamlessloopmobile.ui.theme.SeamlessLoopColors
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 
+/**
+ * 播放控制台的核心页面与子组件，已完美融入 CPU 大人的 SeamlessLoopTheme 主题系统喵！(๑•̀ㅂ•́)و✧
+ */
 @Composable
 fun MainInfoPage(
     songItem: Song,
@@ -41,7 +45,7 @@ fun MainInfoPage(
     ) {
         Spacer(modifier = Modifier.height(48.dp))
 
-        // --- 封面图 ---
+        // --- 封面图旋转动效喵 ---
         val infiniteTransition = rememberInfiniteTransition(label = "rotate")
         val rotation by infiniteTransition.animateFloat(
             initialValue = 0f,
@@ -57,7 +61,7 @@ fun MainInfoPage(
             modifier = Modifier
                 .size(280.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF3E3E4E))
+                .background(SeamlessLoopColors.DarkBgGradientEnd.copy(alpha = 0.8f))
                 .padding(2.dp)
                 .graphicsLayer { rotationZ = if (isPlaying) rotation else 0f }
         ) {
@@ -65,7 +69,7 @@ fun MainInfoPage(
                 Icons.Default.MusicNote,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize().padding(64.dp),
-                tint = Color(0xFFBB86FC)
+                tint = SeamlessLoopColors.PurpleAccent
             )
         }
 
@@ -76,7 +80,7 @@ fun MainInfoPage(
             text = songItem.displayName ?: songItem.fileName,
             style = MaterialTheme.typography.headlineMedium.copy(
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = SeamlessLoopColors.White,
                 fontSize = 24.sp
             ),
             maxLines = 1,
@@ -87,9 +91,11 @@ fun MainInfoPage(
         Text(
             text = songItem.artist ?: "Unknown Artist",
             style = MaterialTheme.typography.bodyLarge.copy(
-                color = Color.Gray,
+                color = SeamlessLoopColors.Gray,
                 fontSize = 16.sp
             ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center
         )
 
@@ -99,8 +105,8 @@ fun MainInfoPage(
         Button(
             onClick = onRatingClick,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color.White.copy(alpha = 0.05f),
-                contentColor = if (songItem.rating > 0) Color(0xFFFFD700) else Color.Gray
+                containerColor = SeamlessLoopColors.White.copy(alpha = 0.05f),
+                contentColor = if (songItem.rating > 0) Color(0xFFFFD700) else SeamlessLoopColors.Gray
             ),
             shape = RoundedCornerShape(16.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
@@ -136,7 +142,6 @@ fun PlaybackProgressBar(song: Song, onSeekComplete: (() -> Unit)? = null) {
     LaunchedEffect(Unit) {
         if (isPreview) return@LaunchedEffect
         while (true) {
-            // 如果还在拖拽中（或者等待底层的缓冲中），就不去读取底层可能还未更新的旧排版喵
             if (sliderPosition == null) {
                 currentFrame = NativeAudio.getCurrentPosition()
             }
@@ -151,15 +156,13 @@ fun PlaybackProgressBar(song: Song, onSeekComplete: (() -> Unit)? = null) {
             onValueChangeFinished = { 
                 sliderPosition?.let { finalPos ->
                     if (!isPreview) {
-                        currentFrame = finalPos.toLong() // 提前设置本地坐标
-                        NativeAudio.seekTo(finalPos.toLong()) // 通知底层去干活
+                        currentFrame = finalPos.toLong()
+                        NativeAudio.seekTo(finalPos.toLong())
                         
-                        // 底层跳跃需要极短暂的时间，如果不等待直接清空 sliderPosition，
-                        // 就会因马上读取到还没跳过去的旧 currentFrame 发生视觉上的“回弹”喵！
                         coroutineScope.launch {
-                            delay(300) // 让界面先维持拖动后的位置，等底层音频追上来
+                            delay(300)
                             sliderPosition = null
-                            onSeekComplete?.invoke() // 通知外部同步通知栏进度喵！
+                            onSeekComplete?.invoke()
                         }
                     } else {
                         sliderPosition = null
@@ -185,14 +188,14 @@ fun PlaybackProgressBar(song: Song, onSeekComplete: (() -> Unit)? = null) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(2.dp)
-                            .background(Color.Gray.copy(alpha = 0.3f))
+                            .background(SeamlessLoopColors.Gray.copy(alpha = 0.3f))
                     )
                     // 进度轨道喵
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(fraction)
                             .height(2.dp)
-                            .background(Color(0xFFBB86FC))
+                            .background(SeamlessLoopColors.PurpleAccent)
                     )
                 }
             }
@@ -204,8 +207,8 @@ fun PlaybackProgressBar(song: Song, onSeekComplete: (() -> Unit)? = null) {
             val displayFrame = sliderPosition?.toLong() ?: currentFrame
             val startTime = TimeUtils.formatTime(displayFrame, sampleRate)
             val totalTime = TimeUtils.formatTime(totalFrames, sampleRate)
-            Text(startTime, color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Light)
-            Text(totalTime, color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Light)
+            Text(startTime, color = SeamlessLoopColors.Gray, fontSize = 9.sp, fontWeight = FontWeight.Light)
+            Text(totalTime, color = SeamlessLoopColors.Gray, fontSize = 9.sp, fontWeight = FontWeight.Light)
         }
     }
 }
@@ -232,21 +235,20 @@ fun PlaybackControls(
                 com.cpu.seamlessloopmobile.viewmodel.PlayMode.LIST_LOOP -> Icons.Default.Repeat
                 com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP -> Icons.Default.RepeatOne
                 com.cpu.seamlessloopmobile.viewmodel.PlayMode.SHUFFLE -> Icons.Default.Shuffle
-                else -> Icons.Default.Repeat
             }
-            Icon(modeIcon, contentDescription = "播放模式", tint = Color(0xFFBB86FC), modifier = Modifier.size(24.dp))
+            Icon(modeIcon, contentDescription = "播放模式", tint = SeamlessLoopColors.PurpleAccent, modifier = Modifier.size(24.dp))
         }
         
         IconButton(onClick = onPrev) {
-            Icon(Icons.Default.SkipPrevious, contentDescription = "上一首", tint = Color.White, modifier = Modifier.size(32.dp))
+            Icon(Icons.Default.SkipPrevious, contentDescription = "上一首", tint = SeamlessLoopColors.White, modifier = Modifier.size(32.dp))
         }
 
         FilledIconButton(
             onClick = { if (!isPreparing) onPlayPause() },
             modifier = Modifier.size(64.dp),
             colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = if (isError) MaterialTheme.colorScheme.error else Color(0xFFBB86FC),
-                disabledContainerColor = Color(0xFFBB86FC).copy(alpha = 0.5f)
+                containerColor = if (isError) MaterialTheme.colorScheme.error else SeamlessLoopColors.PurpleAccent,
+                disabledContainerColor = SeamlessLoopColors.PurpleAccent.copy(alpha = 0.5f)
             ),
             enabled = !isPreparing
         ) {
@@ -254,24 +256,24 @@ fun PlaybackControls(
                 CircularProgressIndicator(
                     modifier = Modifier.size(28.dp),
                     strokeWidth = 3.dp,
-                    color = Color.Black
+                    color = SeamlessLoopColors.DarkBgGradientStart
                 )
             } else {
                 Icon(
                     if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = "播放/暂停",
                     modifier = Modifier.size(36.dp),
-                    tint = Color.Black
+                    tint = SeamlessLoopColors.DarkBgGradientStart
                 )
             }
         }
 
         IconButton(onClick = onNext) {
-            Icon(Icons.Default.SkipNext, contentDescription = "下一首", tint = Color.White, modifier = Modifier.size(32.dp))
+            Icon(Icons.Default.SkipNext, contentDescription = "下一首", tint = SeamlessLoopColors.White, modifier = Modifier.size(32.dp))
         }
 
         IconButton(onClick = { /* 更多控制 */ }) {
-            Icon(Icons.Default.MoreVert, contentDescription = "更多", tint = Color.Gray, modifier = Modifier.size(24.dp))
+            Icon(Icons.Default.MoreVert, contentDescription = "更多", tint = SeamlessLoopColors.Gray, modifier = Modifier.size(24.dp))
         }
     }
 }
@@ -298,7 +300,7 @@ fun MainInfoPagePreview() {
 @Composable
 fun PlaybackControlsPreview() {
     MaterialTheme {
-        Box(modifier = Modifier.background(Color(0xFF1E1E2E)).padding(16.dp)) {
+        Box(modifier = Modifier.background(SeamlessLoopColors.DarkBgGradientStart).padding(16.dp)) {
             PlaybackControls(
                 playMode = com.cpu.seamlessloopmobile.viewmodel.PlayMode.LIST_LOOP,
                 isPlaying = false,

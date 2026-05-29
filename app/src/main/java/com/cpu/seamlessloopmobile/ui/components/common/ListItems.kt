@@ -1,13 +1,13 @@
-package com.cpu.seamlessloopmobile.ui.components
+package com.cpu.seamlessloopmobile.ui.components.common
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
@@ -20,7 +20,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.cpu.seamlessloopmobile.model.Folder
 import com.cpu.seamlessloopmobile.model.Playlist
 import com.cpu.seamlessloopmobile.model.Song
 
@@ -111,7 +110,7 @@ fun PlaylistCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Default.QueueMusic,
+                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(24.dp)
@@ -191,14 +190,14 @@ fun SongListItem(
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = song.displayName ?: "未知歌曲",
+                    text = song.displayName,
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = song.artist ?: "未知歌手",
+                    text = song.artist,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -221,12 +220,15 @@ fun SongListItem(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FolderListItem(
-    folder: Folder,
+fun CategoryListItem(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
     isSelected: Boolean,
     isPlaying: Boolean = false,
+    isSelectionMode: Boolean = false,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit = {}
 ) {
     Surface(
         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer 
@@ -244,8 +246,15 @@ fun FolderListItem(
                 )
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() },
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
             Icon(
-                imageVector = Icons.Default.Folder,
+                imageVector = icon,
                 contentDescription = null,
                 tint = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                 modifier = Modifier.size(24.dp)
@@ -253,19 +262,23 @@ fun FolderListItem(
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = folder.name,
+                    text = title,
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal
+                    fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${folder.songs.size} 首歌曲",
+                    text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (isSelected || isPlaying) MaterialTheme.colorScheme.primary.copy(alpha=0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (isSelected || isPlaying) MaterialTheme.colorScheme.primary.copy(alpha=0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             
-            if (isSelected) {
+            if (isSelected && !isSelectionMode) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = null,
@@ -339,13 +352,14 @@ fun SongListItemPreview() {
 
 @Preview(showBackground = true)
 @Composable
-fun FolderListItemPreview() {
+fun CategoryListItemPreview() {
     MaterialTheme {
-        FolderListItem(
-            folder = Folder(name = "音乐文件夹", path = "/sdcard/music", songCount = 0, songs = emptyList()),
+        CategoryListItem(
+            title = "音乐文件夹",
+            subtitle = "10 首歌曲",
+            icon = Icons.Default.Folder,
             isSelected = false,
-            onClick = {},
-            onLongClick = {}
+            onClick = {}
         )
     }
 }

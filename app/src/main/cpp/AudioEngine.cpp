@@ -251,7 +251,7 @@ bool AudioEngine::isPlaying() const {
 oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream *oboeStream,
                                                    void *audioData,
                                                    int32_t numFrames) {
-    float *floatData = static_cast<float *>(audioData);
+    auto *floatData = static_cast<float *>(audioData);
     int32_t channels = mChannelCount.load();
     int32_t samplesNeeded = numFrames * channels;
 
@@ -271,27 +271,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream *oboeStream
     // 更新当前播放时间（进度条）
     int32_t framesRead = read / channels;
     int64_t currentPos = mCurrentReadFrame.load();
-    int64_t newPos = currentPos + static_cast<int64_t>(framesRead);
-
-    // 如果播放超过了循环点，就在 UI 进度上做个模拟回跳（真正的跳转由后台完成）
-    // 改为本地变量取模计算，消除 fetch_add/load/store 之间的 TOCTOU 竞态并于多次溢出安全
-    if (mIsLooping.load()) {
-        int64_t uiLoopStart = mLoopStartFrame.load();
-        int64_t uiLoopEnd = mLoopEndFrame.load();
-
-        if (mIsAbMode.load()) {
-            uiLoopStart = mUserLoopStart.load();
-            uiLoopEnd = mUserLoopEnd.load();
-        }
-
-        int64_t loopLen = uiLoopEnd - uiLoopStart;
-        if (newPos >= uiLoopEnd && loopLen > 0) {
-            int64_t overflow = newPos - uiLoopEnd;
-            newPos = uiLoopStart + (overflow % loopLen);
-        }
-    }
-
-    mCurrentReadFrame.store(newPos);
+    mCurrentReadFrame.store(currentPos + static_cast<int64_t>(framesRead));
 
     return oboe::DataCallbackResult::Continue;
 }
@@ -485,6 +465,13 @@ void AudioEngine::decodingLoop() {
                     if (secondRead > 0) samplesReadTotal += secondRead;
                 }
                 LOGD("DualDecoder: Handover successful at frame %lld", (long long)loopEnd);
+                
+                // 物理位置回跳同步喵！
+                if (mIsAbMode.load()) {
+                    mCurrentReadFrame.store(mUserLoopStart.load());
+                } else {
+                    mCurrentReadFrame.store(loopStart);
+                }
                 
                 // --- 循环跳转 (Loop Jump) 检测喵 ---
                 // EVENT_LOOP_JUMP only reports decoder handover completion.
