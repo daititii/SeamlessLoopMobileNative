@@ -102,7 +102,8 @@ Java_com_cpu_seamlessloopmobile_jni_NativeAudio_startAbAudioEngine(
         jlong lengthA,
         jint fdB,
         jlong offsetB,
-        jlong lengthB) {
+        jlong lengthB,
+        jboolean isFeatureLoopEnabled) {
     std::lock_guard<std::mutex> lock(engineMutex);
     
     if (audioEngine == nullptr) {
@@ -112,7 +113,7 @@ Java_com_cpu_seamlessloopmobile_jni_NativeAudio_startAbAudioEngine(
         });
     }
     
-    audioEngine->loadAbAudioSource(fdA, offsetA, lengthA, fdB, offsetB, lengthB);
+    audioEngine->loadAbAudioSource(fdA, offsetA, lengthA, fdB, offsetB, lengthB, (bool)isFeatureLoopEnabled);
     audioEngine->start();
 }
 

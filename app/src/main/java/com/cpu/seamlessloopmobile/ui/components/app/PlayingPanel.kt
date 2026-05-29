@@ -184,6 +184,8 @@ fun PlayingPanel(
                         .padding(bottom = 24.dp, start = 24.dp, end = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    val isSeamlessLoopEnabled by viewModel.isSeamlessLoopEnabled.observeAsState(true)
+
                     PlaybackProgressBar(songItem, onSeekComplete = {
                         viewModel.refreshMediaSessionPosition()
                     })
@@ -192,11 +194,13 @@ fun PlayingPanel(
 
                     PlaybackControls(
                         playMode = playMode,
+                        isSeamlessLoopEnabled = isSeamlessLoopEnabled,
                         isPlaying = isPlaying,
                         isPreparing = isPreparing,
                         isError = isError,
                         showLoading = showLoading,
                         onTogglePlayMode = { viewModel.togglePlayMode() },
+                        onToggleSeamlessLoop = { viewModel.setSeamlessLoopEnabled(!isSeamlessLoopEnabled) },
                         onPrev = onPrev,
                         onPlayPause = onPlayPause,
                         onNext = onNext

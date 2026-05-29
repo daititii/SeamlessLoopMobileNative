@@ -131,7 +131,19 @@ class PlaybackService : MediaBrowserServiceCompat() {
                 }
             }
             onSongCompleted = {
-                mediaSession?.controller?.transportControls?.skipToNext()
+                val settingsManager = com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(this@PlaybackService)
+                val modeOrdinal = mediaSession?.controller?.playbackState?.extras?.getInt("play_mode") ?: settingsManager.playMode.ordinal
+                val mode = com.cpu.seamlessloopmobile.viewmodel.PlayMode.values().getOrNull(modeOrdinal) ?: com.cpu.seamlessloopmobile.viewmodel.PlayMode.LIST_LOOP
+                
+                if (mode == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP) {
+                    android.util.Log.d("PlaybackService", "🔁 单曲循环模式下抵达物理结尾，自动重新播放当前歌曲喵！")
+                    playbackManager?.currentSong?.let { song ->
+                        playbackManager?.playSong(song, 0L, false)
+                    }
+                } else {
+                    android.util.Log.d("PlaybackService", "⏭️ 列表/随机模式下抵达物理结尾，切入下一首歌曲喵！")
+                    mediaSession?.controller?.transportControls?.skipToNext()
+                }
             }
         }
 
@@ -245,10 +257,22 @@ class PlaybackService : MediaBrowserServiceCompat() {
                         })
                         .build()
                     mediaSession?.setPlaybackState(newState)
-
-                    // 动态更新内核的循环状态喵！
-                    val isSingleLoopMode = mode == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
-                    playbackManager?.setLooping(isSingleLoopMode)
+                    // 🍓 完全解耦：切换曲目调度模式不需要动态更改 NDK 的 setLooping！它在物理播放到末尾触发 EOS 后由 onSongCompleted 接管喵！
+                } else if (action == "SET_SEAMLESS_LOOP_ENABLED") {
+                    val enabled = extras?.getBoolean("is_seamless_loop_enabled") ?: true
+                    val song = playbackManager?.currentSong
+                    if (song != null) {
+                        val start = song.loopStart
+                        val end = song.loopEnd
+                        val hasCustomPoints = end > start
+                        
+                        if (enabled && hasCustomPoints) {
+                            com.cpu.seamlessloopmobile.jni.NativeAudio.setLoopPoints(start, end)
+                            playbackManager?.setLooping(true)
+                        } else {
+                            playbackManager?.setLooping(false)
+                        }
+                    }
                 } else if (action == "APPLY_LOOP_POINTS") {
                     val startPos = extras?.getLong("start_pos") ?: 0L
                     val endPos = extras?.getLong("end_pos") ?: 0L
@@ -259,20 +283,13 @@ class PlaybackService : MediaBrowserServiceCompat() {
                     
                     val sr = if (sampleRate > 0) sampleRate else 44100L
                     if (isAb) {
-                        // 🍓 AB 模式下，真正的接缝在 B 段结尾与起始之间。
-                        // 用户传进来的 endPos 往往只是数据库中 A 段的长度，所以我们无视它，
-                        // 直接跳到总长度（A+B）前 3 秒以聆听 B->B 循环的无缝程度喵！
-                        playbackManager?.setLooping(true) // 临时开启内核循环以供试听
-                        
+                        // 🍓 AB 模式下，直接跳到总长度（A+B）前 3 秒以聆听无缝跳转喵！
                         val seekPos = (totalDur - (sr * 3)).coerceIn(0, totalDur)
                         val seekPosMs = seekPos * 1000L / sr
                         playbackManager?.seekTo(seekPosMs)
                     } else {
-                        // 普通模式下，直接通知底层修改内部循环点
+                        // 普通模式下，直接通知底层修改内部临时循环区间喵！
                         com.cpu.seamlessloopmobile.jni.NativeAudio.setLoopPoints(startPos, endPos)
-                        
-                        // 临时开启内核循环以供试听
-                        playbackManager?.setLooping(true)
                         
                         val actualEnd = if (endPos > 0) endPos else totalDur
                         val seekPos = (actualEnd - (sr * 3)).coerceIn(0, actualEnd)

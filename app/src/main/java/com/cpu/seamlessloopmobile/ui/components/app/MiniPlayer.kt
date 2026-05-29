@@ -18,7 +18,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.support.v4.media.session.PlaybackStateCompat
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
-import com.cpu.seamlessloopmobile.viewmodel.PlayMode
 import com.cpu.seamlessloopmobile.utils.TimeUtils
 import kotlinx.coroutines.delay
 
@@ -35,7 +34,6 @@ fun MiniPlayer(
     val currentPosition by viewModel.currentPosition.collectAsState()
     val totalDuration by viewModel.totalDuration.collectAsState()
     val audioPlayState by viewModel.audioPlayState.collectAsState()
-    val playMode by viewModel.playMode.observeAsState(PlayMode.LIST_LOOP)
     
     val isPlaying = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PLAYING
     val isPreparing = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PREPARING
@@ -87,15 +85,6 @@ fun MiniPlayer(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-
-            IconButton(onClick = { viewModel.togglePlayMode() }) {
-                val icon = when (playMode) {
-                    PlayMode.LIST_LOOP -> Icons.Default.Repeat
-                    PlayMode.SINGLE_LOOP -> Icons.Default.RepeatOne
-                    PlayMode.SHUFFLE -> Icons.Default.Shuffle
-                }
-                Icon(icon, contentDescription = "播放模式", tint = MaterialTheme.colorScheme.primary)
             }
 
             IconButton(onClick = { viewModel.skipToPrevious() }) {

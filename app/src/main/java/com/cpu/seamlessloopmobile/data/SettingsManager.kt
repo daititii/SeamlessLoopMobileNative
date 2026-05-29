@@ -22,6 +22,7 @@ class SettingsManager(context: Context) {
         private const val KEY_IS_AB_MODE = "is_ab_mode"
         private const val KEY_CURRENT_SONG_INDEX = "current_song_index"
         private const val KEY_LIBRARY_STATS = "library_stats"
+        private const val KEY_IS_SEAMLESS_LOOP_ENABLED = "is_seamless_loop_enabled"
         
         @Volatile
         private var instance: SettingsManager? = null
@@ -34,6 +35,10 @@ class SettingsManager(context: Context) {
     }
 
     // --- 基础状态读写喵 ---
+
+    var isSeamlessLoopEnabled: Boolean
+        get() = prefs.getBoolean(KEY_IS_SEAMLESS_LOOP_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_IS_SEAMLESS_LOOP_ENABLED, value).apply()
 
     var lastSongPath: String?
         get() = prefs.getString(KEY_LAST_SONG_PATH, null)

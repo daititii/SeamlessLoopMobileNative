@@ -117,9 +117,9 @@ void AudioEngine::loadAudioSource(int fd, int64_t offset, int64_t length) {
     }
 }
 
-void AudioEngine::loadAbAudioSource(int fdA, int64_t offsetA, int64_t lengthA, int fdB, int64_t offsetB, int64_t lengthB) {
+void AudioEngine::loadAbAudioSource(int fdA, int64_t offsetA, int64_t lengthA, int fdB, int64_t offsetB, int64_t lengthB, bool isFeatureLoopEnabled) {
     std::lock_guard<std::mutex> lock(mDecoderMutex);
-    LOGD("loadAbAudioSource: Loading Intro and Loop files...");
+    LOGD("loadAbAudioSource: Loading Intro and Loop files... isFeatureLoopEnabled=%d", isFeatureLoopEnabled);
     
     bool okA = mDecoderA->open(fdA, offsetA, lengthA);
     bool okB = mDecoderB->open(fdB, offsetB, lengthB);
@@ -138,7 +138,9 @@ void AudioEngine::loadAbAudioSource(int fdA, int64_t offsetA, int64_t lengthA, i
         mAbIntroFrames = lenA;
         mTotalAbFrames = lenA + lenB;
         
-        mLoopStartFrame = lenA;
+        // 🍓 核心重构：若开启了前奏过滤（特色循环），则回到 B段开头（lenA）；
+        // 否则回绕到整首歌的开头（0采样点），形成全曲拼接大回绕循环喵！
+        mLoopStartFrame = isFeatureLoopEnabled ? lenA : 0;
         mLoopEndFrame = mTotalAbFrames.load();
         mIsPlaying = false; 
         
@@ -154,7 +156,6 @@ void AudioEngine::setLoopPoints(int64_t startFrame, int64_t endFrame) {
     std::lock_guard<std::mutex> lock(mDecoderMutex);
     mLoopStartFrame = startFrame;
     mLoopEndFrame = endFrame;
-    mIsLooping = (endFrame > startFrame);
     mFifoCond.notify_all();
 }
 
@@ -277,6 +278,7 @@ void AudioEngine::decodingLoop() {
                 seekLogicalToFrame(target);
                 mShouldSeek = false;
                 
+                isLooping = mIsLooping.load();
                 loopStart = mLoopStartFrame.load();
                 loopEnd = mLoopEndFrame.load();
                 if (isLooping && loopEnd <= loopStart) isLooping = false;
