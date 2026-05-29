@@ -108,10 +108,11 @@ class LoopDetectionViewModel(
     ) {
         scope.launch {
             // 1. 将 JNI 锁争用和计算任务彻底剥离到 Default 协程中执行！
-            val seekTarget = withContext(Dispatchers.Default) {
+            val seekTargetMs = withContext(Dispatchers.Default) {
                 val sampleRate = NativeAudio.getSampleRate().toLong().let { if (it > 0) it else 44100L }
                 val threeSecondsInSamples = sampleRate * 3
-                (point.loopEnd - threeSecondsInSamples).coerceAtLeast(point.loopStart)
+                val seekTargetSamples = (point.loopEnd - threeSecondsInSamples).coerceAtLeast(point.loopStart)
+                seekTargetSamples * 1000L / sampleRate
             }
 
             // 2. 将数据库 UPDATE 写盘任务安全隔离在 IO 线程池中！
@@ -129,7 +130,7 @@ class LoopDetectionViewModel(
                     putLong("end_pos", point.loopEnd)
                 }
                 mediaControlManager.sendCustomAction("APPLY_LOOP_POINTS", bundle)
-                mediaControlManager.seekTo(seekTarget)
+                mediaControlManager.seekTo(seekTargetMs)
                 mediaControlManager.play()
             }
         }

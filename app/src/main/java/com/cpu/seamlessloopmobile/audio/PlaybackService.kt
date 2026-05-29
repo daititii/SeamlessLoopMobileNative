@@ -257,14 +257,16 @@ class PlaybackService : MediaBrowserServiceCompat() {
                     val sampleRate = com.cpu.seamlessloopmobile.jni.NativeAudio.getSampleRate().toLong()
                     val totalDur = com.cpu.seamlessloopmobile.jni.NativeAudio.getDuration()
                     
+                    val sr = if (sampleRate > 0) sampleRate else 44100L
                     if (isAb) {
                         // 🍓 AB 模式下，真正的接缝在 B 段结尾与起始之间。
                         // 用户传进来的 endPos 往往只是数据库中 A 段的长度，所以我们无视它，
                         // 直接跳到总长度（A+B）前 3 秒以聆听 B->B 循环的无缝程度喵！
                         playbackManager?.setLooping(true) // 临时开启内核循环以供试听
                         
-                        val seekPos = (totalDur - (sampleRate * 3)).coerceIn(0, totalDur)
-                        playbackManager?.seekTo(seekPos)
+                        val seekPos = (totalDur - (sr * 3)).coerceIn(0, totalDur)
+                        val seekPosMs = seekPos * 1000L / sr
+                        playbackManager?.seekTo(seekPosMs)
                     } else {
                         // 普通模式下，直接通知底层修改内部循环点
                         com.cpu.seamlessloopmobile.jni.NativeAudio.setLoopPoints(startPos, endPos)
@@ -273,8 +275,9 @@ class PlaybackService : MediaBrowserServiceCompat() {
                         playbackManager?.setLooping(true)
                         
                         val actualEnd = if (endPos > 0) endPos else totalDur
-                        val seekPos = (actualEnd - (sampleRate * 3)).coerceIn(0, actualEnd)
-                        playbackManager?.seekTo(seekPos)
+                        val seekPos = (actualEnd - (sr * 3)).coerceIn(0, actualEnd)
+                        val seekPosMs = seekPos * 1000L / sr
+                        playbackManager?.seekTo(seekPosMs)
                     }
                 }
             }
