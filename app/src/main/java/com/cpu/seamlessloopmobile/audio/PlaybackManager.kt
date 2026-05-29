@@ -321,6 +321,8 @@ class PlaybackManager(
                 
                 if (startPaused) {
                     NativeAudio.pauseAudioEngine()
+                } else {
+                    NativeAudio.resumeAudioEngine()
                 }
 
                 var finalSong = latestSong
@@ -401,6 +403,8 @@ class PlaybackManager(
 
                 if (startPaused) {
                     NativeAudio.pauseAudioEngine()
+                } else {
+                    NativeAudio.resumeAudioEngine()
                 }
 
                 val totalFrames = NativeAudio.getDuration()
