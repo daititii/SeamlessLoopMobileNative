@@ -264,7 +264,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
                         playbackManager?.setLooping(true) // 临时开启内核循环以供试听
                         
                         val seekPos = (totalDur - (sampleRate * 3)).coerceIn(0, totalDur)
-                        playbackManager?.seekTo(seekPos)
+                        playbackManager?.seekToFrame(seekPos)
                     } else {
                         // 普通模式下，直接通知底层修改内部循环点
                         com.cpu.seamlessloopmobile.jni.NativeAudio.setLoopPoints(startPos, endPos)
@@ -274,7 +274,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
                         
                         val actualEnd = if (endPos > 0) endPos else totalDur
                         val seekPos = (actualEnd - (sampleRate * 3)).coerceIn(0, actualEnd)
-                        playbackManager?.seekTo(seekPos)
+                        playbackManager?.seekToFrame(seekPos)
                     }
                 }
             }
