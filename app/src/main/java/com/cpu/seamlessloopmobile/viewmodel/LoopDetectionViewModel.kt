@@ -107,29 +107,21 @@ class LoopDetectionViewModel(
         onSongUpdated: (Song) -> Unit
     ) {
         scope.launch {
-            // 1. 将 JNI 锁争用和计算任务彻底剥离到 Default 协程中执行！
-            val seekTarget = withContext(Dispatchers.Default) {
-                val sampleRate = NativeAudio.getSampleRate().toLong().let { if (it > 0) it else 44100L }
-                val threeSecondsInSamples = sampleRate * 3
-                (point.loopEnd - threeSecondsInSamples).coerceAtLeast(point.loopStart)
-            }
-
-            // 2. 将数据库 UPDATE 写盘任务安全隔离在 IO 线程池中！
+            // 1. 将数据库 UPDATE 写盘任务安全隔离在 IO 线程池中！
             val updatedSong = repository.updateSongLoopPoints(song, point.loopStart, point.loopEnd)
             
-            // 3. 切回主线程更新内存 UI 状态
+            // 2. 切回主线程更新内存 UI 状态
             withContext(Dispatchers.Main) {
                 onSongUpdated(updatedSong)
             }
 
-            // 4. 将具体的播放控制方法调度回 Main 线程执行，实现极致顺滑！
+            // 3. 试听定位交给 PlaybackService 处理，避免把采样帧再次当成 MediaSession 毫秒 seek。
             withContext(Dispatchers.Main) {
                 val bundle = android.os.Bundle().apply {
                     putLong("start_pos", point.loopStart)
                     putLong("end_pos", point.loopEnd)
                 }
                 mediaControlManager.sendCustomAction("APPLY_LOOP_POINTS", bundle)
-                mediaControlManager.seekTo(seekTarget)
                 mediaControlManager.play()
             }
         }
