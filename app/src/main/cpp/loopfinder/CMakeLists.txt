@@ -113,7 +113,7 @@ if(MSVC)
         $<$<CONFIG:Release>:NDEBUG>
     )
 else()
-    target_compile_options(loopfinder PRIVATE -Wall -Wextra -O3)
+    target_compile_options(loopfinder PRIVATE -Wall -Wextra -O3 -ffast-math)
 endif()
 
 if(LOOPFINDER_DEBUG_LOG)

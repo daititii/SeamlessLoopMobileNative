@@ -131,6 +131,14 @@ class PlaybackManager(
         }
     }
 
+    fun seekToFrame(positionFrames: Long) {
+        // Internal playback commands already operate in native sample frames.
+        NativeAudio.seekTo(positionFrames)
+        currentSong?.let {
+            updateMediaSessionState(it, isPlaying, isAbMode)
+        }
+    }
+
     override fun setLooping(looping: Boolean) {
         NativeAudio.setLooping(looping)
     }
