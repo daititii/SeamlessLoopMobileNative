@@ -32,7 +32,7 @@ object NativeAudio {
 
     external fun stringFromJNI(): String
     external fun startAudioEngine(fd: Int, offset: Long, length: Long)
-    external fun startAbAudioEngine(fdA: Int, offsetA: Long, lengthA: Long, fdB: Int, offsetB: Long, lengthB: Long)
+    external fun startAbAudioEngine(fdA: Int, offsetA: Long, lengthA: Long, fdB: Int, offsetB: Long, lengthB: Long, isFeatureLoopEnabled: Boolean)
     external fun stopAudioEngine()
     external fun setLoopPoints(start: Long, end: Long)
     external fun setLooping(isLooping: Boolean)

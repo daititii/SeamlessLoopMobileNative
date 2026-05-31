@@ -107,7 +107,15 @@ class LoopDetectionViewModel(
         onSongUpdated: (Song) -> Unit
     ) {
         scope.launch {
-            // 1. 将数据库 UPDATE 写盘任务安全隔离在 IO 线程池中！
+            // 1. 将 JNI 锁争用和计算任务彻底剥离到 Default 协程中执行！
+            val seekTargetMs = withContext(Dispatchers.Default) {
+                val sampleRate = NativeAudio.getSampleRate().toLong().let { if (it > 0) it else 44100L }
+                val threeSecondsInSamples = sampleRate * 3
+                val seekTargetSamples = (point.loopEnd - threeSecondsInSamples).coerceAtLeast(point.loopStart)
+                seekTargetSamples * 1000L / sampleRate
+            }
+
+            // 2. 将数据库 UPDATE 写盘任务安全隔离在 IO 线程池中！
             val updatedSong = repository.updateSongLoopPoints(song, point.loopStart, point.loopEnd)
             
             // 2. 切回主线程更新内存 UI 状态

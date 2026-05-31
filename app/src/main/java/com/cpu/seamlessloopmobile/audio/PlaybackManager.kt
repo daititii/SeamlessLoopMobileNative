@@ -309,17 +309,16 @@ class PlaybackManager(
                     }
                 }
 
-                // --- 播放模式适配喵 ---
-                // 只有在单曲循环模式下，才允许启用 A-B 循环点喵
-                val modeOrdinal = mediaSession.controller.playbackState?.extras?.getInt("play_mode") ?: settingsManager.playMode.ordinal
-                val isSingleLoopMode = modeOrdinal == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
+                // --- 无缝循环适配（与全局模式完全解耦）喵 ---
+                val isSeamlessEnabled = settingsManager.isSeamlessLoopEnabled
+                val hasCustomLoopPoints = actualLoopEnd > actualLoopStart
 
-                if (isSingleLoopMode && (isSingleLoop || actualLoopEnd > actualLoopStart)) {
-                    android.util.Log.d("PlaybackManager", "🎯 单曲循环模式：开启循环点控制 [$actualLoopStart-$actualLoopEnd]")
+                if (isSeamlessEnabled && hasCustomLoopPoints) {
+                    android.util.Log.d("PlaybackManager", "🎯 无缝开关开启：开启局部无缝循环 [$actualLoopStart-$actualLoopEnd]")
                     NativeAudio.setLoopPoints(actualLoopStart, actualLoopEnd)
                     NativeAudio.setLooping(true)
                 } else {
-                    android.util.Log.d("PlaybackManager", "⚠️ 顺序/随机模式：禁用内部循环，等待底层 EOS 通知切歌喵")
+                    android.util.Log.d("PlaybackManager", "⚠️ 无缝开关关闭（或无循环点）：播放至物理结尾，由切歌模式接管")
                     NativeAudio.setLooping(false)
                 }
 
@@ -386,22 +385,21 @@ class PlaybackManager(
                         
                         NativeAudio.startAbAudioEngine(
                             afdA.parcelFileDescriptor.fd, afdA.startOffset, lenA,
-                            afdB.parcelFileDescriptor.fd, afdB.startOffset, lenB
+                            afdB.parcelFileDescriptor.fd, afdB.startOffset, lenB,
+                            settingsManager.isSeamlessLoopEnabled
                         )
-                        android.util.Log.d("PlaybackManager", "✅ C++ AB 引擎指令已送达喵！")
+                        android.util.Log.d("PlaybackManager", "✅ C++ AB 引擎指令已送达，无缝大循环开启状态: ${settingsManager.isSeamlessLoopEnabled} 喵！")
                     }
                 }
 
-                // --- 播放模式适配喵 ---
-                val modeOrdinal = mediaSession.controller.playbackState?.extras?.getInt("play_mode") ?: settingsManager.playMode.ordinal
-                val isSingleLoopMode = modeOrdinal == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP.ordinal
+                // --- A/B 无缝循环适配（与全局模式完全解耦）喵 ---
+                val isSeamlessEnabled = settingsManager.isSeamlessLoopEnabled
 
-                // 在 AB 模式下，单曲循环模式时才把 B 段作为循环主体喵，否则顺序/随机时只播放一次喵！
-                if (isSingleLoopMode && isSingleLoop) {
-                    android.util.Log.d("PlaybackManager", "🎯 AB 模式：开启单曲循环，B段无限洗脑喵")
+                if (isSeamlessEnabled) {
+                    android.util.Log.d("PlaybackManager", "🎯 AB 模式：无缝开关开启，主段洗脑循环")
                     NativeAudio.setLooping(true)
                 } else {
-                    android.util.Log.d("PlaybackManager", "⚠️ AB 模式：禁用内部循环，等待底层 EOS 通知切歌喵")
+                    android.util.Log.d("PlaybackManager", "⚠️ AB 模式：无缝开关关闭，前奏+主段平铺播放至物理结尾")
                     NativeAudio.setLooping(false)
                 }
 

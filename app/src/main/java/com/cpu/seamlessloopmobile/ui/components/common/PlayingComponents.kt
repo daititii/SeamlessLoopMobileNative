@@ -216,11 +216,13 @@ fun PlaybackProgressBar(song: Song, onSeekComplete: (() -> Unit)? = null) {
 @Composable
 fun PlaybackControls(
     playMode: com.cpu.seamlessloopmobile.viewmodel.PlayMode,
+    isSeamlessLoopEnabled: Boolean,
     isPlaying: Boolean,
     isPreparing: Boolean,
     isError: Boolean,
     showLoading: Boolean,
     onTogglePlayMode: () -> Unit,
+    onToggleSeamlessLoop: () -> Unit,
     onPrev: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit
@@ -237,6 +239,16 @@ fun PlaybackControls(
                 com.cpu.seamlessloopmobile.viewmodel.PlayMode.SHUFFLE -> Icons.Default.Shuffle
             }
             Icon(modeIcon, contentDescription = "播放模式", tint = SeamlessLoopColors.PurpleAccent, modifier = Modifier.size(24.dp))
+        }
+        
+        // 🆕 在旁边肩并肩并排放置无缝循环按钮！使用代表无限符号的平放8字（AllInclusive）表示喵！(๑•̀ㅂ•́)و✧
+        IconButton(onClick = onToggleSeamlessLoop) {
+            Icon(
+                imageVector = Icons.Default.AllInclusive,
+                contentDescription = "单曲无缝循环",
+                tint = if (isSeamlessLoopEnabled) SeamlessLoopColors.PurpleAccent else SeamlessLoopColors.Gray,
+                modifier = Modifier.size(24.dp)
+            )
         }
         
         IconButton(onClick = onPrev) {
@@ -303,11 +315,13 @@ fun PlaybackControlsPreview() {
         Box(modifier = Modifier.background(SeamlessLoopColors.DarkBgGradientStart).padding(16.dp)) {
             PlaybackControls(
                 playMode = com.cpu.seamlessloopmobile.viewmodel.PlayMode.LIST_LOOP,
+                isSeamlessLoopEnabled = true,
                 isPlaying = false,
                 isPreparing = false,
                 isError = false,
                 showLoading = false,
                 onTogglePlayMode = {},
+                onToggleSeamlessLoop = {},
                 onPrev = {},
                 onPlayPause = {},
                 onNext = {}

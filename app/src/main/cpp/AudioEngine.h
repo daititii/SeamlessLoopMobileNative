@@ -28,7 +28,7 @@ public:
     void pause();
     void resume();
     void loadAudioSource(int fd, int64_t offset, int64_t length);
-    void loadAbAudioSource(int fdA, int64_t offsetA, int64_t lengthA, int fdB, int64_t offsetB, int64_t lengthB);
+    void loadAbAudioSource(int fdA, int64_t offsetA, int64_t lengthA, int fdB, int64_t offsetB, int64_t lengthB, bool isFeatureLoopEnabled);
     void setLoopPoints(int64_t startFrame, int64_t endFrame);
     void setLooping(bool isLooping);
     void seekTo(int64_t frame);

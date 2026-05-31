@@ -159,6 +159,7 @@ class MainViewModel(
         // --- 修复：启动时把存在小本本里的播放模式读出来给 UI 喵！ ---
         val savedMode = manager.playMode
         _playMode.value = savedMode
+        isSeamlessLoopEnabled.value = manager.isSeamlessLoopEnabled
         
         // 给底层发个信号，告诉它当前的初始模式，也把状态机的模式同步好喵！
         val bundle = android.os.Bundle().apply {
@@ -168,6 +169,15 @@ class MainViewModel(
 
         // 莱芙顺便帮 UI 界面把名单也请回来喵！
         restorePlaybackSession()
+    }
+
+    fun setSeamlessLoopEnabled(enabled: Boolean) {
+        isSeamlessLoopEnabled.value = enabled
+        settingsManager?.isSeamlessLoopEnabled = enabled
+        val bundle = android.os.Bundle().apply {
+            putBoolean("is_seamless_loop_enabled", enabled)
+        }
+        mediaControlManager.sendCustomAction("SET_SEAMLESS_LOOP_ENABLED", bundle)
     }
 
     private fun restorePlaybackSession() {
@@ -204,6 +214,8 @@ class MainViewModel(
 
     private val _playMode = MutableLiveData<PlayMode>(PlayMode.LIST_LOOP)
     val playMode: LiveData<PlayMode> = _playMode
+
+    val isSeamlessLoopEnabled = MutableLiveData<Boolean>(true)
 
     private val _currentPlaylist = MutableLiveData<List<Song>>(emptyList())
     val currentPlaylist: LiveData<List<Song>> = _currentPlaylist
