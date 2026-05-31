@@ -66,6 +66,12 @@ fun PlayingPanel(
     var tempLoopStart by remember(playingSong?.id) { mutableStateOf(playingSong?.loopStart ?: 0L) }
     var tempLoopEnd by remember(playingSong?.id) { mutableStateOf(playingSong?.loopEnd ?: 0L) }
 
+    // Candidate selection updates the Song first; mirror that back into the fine-tune controls.
+    LaunchedEffect(playingSong?.id, playingSong?.loopStart, playingSong?.loopEnd) {
+        tempLoopStart = playingSong?.loopStart ?: 0L
+        tempLoopEnd = playingSong?.loopEnd ?: 0L
+    }
+
     LaunchedEffect(playingSong?.id) {
         viewModel.clearDetectedLoopPoints()
     }
