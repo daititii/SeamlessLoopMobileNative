@@ -65,6 +65,7 @@ class MusicScannerRepository(private val songDao: SongDao) {
         val dbSongsByMediaId = latestDbSongs.filter { it.mediaId != 0L }
             .associateBy { it.mediaId }
         val dbSongsByFingerprint = latestDbSongs.associateBy { "${it.fileName.lowercase()}|${it.duration}" }
+        val dbSongsByName = latestDbSongs.groupBy { it.fileName.lowercase() }
         
         // 5. 预处理：识别 AB 模式下的 B 段喵
         val abMarkedSongs = scannedSongs.map { song ->
@@ -122,6 +123,11 @@ class MusicScannerRepository(private val songDao: SongDao) {
             val fingerprint = "${song.fileName.lowercase()}|${song.duration}"
             if (dbSong == null) {
                 dbSong = dbSongsByFingerprint[fingerprint]
+            }
+            // CPU 大人钦点第三优先：同名且时长小容差比对 (容许 200ms 以内的偏差)
+            if (dbSong == null) {
+                val candidates = dbSongsByName[song.fileName.lowercase()]
+                dbSong = candidates?.find { Math.abs(it.duration - song.duration) < 200 }
             }
 
             if (dbSong != null) {
