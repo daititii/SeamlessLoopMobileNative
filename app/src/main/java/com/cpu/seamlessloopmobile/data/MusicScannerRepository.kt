@@ -37,7 +37,9 @@ class MusicScannerRepository(private val songDao: SongDao) {
         }
         
         if (staleIds.isNotEmpty()) {
-            songDao.deleteSongsByIds(staleIds)
+            staleIds.chunked(500).forEach { batch ->
+                songDao.deleteSongsByIds(batch)
+            }
         }
         staleIds.size
     }
@@ -47,10 +49,24 @@ class MusicScannerRepository(private val songDao: SongDao) {
      */
     suspend fun getInitialScannedSongs(context: Context): List<Song> = withContext(Dispatchers.IO) {
         val scannedSongs = AudioScanner.scan(context)
-        // 预热：一次性加载本地所有歌曲，按文件名+时长构建匹配索引
-        val dbSongs = songDao.getAllSongs().associateBy { "${it.fileName.lowercase()}|${it.duration}" }
         
-        // 1. 预处理：识别 AB 模式下的 B 段喵
+        // 1. 加载包含 B 段在内的全量数据库记录喵！
+        val allDbSongs = songDao.getAllSongsRaw()
+        
+        // 2. 存量清理：在扫描刚开始时，先把数据库中现有的重复项合并合并、扫地出门喵！
+        songDao.cleanDuplicateSongs(allDbSongs)
+        
+        // 3. 重新加载清理后的最新列表作为匹配基底
+        val latestDbSongs = songDao.getAllSongsRaw()
+        
+        // 4. 构建多级强健匹配索引 Map 喵！(๑•̀ㅂ•́)و✧
+        val dbSongsByPath = latestDbSongs.filter { it.filePath.isNotBlank() }
+            .associateBy { it.filePath.lowercase() }
+        val dbSongsByMediaId = latestDbSongs.filter { it.mediaId != 0L }
+            .associateBy { it.mediaId }
+        val dbSongsByFingerprint = latestDbSongs.associateBy { "${it.fileName.lowercase()}|${it.duration}" }
+        
+        // 5. 预处理：识别 AB 模式下的 B 段喵
         val abMarkedSongs = scannedSongs.map { song ->
             val isB = isLikelyAbPartB(song, scannedSongs)
             if (isB) song.copy(song = song.song.copy(isAbPartB = true)) else song
@@ -88,16 +104,25 @@ class MusicScannerRepository(private val songDao: SongDao) {
         }
         // === 预创建结束 ===
 
-
-
         val insertList = mutableListOf<Song>()
         val updateList = mutableListOf<SongMetadataUpdate>()
         val result = mutableListOf<Song>()
+        val seenPaths = mutableSetOf<String>()
         val seenFingerprints = mutableSetOf<String>()
 
         abMarkedSongs.forEach { song ->
+            // 采用多级高优强健匹配
+            var dbSong: Song? = null
+            if (song.filePath.isNotBlank()) {
+                dbSong = dbSongsByPath[song.filePath.lowercase()]
+            }
+            if (dbSong == null && song.mediaId != 0L) {
+                dbSong = dbSongsByMediaId[song.mediaId]
+            }
             val fingerprint = "${song.fileName.lowercase()}|${song.duration}"
-            val dbSong = dbSongs[fingerprint]
+            if (dbSong == null) {
+                dbSong = dbSongsByFingerprint[fingerprint]
+            }
 
             if (dbSong != null) {
                 // 情况 A：老面孔，准备批量元数据更新
@@ -107,25 +132,35 @@ class MusicScannerRepository(private val songDao: SongDao) {
                 val resolvedAlbumId = dbSong.song.albumId
                     ?: song.albumEntity?.name?.lowercase()?.let { albumMap[it] }
 
-                val approximateTotal = dbSong.totalSamples
+                // 性能极致优化看门狗：只有当歌手关联、专辑关联或 AB 段状态发生实际改变时，才刷写写盘更新喵！
+                val needUpdate = dbSong.song.artistId != resolvedArtistId ||
+                        dbSong.song.albumId != resolvedAlbumId ||
+                        dbSong.song.isAbPartB != song.isAbPartB
 
-                updateList.add(SongMetadataUpdate(
-                    songId = dbSong.id,
-                    total = approximateTotal,
-                    start = dbSong.loopStart,
-                    end = dbSong.loopEnd,
-                    rating = dbSong.rating,
-                    artistId = resolvedArtistId,
-                    albumId = resolvedAlbumId,
-                    displayName = dbSong.displayName,
-                    coverPath = dbSong.coverPath,
-                    isAbPartB = song.isAbPartB
-                ))
+                if (needUpdate) {
+                    val approximateTotal = dbSong.totalSamples
+                    updateList.add(SongMetadataUpdate(
+                        songId = dbSong.id,
+                        total = approximateTotal,
+                        start = dbSong.loopStart,
+                        end = dbSong.loopEnd,
+                        rating = dbSong.rating,
+                        artistId = resolvedArtistId,
+                        albumId = resolvedAlbumId,
+                        displayName = dbSong.displayName,
+                        coverPath = dbSong.coverPath,
+                        isAbPartB = song.isAbPartB
+                    ))
+                }
                 result.add(song.copy(song = song.song.copy(id = dbSong.id)))
-            } else if (!seenFingerprints.contains(fingerprint)) {
-                // 情况 B：新朋友，且本次扫描中还没见过这个指纹，准备批量插入喵！
-                insertList.add(song)
-                seenFingerprints.add(fingerprint)
+            } else {
+                // 情况 B：新朋友，且本次扫描中还没见过这个路径或指纹，准备批量插入喵！
+                val pathKey = song.filePath.lowercase()
+                if (!seenPaths.contains(pathKey) && !seenFingerprints.contains(fingerprint)) {
+                    insertList.add(song)
+                    seenPaths.add(pathKey)
+                    seenFingerprints.add(fingerprint)
+                }
             }
         }
 
