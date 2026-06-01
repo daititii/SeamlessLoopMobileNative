@@ -246,4 +246,74 @@ interface SongDao {
             albumName = song.album
         )
     }
+
+    @Query("UPDATE PlaylistItems SET SongId = :newSongId WHERE SongId = :oldSongId")
+    suspend fun migratePlaylistItems(oldSongId: Long, newSongId: Long)
+
+    @Query("UPDATE PlayQueue SET SongId = :newSongId WHERE SongId = :oldSongId")
+    suspend fun migratePlayQueue(oldSongId: Long, newSongId: Long)
+
+    @Transaction
+    suspend fun cleanDuplicateSongs(allDbSongs: List<Song>) {
+        val idsToDelete = mutableListOf<Long>()
+        val currentSongs = allDbSongs.toMutableList()
+
+        // 1. 按 FilePath 去重 (排空并转换为小写)
+        val pathDuplicates = currentSongs.filter { it.filePath.isNotBlank() }
+            .groupBy { it.filePath.lowercase() }
+            .filter { it.value.size > 1 }
+
+        pathDuplicates.forEach { (_, songs) ->
+            val sortedSongs = songs.sortedByDescending { song ->
+                var score = 0
+                if (song.loopStart != 0L || song.loopEnd != 0L) score += 10
+                if (song.rating != 0) score += 5
+                if (!song.song.loopCandidatesJson.isNullOrBlank() && 
+                    song.song.loopCandidatesJson != "[]" && 
+                    song.song.loopCandidatesJson != "{}") score += 3
+                if (song.totalSamples != 0L) score += 2
+                score * 100000 - song.id
+            }
+            val keepSong = sortedSongs.first()
+            val discardSongs = sortedSongs.drop(1)
+            discardSongs.forEach { discard ->
+                migratePlaylistItems(discard.id, keepSong.id)
+                migratePlayQueue(discard.id, keepSong.id)
+                idsToDelete.add(discard.id)
+                currentSongs.removeAll { it.id == discard.id }
+            }
+        }
+
+        // 2. 按 MediaId 去重 (非 0)
+        val mediaIdDuplicates = currentSongs.filter { it.mediaId != 0L }
+            .groupBy { it.mediaId }
+            .filter { it.value.size > 1 }
+
+        mediaIdDuplicates.forEach { (_, songs) ->
+            val sortedSongs = songs.sortedByDescending { song ->
+                var score = 0
+                if (song.loopStart != 0L || song.loopEnd != 0L) score += 10
+                if (song.rating != 0) score += 5
+                if (!song.song.loopCandidatesJson.isNullOrBlank() && 
+                    song.song.loopCandidatesJson != "[]" && 
+                    song.song.loopCandidatesJson != "{}") score += 3
+                if (song.totalSamples != 0L) score += 2
+                score * 100000 - song.id
+            }
+            val keepSong = sortedSongs.first()
+            val discardSongs = sortedSongs.drop(1)
+            discardSongs.forEach { discard ->
+                migratePlaylistItems(discard.id, keepSong.id)
+                migratePlayQueue(discard.id, keepSong.id)
+                idsToDelete.add(discard.id)
+            }
+        }
+
+        if (idsToDelete.isNotEmpty()) {
+            // Android SQLite 变量绑定默认上限通常为 999，采用 500 进行安全分批删除喵！
+            idsToDelete.chunked(500).forEach { batch ->
+                deleteSongsByIds(batch)
+            }
+        }
+    }
 }

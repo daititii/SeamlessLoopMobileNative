@@ -170,4 +170,57 @@ class DaoTest {
         val loops = db.query("SELECT * FROM LoopPoints WHERE SongId = $id", null)
         loops.use { assertEquals("循环点应该被级联删除了喵！", 0, it.count) }
     }
+
+    @Test
+    fun testCleanDuplicateSongs() = runBlocking {
+        // 1. 模拟因为 bug 插入了两条相同 FilePath 的歌曲记录
+        // 一条是高权重、拥有丰富关联数据的歌曲记录
+        val songRich = Song(
+            fileName = "dup.mp3",
+            filePath = "/path/dup.mp3",
+            totalSamples = 1000L,
+            duration = 3000,
+            rating = 5,
+            loopStart = 100,
+            loopEnd = 2000
+        )
+        val idRich = songDao.insertOrUpdateSong(songRich)
+
+        // 另一条是没有关联数据的重复记录 (直接插入 Entity 绕过 insertOrUpdate 的去重逻辑)
+        val songPoorEntity = SongEntity(
+            fileName = "dup.mp3",
+            filePath = "/path/dup.mp3",
+            totalSamples = 1000L,
+            duration = 3000
+        )
+        val idPoor = songDao.insertSongEntity(songPoorEntity)
+        songDao.insertLoopPoint(LoopPoint(songId = idPoor, loopStart = 0, loopEnd = 0))
+        songDao.insertUserRating(UserRating(songId = idPoor, rating = 0))
+
+        // 验证确实插入了两条记录
+        val allRawBefore = songDao.getAllSongsRaw()
+        assertEquals(2, allRawBefore.size)
+
+        // 2. 插入一些关联数据，例如将 Poor 歌曲加入某个歌单
+        val playlistId = playlistDao.insertPlaylist(Playlist(name = "TestPlaylist")).toInt()
+        playlistDao.insertPlaylistItem(PlaylistItem(playlistId = playlistId, songId = idPoor, sortOrder = 1))
+
+        // 3. 执行 cleanDuplicateSongs
+        songDao.cleanDuplicateSongs(allRawBefore)
+
+        // 4. 验证有一条重复歌曲被删除了，剩下一条
+        val allRawAfter = songDao.getAllSongsRaw()
+        assertEquals(1, allRawAfter.size)
+
+        // 验证保留下来的是 idRich 记录 (高得分)
+        val remainingSong = allRawAfter.first()
+        assertEquals(idRich, remainingSong.id)
+        assertEquals(5, remainingSong.rating)
+        assertEquals(100L, remainingSong.loopStart)
+
+        // 5. 验证 Poor 关联的 PlaylistItems 已经被成功合并/迁移到了 Rich 歌曲上
+        val playlistSongs = playlistDao.getSongsInPlaylist(playlistId)
+        assertEquals(1, playlistSongs.size)
+        assertEquals(idRich, playlistSongs.first().id)
+    }
 }
