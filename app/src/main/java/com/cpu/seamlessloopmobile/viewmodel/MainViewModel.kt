@@ -149,22 +149,6 @@ class MainViewModel(
         }
     }
 
-    // --- 数据代理层 (对接 UI 和子模块) ---
-    val allSongs: StateFlow<List<Song>> get() = library.allSongs
-    val folders: StateFlow<List<Folder>> get() = library.folders
-    val albums: StateFlow<List<Folder>> get() = library.albums
-    val artists: StateFlow<List<Folder>> get() = library.artists
-    val syncStatus: StateFlow<com.cpu.seamlessloopmobile.ui.state.DataUiState<String>> get() = library.syncStatus
-    val libraryStats: StateFlow<SettingsManager.LibraryStats> get() = library.stats
-    val favorites: StateFlow<List<Song>> get() = library.favorites
-
-    val playlists: StateFlow<List<Playlist>> get() = playlist.playlists
-    val playlistsWithCounts: StateFlow<List<PlaylistDao.PlaylistWithCount>> get() = playlist.playlistsWithCounts
-
-    val isSelectionMode: LiveData<Boolean> get() = selection.isSelectionMode
-    val selectedItems: LiveData<Set<String>> get() = selection.selectedItems
-    val selectedPlaylists: LiveData<Set<Int>> get() = selection.selectedPlaylists
-    val selectedFolders: LiveData<Set<Folder>> get() = selection.selectedFolders
 
     private val _playMode = MutableLiveData<PlayMode>(PlayMode.LIST_LOOP)
     val playMode: LiveData<PlayMode> = _playMode
@@ -382,9 +366,9 @@ class MainViewModel(
     }
 
     fun addSelectedToPlaylist(playlistId: Int) {
-        val selectedPaths = selectedItems.value ?: return
+        val selectedPaths = selection.selectedItems.value ?: return
         viewModelScope.launch {
-            val songs = allSongs.value
+            val songs = library.allSongs.value
             val selectedSongIds = songs.filter { it.filePath in selectedPaths }.map { it.id }
             playlist.addSongsToPlaylist(playlistId, selectedSongIds) {
                 selection.clearSelection()
@@ -393,9 +377,9 @@ class MainViewModel(
     }
 
     fun createPlaylistWithSelected(name: String) {
-        val selectedPaths = selectedItems.value ?: return
+        val selectedPaths = selection.selectedItems.value ?: return
         viewModelScope.launch {
-            val songs = allSongs.value
+            val songs = library.allSongs.value
             val selectedSongIds = songs.filter { it.filePath in selectedPaths }.map { it.id }
             playlist.createPlaylist(name, selectedSongIds) {
                 selection.clearSelection()
@@ -413,14 +397,14 @@ class MainViewModel(
     }
 
     fun deleteSelectedPlaylists() {
-        val ids = selectedPlaylists.value ?: return
+        val ids = selection.selectedPlaylists.value ?: return
         playlist.deleteMultiplePlaylists(ids) {
             selection.clearSelection()
         }
     }
 
     fun importSelectedFoldersIndividually() {
-        val folders = selectedFolders.value ?: return
+        val folders = selection.selectedFolders.value ?: return
         viewModelScope.launch {
             playlist.importFoldersIndividually(folders.toList())
             selection.clearSelection()
@@ -428,7 +412,7 @@ class MainViewModel(
     }
 
     fun importSelectedFoldersAsSinglePlaylist(name: String) {
-        val folders = selectedFolders.value ?: return
+        val folders = selection.selectedFolders.value ?: return
         viewModelScope.launch {
             playlist.importFoldersAsSinglePlaylist(name, folders.toList())
             selection.clearSelection()
@@ -557,7 +541,7 @@ class MainViewModel(
 
     fun makeSongsFavorite(songPaths: Set<String>) {
         viewModelScope.launch {
-            val songs = allSongs.value.filter { it.filePath in songPaths }
+            val songs = library.allSongs.value.filter { it.filePath in songPaths }
             songs.forEach { song ->
                 repository.updateSongRating(song, 5)
             }
@@ -578,7 +562,7 @@ class MainViewModel(
 
     fun detectLoopPointsBulk(context: Context, songPaths: Set<String>) {
         viewModelScope.launch {
-            val songs = allSongs.value.filter { it.filePath in songPaths }
+            val songs = library.allSongs.value.filter { it.filePath in songPaths }
             if (songs.isNotEmpty()) {
                 android.widget.Toast.makeText(context, "开始后台批量分析 ${songs.size} 首歌曲喵...", android.widget.Toast.LENGTH_SHORT).show()
                 // 串行执行，避免瞬间挤占太多内存/计算资源
@@ -610,7 +594,7 @@ class MainViewModel(
 
     fun removeSongsFromPlaylistBulk(playlistId: Int, songPaths: Set<String>) {
         viewModelScope.launch {
-            val songsToRemove = allSongs.value.filter { it.filePath in songPaths }
+            val songsToRemove = library.allSongs.value.filter { it.filePath in songPaths }
             val songIds = songsToRemove.map { it.id }
             playlist.removeSongsFromPlaylist(playlistId, songIds) {
                 val currentState = _uiState.value

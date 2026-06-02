@@ -24,9 +24,9 @@ fun SearchScreen(
     playSong: (Song) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val allSongs by viewModel.allSongs.collectAsState()
-    val isSelectionMode by viewModel.isSelectionMode.observeAsState(false)
-    val selectedItems by viewModel.selectedItems.observeAsState(emptySet())
+    val allSongs by viewModel.library.allSongs.collectAsState()
+    val isSelectionMode by viewModel.selection.isSelectionMode.observeAsState(false)
+    val selectedItems by viewModel.selection.selectedItems.observeAsState(emptySet())
     val currentPlaylist by viewModel.currentPlaylist.observeAsState(emptyList())
     val currentSongIndex by viewModel.currentSongIndex.observeAsState(-1)
 

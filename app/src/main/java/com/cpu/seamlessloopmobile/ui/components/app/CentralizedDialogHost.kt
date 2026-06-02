@@ -14,8 +14,8 @@ import com.cpu.seamlessloopmobile.ui.components.dialogs.*
 @Composable
 fun CentralizedDialogHost(viewModel: MainViewModel) {
     val currentDialog by viewModel.currentDialog.observeAsState()
-    val playlists by viewModel.playlists.collectAsState()
-    val selectedItems by viewModel.selectedItems.observeAsState(emptySet())
+    val playlists by viewModel.playlist.playlists.collectAsState()
+    val selectedItems by viewModel.selection.selectedItems.observeAsState(emptySet())
     val context = androidx.compose.ui.platform.LocalContext.current
 
     when (val dialog = currentDialog) {
@@ -72,7 +72,7 @@ fun CentralizedDialogHost(viewModel: MainViewModel) {
         }
 
         is MusicDialog.SongMoreOptions -> {
-            val allSongs by viewModel.allSongs.collectAsState()
+            val allSongs by viewModel.library.allSongs.collectAsState()
             val latestSong = remember(allSongs, dialog.song) {
                 allSongs.find { it.id == dialog.song.id } ?: dialog.song
             }

@@ -8,6 +8,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import com.cpu.seamlessloopmobile.ui.state.DataUiState
@@ -32,10 +34,11 @@ private fun SyncStatusSmallText(syncStatus: DataUiState<String>) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeAppBar(
-    syncStatus: DataUiState<String>,
+    libraryVM: com.cpu.seamlessloopmobile.viewmodel.LibraryViewModel,
     onSettingsClick: () -> Unit,
     onSearchClick: () -> Unit
 ) {
+    val syncStatus by libraryVM.syncStatus.collectAsState()
     TopAppBar(
         title = {
             SyncStatusSmallText(syncStatus = syncStatus)
@@ -61,10 +64,11 @@ fun HomeAppBar(
 @Composable
 fun SongListAppBar(
     title: String,
-    syncStatus: DataUiState<String>,
+    libraryVM: com.cpu.seamlessloopmobile.viewmodel.LibraryViewModel,
     onBackClick: () -> Unit,
     onSearchClick: () -> Unit
 ) {
+    val syncStatus by libraryVM.syncStatus.collectAsState()
     TopAppBar(
         title = {
             Column {

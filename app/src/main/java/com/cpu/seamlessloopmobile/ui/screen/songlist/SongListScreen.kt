@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -136,3 +137,66 @@ fun SongListScreen(
         }
     }
 }
+
+/**
+ * 智能自治包装器 —— 专为 MainScreen 设计喵！(๑•̀ㅂ•́)و✧
+ * 在内部直接、局部订阅子 ViewModel 的 LiveData/StateFlow，消灭顶层的频繁重组！
+ */
+@Composable
+fun MainSongListScreen(
+    state: com.cpu.seamlessloopmobile.viewmodel.MusicUiState.SongList,
+    libraryVM: com.cpu.seamlessloopmobile.viewmodel.LibraryViewModel,
+    selectionVM: com.cpu.seamlessloopmobile.viewmodel.SelectionViewModel,
+    mainVM: com.cpu.seamlessloopmobile.viewmodel.MainViewModel,
+    onPlaySong: (Song, List<Song>) -> Unit,
+    onShowMoreOptions: (Song) -> Unit,
+    modifier: Modifier = Modifier,
+    listState: LazyListState = rememberLazyListState()
+) {
+    val allSongs by libraryVM.allSongs.collectAsState()
+    val folders by libraryVM.folders.collectAsState()
+    val albums by libraryVM.albums.collectAsState()
+    val artists by libraryVM.artists.collectAsState()
+    val favorites by libraryVM.favorites.collectAsState()
+
+    val isSelectionMode by selectionVM.isSelectionMode.observeAsState(false)
+    val selectedItems by selectionVM.selectedItems.observeAsState(emptySet())
+
+    val currentPlaylist by mainVM.currentPlaylist.observeAsState(emptyList())
+    val currentSongIndex by mainVM.currentSongIndex.observeAsState(-1)
+
+    val currentPlayingSongPath = currentPlaylist.getOrNull(currentSongIndex)?.filePath
+
+    // 用 derivedStateOf 过滤冗余的计算重组喵！(๑•̀ㅂ•́)و✧
+    val songsToShow by remember(state, allSongs, folders, albums, artists, favorites) {
+        derivedStateOf {
+            when (state.type) {
+                com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.ALL_SONGS -> allSongs
+                com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.FOLDER -> folders.find { it.name == state.title }?.songs ?: state.songs
+                com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.ALBUM -> albums.find { it.name == state.title }?.songs ?: state.songs
+                com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.ARTIST -> artists.find { it.name == state.title }?.songs ?: state.songs
+                com.cpu.seamlessloopmobile.viewmodel.MusicUiState.ListType.FAVORITES -> favorites
+                else -> state.songs
+            }
+        }
+    }
+
+    Box(modifier = modifier) {
+        SongListScreen(
+            songs = songsToShow,
+            currentPlayingSongPath = currentPlayingSongPath,
+            isSelectionMode = isSelectionMode,
+            selectedItems = selectedItems,
+            onPlaySong = { song ->
+                onPlaySong(song, songsToShow)
+            },
+            onToggleSelection = { song ->
+                if (!isSelectionMode) selectionVM.setSelectionMode(true)
+                selectionVM.toggleSelection(song.filePath)
+            },
+            onShowMoreOptions = onShowMoreOptions,
+            listState = listState
+        )
+    }
+}
+
