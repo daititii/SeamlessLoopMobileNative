@@ -325,6 +325,14 @@ bool AudioDecoder::decodeNextBlock() {
         mSampleRate = sampleRate;
         mChannelCount = channels;
         
+        // 当采样率信息更新时，如果之前算出的总帧数是 0，或者为了精确度，我们需要重新计算总帧数喵！
+        if (mDurationUs > 0 && mSampleRate > 0) {
+            mTotalFrames = static_cast<int64_t>(std::round((static_cast<double>(mDurationUs) * mSampleRate) / 1000000.0));
+            mTotalFrames = mTotalFrames - mEncoderDelay - mEncoderPadding;
+            if (mTotalFrames < 0) mTotalFrames = 0;
+            LOGD("Recalculated total frames: %lld", (long long)mTotalFrames);
+        }
+        
         AMediaFormat_delete(format);
         continue; 
     } else if (outputBufIdx == AMEDIACODEC_INFO_TRY_AGAIN_LATER) {

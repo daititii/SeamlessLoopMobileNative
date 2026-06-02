@@ -54,52 +54,6 @@ sealed class MusicUiState {
     enum class ListType { PLAYLIST, FOLDER, ALL_SONGS, ALBUM, ARTIST, FAVORITES, SEARCH }
 }
 
-/**
- * 全局对话框中台状态喵！
- */
-sealed class MusicDialog {
-    // 1. 循环点编辑 (迁移 PlayingPanel 的弹窗)
-    data class LoopEdit(
-        val isStart: Boolean,
-        val initialSamples: Long,
-        val onConfirm: (Long) -> Unit
-    ) : MusicDialog()
-
-    // 2. 创建歌单 (迁移 MainScreen 的弹窗)
-    data class CreatePlaylist(val onConfirm: (String) -> Unit) : MusicDialog()
-
-    // 3. 添加到现有歌单
-    data class AddToPlaylist(
-        val playlists: List<Playlist>, 
-        val onAdd: (Playlist) -> Unit, 
-        val onCreateNew: () -> Unit
-    ) : MusicDialog()
-
-    // 4. 导入文件夹选择
-    data class ImportFoldersOptions(
-        val count: Int, 
-        val onIndividual: () -> Unit, 
-        val onMerge: () -> Unit
-    ) : MusicDialog()
-
-    // 5. 合并文件夹命名
-    data class MergeFoldersName(val onConfirm: (String) -> Unit) : MusicDialog()
-
-    // 6. 确认删除歌单
-    data class ConfirmDeletePlaylist(
-        val playlist: Playlist, 
-        val onConfirm: () -> Unit
-    ) : MusicDialog()
-
-    // 7. 自动探测循环点候选列表弹窗
-    data class LoopCandidates(
-        val song: Song,
-        val candidates: List<LoopPoint>,
-        val sampleRate: Int,
-        val onSelect: (LoopPoint) -> Unit,
-        val onReanalyze: () -> Unit
-    ) : MusicDialog()
-}
 
 /**
  * 主界面调度员喵！
@@ -549,6 +503,144 @@ class MainViewModel(
             if (index != -1) {
                 currentList[index] = currentList[index].copy(rating = nextRating)
                 _currentPlaylist.postValue(currentList)
+            }
+        }
+    }
+
+    fun addSongToPlaylist(playlistId: Int, song: Song) {
+        viewModelScope.launch {
+            playlist.addSongsToPlaylist(playlistId, listOf(song.id)) {
+                // 静默完成
+            }
+        }
+    }
+
+    fun createPlaylistWithSong(name: String, song: Song) {
+        viewModelScope.launch {
+            playlist.createPlaylist(name, listOf(song.id)) {
+                // 静默完成
+            }
+        }
+    }
+
+    fun removeSongFromPlaylist(playlistId: Int, song: Song) {
+        playlist.removeSongsFromPlaylist(playlistId, listOf(song.id)) {
+            val currentState = _uiState.value
+            if (currentState is MusicUiState.SongList && currentState.type == MusicUiState.ListType.PLAYLIST) {
+                val updatedSongs = currentState.songs.filter { it.id != song.id }
+                _uiState.value = currentState.copy(songs = updatedSongs)
+            }
+            
+            // 同步更新当前播放列表队列
+            val currentList = _currentPlaylist.value?.toMutableList() ?: return@removeSongsFromPlaylist
+            val idx = currentList.indexOfFirst { it.id == song.id }
+            if (idx != -1) {
+                currentList.removeAt(idx)
+                _currentPlaylist.postValue(currentList)
+                
+                val curIdx = _currentSongIndex.value ?: -1
+                if (curIdx == idx) {
+                    if (currentList.isEmpty()) {
+                        _currentSongIndex.postValue(-1)
+                        mediaControlManager.pause()
+                    } else {
+                        val nextIdx = if (idx >= currentList.size) 0 else idx
+                        _currentSongIndex.postValue(nextIdx)
+                        playSong(currentList[nextIdx])
+                    }
+                } else if (curIdx > idx) {
+                    _currentSongIndex.postValue(curIdx - 1)
+                }
+            }
+        }
+    }
+
+    fun makeSongsFavorite(songPaths: Set<String>) {
+        viewModelScope.launch {
+            val songs = allSongs.value.filter { it.filePath in songPaths }
+            songs.forEach { song ->
+                repository.updateSongRating(song, 5)
+            }
+            val currentList = _currentPlaylist.value?.toMutableList() ?: return@launch
+            var updated = false
+            songs.forEach { song ->
+                val index = currentList.indexOfFirst { it.id == song.id }
+                if (index != -1) {
+                    currentList[index] = currentList[index].copy(rating = 5)
+                    updated = true
+                }
+            }
+            if (updated) {
+                _currentPlaylist.postValue(currentList)
+            }
+        }
+    }
+
+    fun detectLoopPointsBulk(context: Context, songPaths: Set<String>) {
+        viewModelScope.launch {
+            val songs = allSongs.value.filter { it.filePath in songPaths }
+            if (songs.isNotEmpty()) {
+                android.widget.Toast.makeText(context, "开始后台批量分析 ${songs.size} 首歌曲喵...", android.widget.Toast.LENGTH_SHORT).show()
+                // 串行执行，避免瞬间挤占太多内存/计算资源
+                songs.forEach { song ->
+                    try {
+                        loopDetection.detectLoopPoints(
+                            context = context,
+                            song = song,
+                            forceReanalyze = false,
+                            onFinished = { updatedSong, candidates, _ ->
+                                updateSongInPlaylist(updatedSong)
+                                if (candidates.isNotEmpty()) {
+                                    val best = candidates.first()
+                                    loopDetection.applyAndListenToLoopFromEnd(updatedSong, best) { finalSong ->
+                                        updateSongInPlaylist(finalSong)
+                                    }
+                                }
+                            },
+                            onError = { /* 静默失败 */ }
+                        )
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+                android.widget.Toast.makeText(context, "批量分析完成喵！", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun removeSongsFromPlaylistBulk(playlistId: Int, songPaths: Set<String>) {
+        viewModelScope.launch {
+            val songsToRemove = allSongs.value.filter { it.filePath in songPaths }
+            val songIds = songsToRemove.map { it.id }
+            playlist.removeSongsFromPlaylist(playlistId, songIds) {
+                val currentState = _uiState.value
+                if (currentState is MusicUiState.SongList && currentState.type == MusicUiState.ListType.PLAYLIST) {
+                    val updatedSongs = currentState.songs.filter { it.id !in songIds }
+                    _uiState.value = currentState.copy(songs = updatedSongs)
+                }
+                
+                val currentList = _currentPlaylist.value?.toMutableList() ?: return@removeSongsFromPlaylist
+                val curIdx = _currentSongIndex.value ?: -1
+                val curSong = if (curIdx in currentList.indices) currentList[curIdx] else null
+                
+                val idsSet = songIds.toSet()
+                val updatedList = currentList.filter { it.id !in idsSet }
+                _currentPlaylist.postValue(updatedList)
+                
+                if (curSong != null && curSong.id in idsSet) {
+                    if (updatedList.isEmpty()) {
+                        _currentSongIndex.postValue(-1)
+                        mediaControlManager.pause()
+                    } else {
+                        val newIdx = curIdx.coerceAtMost(updatedList.size - 1)
+                        _currentSongIndex.postValue(newIdx)
+                        playSong(updatedList[newIdx])
+                    }
+                } else if (curSong != null) {
+                    val newIdx = updatedList.indexOfFirst { it.id == curSong.id }
+                    _currentSongIndex.postValue(newIdx)
+                }
+                selection.clearSelection()
             }
         }
     }

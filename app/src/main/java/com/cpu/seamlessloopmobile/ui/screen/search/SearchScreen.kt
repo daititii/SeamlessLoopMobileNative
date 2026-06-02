@@ -14,6 +14,7 @@ import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.ui.components.common.TopAppBarSearchBar
 import com.cpu.seamlessloopmobile.ui.screen.songlist.SongListScreen
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
+import com.cpu.seamlessloopmobile.viewmodel.MusicDialog
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -22,6 +23,7 @@ fun SearchScreen(
     viewModel: MainViewModel,
     playSong: (Song) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val allSongs by viewModel.allSongs.collectAsState()
     val isSelectionMode by viewModel.isSelectionMode.observeAsState(false)
     val selectedItems by viewModel.selectedItems.observeAsState(emptySet())
@@ -103,8 +105,8 @@ fun SearchScreen(
                     if (!isSelectionMode) viewModel.setSelectionMode(true)
                     viewModel.toggleSelection(song.filePath)
                 },
-                onShowMoreOptions = { _ ->
-                    // TODO: 更多选项
+                onShowMoreOptions = { song ->
+                    viewModel.showDialog(MusicDialog.SongMoreOptions(song, null))
                 },
                 isSearchType = true,
                 searchQuery = searchQuery

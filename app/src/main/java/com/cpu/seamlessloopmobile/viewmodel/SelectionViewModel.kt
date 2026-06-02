@@ -73,11 +73,6 @@ class SelectionViewModel : ViewModel() {
     }
 
     private fun checkAutoExit() {
-        if (_selectedItems.value.isNullOrEmpty() &&
-            _selectedPlaylists.value.isNullOrEmpty() &&
-            _selectedFolders.value.isNullOrEmpty()
-        ) {
-            _isSelectionMode.value = false
-        }
+        // 归零不自动退出多选模式，保留纯净的主动退出体验喵！(๑•̀ㅂ•́)و✧
     }
 }

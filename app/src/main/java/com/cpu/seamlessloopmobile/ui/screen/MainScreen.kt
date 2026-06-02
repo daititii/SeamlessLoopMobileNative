@@ -21,6 +21,7 @@ import com.cpu.seamlessloopmobile.ui.screen.songlist.SongListScreen
 import com.cpu.seamlessloopmobile.ui.components.common.CategoryListItem
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import com.cpu.seamlessloopmobile.viewmodel.MusicUiState
+import com.cpu.seamlessloopmobile.viewmodel.MusicDialog
 import androidx.activity.compose.BackHandler
 import com.cpu.seamlessloopmobile.ui.screen.search.SearchScreen
 import androidx.compose.animation.AnimatedVisibility
@@ -70,6 +71,7 @@ fun MainScreen(
     playSong: (com.cpu.seamlessloopmobile.model.Song) -> Unit,
     onSyncPc: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val uiState by viewModel.uiState.observeAsState(MusicUiState.Home)
     val allSongs by viewModel.allSongs.collectAsState()
     val folders by viewModel.folders.collectAsState()
@@ -316,9 +318,13 @@ fun MainScreen(
                                             if (!isSelectionMode) viewModel.setSelectionMode(true)
                                             viewModel.toggleSelection(song.filePath)
                                         },
-                                        onShowMoreOptions = { _ ->
-                                            // TODO: 更多选项
-                                        },
+                                         onShowMoreOptions = { song ->
+                                             val currentPlaylistId = if (state.type == MusicUiState.ListType.PLAYLIST) {
+                                                 playlists.find { it.name == state.title }?.id
+                                             } else null
+                                             
+                                             viewModel.showDialog(MusicDialog.SongMoreOptions(song, currentPlaylistId))
+                                         },
                                         listState = songListScrollStates.getOrPut("${state.type}_${state.title}") {
                                             androidx.compose.foundation.lazy.LazyListState()
                                         }
@@ -347,6 +353,13 @@ fun MainScreen(
                         onAddSelectedToPlaylist = { playlistId -> viewModel.addSelectedToPlaylist(playlistId) },
                         onCreatePlaylistWithSelected = { name -> viewModel.createPlaylistWithSelected(name) },
                         onShowDialog = { dialog -> viewModel.showDialog(dialog) },
+                        onShowMoreBulkOptions = {
+                            val currentPlaylistId = if (uiState is MusicUiState.SongList && (uiState as MusicUiState.SongList).type == MusicUiState.ListType.PLAYLIST) {
+                                playlists.find { it.name == (uiState as MusicUiState.SongList).title }?.id
+                            } else null
+                            
+                            viewModel.showDialog(MusicDialog.BulkMoreOptions(selectedItems.size, currentPlaylistId))
+                        },
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }
@@ -354,51 +367,12 @@ fun MainScreen(
         }
 
         // --- Layer 2: 侧边设置面板遮罩层与滑入面板喵！⚙️ ---
-        AnimatedVisibility(
-            visible = isSettingsPanelVisible,
-            enter = fadeIn(animationSpec = tween(300)),
-            exit = fadeOut(animationSpec = tween(300))
-        ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                // 可点击遮罩背景
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.32f))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { viewModel.setSettingsPanelVisible(false) }
-                        )
-                )
-
-                // 侧边设置抽屉（滑入滑出）
-                AnimatedVisibility(
-                    visible = isSettingsPanelVisible,
-                    enter = slideInHorizontally(
-                        animationSpec = tween(300),
-                        initialOffsetX = { -it }
-                    ),
-                    exit = slideOutHorizontally(
-                        animationSpec = tween(300),
-                        targetOffsetX = { -it }
-                    ),
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(0.85f)
-                        .align(Alignment.CenterStart)
-                ) {
-                    ModalDrawerSheet(modifier = Modifier.fillMaxSize()) {
-                        val context = androidx.compose.ui.platform.LocalContext.current
-                        SettingsScreen(
-                            onClose = { viewModel.setSettingsPanelVisible(false) },
-                            onRescan = { viewModel.scanLibrary(context) },
-                            onSyncPc = onSyncPc
-                        )
-                    }
-                }
-            }
-        }
+        SettingsDrawer(
+            isVisible = isSettingsPanelVisible,
+            onClose = { viewModel.setSettingsPanelVisible(false) },
+            onRescan = { context -> viewModel.scanLibrary(context) },
+            onSyncPc = onSyncPc
+        )
     }
 
     // --- 全屏播放面板 Overlay ---
@@ -408,11 +382,72 @@ fun MainScreen(
         onClose = { viewModel.setPlayingPanelVisible(false) },
         onPlayPause = { if (audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PLAYING) viewModel.pause() else viewModel.play() },
         onNext = { viewModel.skipToNext() },
-        onPrev = { viewModel.skipToPrevious() }
+        onPrev = { viewModel.skipToPrevious() },
+        onMoreClick = { song ->
+            val currentPlaylistId = viewModel.currentOpenPlaylist.value?.id
+            viewModel.showDialog(MusicDialog.SongMoreOptions(song, currentPlaylistId))
+        }
     )
 
     // --- 全局对话框托管 ---
     CentralizedDialogHost(viewModel)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsDrawer(
+    isVisible: Boolean,
+    onClose: () -> Unit,
+    onRescan: (android.content.Context) -> Unit,
+    onSyncPc: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = isVisible,
+        enter = fadeIn(animationSpec = tween(300)),
+        exit = fadeOut(animationSpec = tween(300)),
+        modifier = modifier
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 可点击遮罩背景
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                        onClick = onClose
+                    )
+            )
+
+            // 侧边设置抽屉（滑入滑出）
+            AnimatedVisibility(
+                visible = isVisible,
+                enter = slideInHorizontally(
+                    animationSpec = tween(300),
+                    initialOffsetX = { -it }
+                ),
+                exit = slideOutHorizontally(
+                    animationSpec = tween(300),
+                    targetOffsetX = { -it }
+                ),
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(0.85f)
+                    .align(Alignment.CenterStart)
+            ) {
+                ModalDrawerSheet(modifier = Modifier.fillMaxSize()) {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    SettingsScreen(
+                        onClose = onClose,
+                        onRescan = { onRescan(context) },
+                        onSyncPc = onSyncPc
+                    )
+                }
+            }
+        }
+    }
 }
 
 /**

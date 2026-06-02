@@ -68,6 +68,15 @@ class PlaylistViewModel(
         }
     }
 
+    fun removeSongsFromPlaylist(playlistId: Int, songIds: List<Long>, onComplete: () -> Unit = {}) {
+        coroutineScope.launch {
+            withContext(Dispatchers.IO) {
+                repository.removeSongsFromPlaylist(playlistId, songIds)
+            }
+            onComplete()
+        }
+    }
+
     fun deletePlaylist(playlist: Playlist) {
         coroutineScope.launch(Dispatchers.IO) {
             repository.deletePlaylist(playlist)

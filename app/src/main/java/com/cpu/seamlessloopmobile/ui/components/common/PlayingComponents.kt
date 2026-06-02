@@ -225,7 +225,8 @@ fun PlaybackControls(
     onToggleSeamlessLoop: () -> Unit,
     onPrev: () -> Unit,
     onPlayPause: () -> Unit,
-    onNext: () -> Unit
+    onNext: () -> Unit,
+    onMoreClick: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -241,7 +242,7 @@ fun PlaybackControls(
             Icon(modeIcon, contentDescription = "播放模式", tint = SeamlessLoopColors.PurpleAccent, modifier = Modifier.size(24.dp))
         }
         
-        // 🆕 在旁边肩并肩并排放置无缝循环按钮！使用代表无限符号的平放8字（AllInclusive）表示喵！(๑•̀ㅂ•́)و✧
+        // 🆕 在旁边肩并肩并排放置无缝循环按钮！使用代表无限符号的平放8字（AllInclusive）表示喵！(๑•̀ㅂ•稳t)و✧
         IconButton(onClick = onToggleSeamlessLoop) {
             Icon(
                 imageVector = Icons.Default.AllInclusive,
@@ -254,7 +255,7 @@ fun PlaybackControls(
         IconButton(onClick = onPrev) {
             Icon(Icons.Default.SkipPrevious, contentDescription = "上一首", tint = SeamlessLoopColors.White, modifier = Modifier.size(32.dp))
         }
-
+ 
         FilledIconButton(
             onClick = { if (!isPreparing) onPlayPause() },
             modifier = Modifier.size(64.dp),
@@ -279,13 +280,13 @@ fun PlaybackControls(
                 )
             }
         }
-
+ 
         IconButton(onClick = onNext) {
             Icon(Icons.Default.SkipNext, contentDescription = "下一首", tint = SeamlessLoopColors.White, modifier = Modifier.size(32.dp))
         }
-
-        IconButton(onClick = { /* 更多控制 */ }) {
-            Icon(Icons.Default.MoreVert, contentDescription = "更多", tint = SeamlessLoopColors.Gray, modifier = Modifier.size(24.dp))
+ 
+        IconButton(onClick = onMoreClick) {
+            Icon(Icons.Default.MoreVert, contentDescription = "更多", tint = SeamlessLoopColors.White, modifier = Modifier.size(24.dp))
         }
     }
 }
@@ -324,7 +325,8 @@ fun PlaybackControlsPreview() {
                 onToggleSeamlessLoop = {},
                 onPrev = {},
                 onPlayPause = {},
-                onNext = {}
+                onNext = {},
+                onMoreClick = {}
             )
         }
     }

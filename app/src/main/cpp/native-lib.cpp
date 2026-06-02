@@ -242,6 +242,7 @@ Java_com_cpu_seamlessloopmobile_jni_NativeAudio_getAudioFileDuration(
         jlong length) {
     AudioDecoder scanner;
     if (scanner.open(fd, offset, length)) {
+        scanner.prime(); // 强制解码第一批数据以更新 mTotalFrames 喵！
         jlong frames = scanner.getTotalFrames();
         scanner.close();
         return frames;
@@ -258,6 +259,7 @@ Java_com_cpu_seamlessloopmobile_jni_NativeAudio_getAudioFileSampleRate(
         jlong length) {
     AudioDecoder scanner;
     if (scanner.open(fd, offset, length)) {
+        scanner.prime(); // 强制解码第一批数据以触发 format changed 并获取正确采样率 喵！
         jint sampleRate = scanner.getSampleRate();
         scanner.close();
         return sampleRate;

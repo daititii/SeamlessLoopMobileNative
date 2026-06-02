@@ -37,7 +37,8 @@ fun PlayingPanel(
     onClose: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
-    onPrev: () -> Unit
+    onPrev: () -> Unit,
+    onMoreClick: (com.cpu.seamlessloopmobile.model.Song) -> Unit
 ) {
     val context = LocalContext.current
     val currentSongIndex by viewModel.currentSongIndex.observeAsState(-1)
@@ -209,7 +210,8 @@ fun PlayingPanel(
                         onToggleSeamlessLoop = { viewModel.setSeamlessLoopEnabled(!isSeamlessLoopEnabled) },
                         onPrev = onPrev,
                         onPlayPause = onPlayPause,
-                        onNext = onNext
+                        onNext = onNext,
+                        onMoreClick = { onMoreClick(songItem) }
                     )
                 }
             }

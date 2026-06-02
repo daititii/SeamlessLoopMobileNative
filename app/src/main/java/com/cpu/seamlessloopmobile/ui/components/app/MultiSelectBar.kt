@@ -34,6 +34,7 @@ fun MultiSelectBar(
     onAddSelectedToPlaylist: (Int) -> Unit,
     onCreatePlaylistWithSelected: (String) -> Unit,
     onShowDialog: (MusicDialog) -> Unit,
+    onShowMoreBulkOptions: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (!isSelectionMode) return
@@ -132,10 +133,22 @@ fun MultiSelectBar(
                         Icon(Icons.Default.PlaylistAdd, contentDescription = "添加到歌单")
                     }
 
+                    val isAllSelected = songsInCurrentPage.isNotEmpty() && selectedItems.size >= songsInCurrentPage.size
                     IconButton(onClick = { 
-                        onSelectAll(songsInCurrentPage)
+                        if (isAllSelected) {
+                            onSelectAll(emptyList())
+                        } else {
+                            onSelectAll(songsInCurrentPage)
+                        }
                     }) {
-                        Icon(Icons.Default.SelectAll, contentDescription = "全选")
+                        Icon(
+                            imageVector = if (isAllSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
+                            contentDescription = if (isAllSelected) "取消全选" else "全选"
+                        )
+                    }
+
+                    IconButton(onClick = onShowMoreBulkOptions) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "更多操作")
                     }
                     
                     IconButton(onClick = onClearSelection) {
