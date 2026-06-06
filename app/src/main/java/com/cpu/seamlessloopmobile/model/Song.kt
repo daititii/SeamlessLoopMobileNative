@@ -162,5 +162,8 @@ data class SongMetadataUpdate(
     val albumId: Long?,
     val displayName: String?,
     val coverPath: String?,
-    val isAbPartB: Boolean = false
+    val isAbPartB: Boolean = false,
+    // PC 端把候选循环点存在 LoopPoints.LoopCandidatesJson；手机端存在 Songs.LoopCandidatesJson。
+    // 默认为 null 表示“不更新缓存字段”，避免普通扫描批量更新时清空已有探测缓存喵。
+    val loopCandidatesJson: String? = null
 )

@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.sp
 
 /**
  * 设置侧边栏面板喵！⚙️
- * 优雅美观，包含语言选择（壳子）、库重新扫描与 PC 数据库导入喵！(๑•̀ㅂ•́)و✧
+ * 优雅美观，包含语言选择（壳子）、库重新扫描、PC 数据库导入与 PC 兼容数据库导出喵！(๑•̀ㅂ•́)و✧
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,6 +26,7 @@ fun SettingsScreen(
     onClose: () -> Unit,
     onRescan: () -> Unit,
     onSyncPc: () -> Unit,
+    onExportDatabase: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var dropdownExpanded by remember { mutableStateOf(false) }
@@ -224,11 +225,36 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("导入 PC 端数据库", fontWeight = FontWeight.Bold)
                 }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // PC 兼容数据库导出按钮
+                // 注意：这里导出的不是手机 Room 原始库，而是转换后的 PC 端 3NF 数据库喵。
+                // 用系统文件保存器选择导出位置，避免硬编码下载目录，也不用额外申请存储写权限。
+                OutlinedButton(
+                    onClick = {
+                        onClose()
+                        onExportDatabase()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudUpload,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("导出 PC 端数据库", fontWeight = FontWeight.Bold)
+                }
                 
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 Text(
-                    text = "提示：重新扫描会自动发现设备上的所有音频文件喵！若有在电脑端编辑好的无缝循环数据，也可以直接选择 PC 数据库文件进行同步覆盖喵。(๑•̀ㅂ•́)و✧",
+                    text = "提示：重新扫描会自动发现设备上的所有音频文件喵！若有在电脑端编辑好的无缝循环数据，可以直接选择 PC 数据库文件进行同步；手机端修改过的循环点、评分和歌单也可以导出为 PC 端可识别的数据库喵。(๑•̀ㅂ•́)و✧",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 16.sp

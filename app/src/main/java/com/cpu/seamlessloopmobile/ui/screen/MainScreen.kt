@@ -45,7 +45,8 @@ import androidx.compose.runtime.derivedStateOf
 fun MainScreen(
     viewModel: MainViewModel,
     playSong: (com.cpu.seamlessloopmobile.model.Song) -> Unit,
-    onSyncPc: () -> Unit
+    onSyncPc: () -> Unit,
+    onExportDatabase: () -> Unit
 ) {
     val uiState by viewModel.uiState.observeAsState(MusicUiState.Home)
     
@@ -221,7 +222,8 @@ fun MainScreen(
             isVisible = isSettingsPanelVisible,
             onClose = remember(viewModel) { { viewModel.setSettingsPanelVisible(false) } },
             onRescan = remember(viewModel) { { context -> viewModel.scanLibrary(context) } },
-            onSyncPc = onSyncPc
+            onSyncPc = onSyncPc,
+            onExportDatabase = onExportDatabase
         )
     }
  
