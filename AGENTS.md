@@ -5,7 +5,6 @@
 Android 无缝循环音频播放器，Kotlin + C++ (Oboe) 混合架构。
 单模块项目 (`:app`)，Min SDK 26，Compile/Target SDK 35。
 Kotlin 2.1.0 + AGP 9.0.1 + Gradle 9.1.0，Compose compiler 由 Kotlin 2.1.0 内置。
-远端仓库：`https://github.com/daititii/SeamlessLoopMobileNative.git`（GitHub MCP 可用时优先用 MCP 查询 PR/Issue/远端文件状态）。
 
 ## 构建与测试
 
