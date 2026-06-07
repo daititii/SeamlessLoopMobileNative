@@ -170,6 +170,16 @@ void AudioEngine::setLooping(bool isLooping) {
 }
 
 void AudioEngine::seekTo(int64_t frame) {
+    if (frame < 0) {
+        frame = 0;
+    }
+    if (mIsLooping.load()) {
+        int64_t loopStart = mLoopStartFrame.load();
+        int64_t loopEnd = mLoopEndFrame.load();
+        if (loopEnd > loopStart && frame >= loopEnd) {
+            frame = loopStart;
+        }
+    }
     LOGD("seekTo: Requesting jump to frame %lld (ABMode=%d)", (long long)frame, mIsAbMode.load());
     mSeekTarget = frame;
     mShouldSeek = true;

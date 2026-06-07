@@ -25,6 +25,8 @@ gradlew.bat connectedAndroidTest               # 需要设备
 
 - **服务**：`PlaybackService` (MediaBrowserService) 后台播放，`MediaControlManager` 管理媒体会话；`SystemMediaProgressSyncController` 在服务端定时同步播放进度到系统媒体状态/通知栏
 
+- **无缝循环次数限制**：`SettingsManager.seamlessLoopCountLimit` 控制当前歌曲完成多少次无缝回绕后触发调度，默认 0 表示无限循环，上限 `SettingsManager.MAX_SEAMLESS_LOOP_COUNT_LIMIT`（当前 9999）。`PlaybackManager` 通过 native `EVENT_LOOP_JUMP` + 实际进度回绕确认来计数；达到上限后 LIST_LOOP/SHUFFLE 切下一首，SINGLE_LOOP 重新播放当前歌曲并重置计数。
+
 - **ViewModel/子管家**：`MainViewModel` 作为协调者，由 `MainViewModelFactory` 创建并通过属性赋值持有四个子管家（`LibraryViewModel`、`SelectionViewModel`、`PlaylistViewModel`、`LoopDetectionViewModel`）。注意：`LibraryViewModel` 与 `PlaylistViewModel` 是普通 class，共享 `MainViewModel.viewModelScope`；`SelectionViewModel` 与 `LoopDetectionViewModel` 继承 `ViewModel`，但也是由工厂直接创建后挂到 `MainViewModel` 上。自动循环点探测与试听调度由 `LoopDetectionViewModel` 管理，耗时调用需剥离出主线程以防止音频锁与 UI 锁争用。
 
 - **Native 层**：`app/src/main/cpp/` — 包含两个核心引擎：
@@ -69,6 +71,7 @@ gradlew.bat connectedAndroidTest               # 需要设备
 - `LoopDetectionRepository` — **新版逻辑核心**！负责音频临时文件安全拷贝、跨线程 JNI 调用与 JSON 缓存管理。
 - `MusicScannerRepository` — 扫描逻辑，含 `getInitialScannedSongs()`（全量扫描+批量更新+Artist/Album 预创建+A/B 标记+多级匹配）、`findAbPair()` / `findAbPairRobust()`（DB + MediaStore）
 - `SettingsManager` — 单例 `getInstance(context)`，Gson 序列化，持久化 lastSongPath/lastPosition/playMode/isAbMode 等
+- `SettingsManager` 同时持久化 `isSeamlessLoopEnabled` 与 `seamlessLoopCountLimit`；循环次数上限 0 表示无限循环，设置 UI 需校验为 `0..MAX_SEAMLESS_LOOP_COUNT_LIMIT` 的整数。
 
 **扫描流程**：
 `AudioScanner.scan()` (MediaStore) → `MusicScannerRepository.getInitialScannedSongs()` → 多级匹配（优先 fileName+duration，兼顾 mediaId/filePath/容差匹配）→ Artist/Album 预创建 → 批量写入 → A/B 标记（文件后缀 _B/_b/_loop/_Loop 设 `isAbPartB=true`，被大多数查询过滤）
@@ -96,6 +99,7 @@ gradlew.bat connectedAndroidTest               # 需要设备
 - **PcDatabaseImporter 测试**：需要 `app/src/test/resources/pc_db_samples/pc_3nf_sample.db` 存在（目前仅 `pc_3nf_sample.db` 存在，`pc_flat_sample.db` 不存在），测试中会覆盖 `ioDispatcher` 和 `mainDispatcher`。
 - **docs/ 目录**：主要是阶段记录/研究日志，可能过时；改架构说明时优先更新本文件，除非用户明确要求，不要批量改写 `docs/`。
 - **快速部署**：项目根目录下的 `run.bat` 提供 root 设备的 adb push + pm install + am start 一键部署流程。
+- **播放页进度条约束**：全屏播放页 `PlaybackProgressBar` 需要直接轮询 `NativeAudio` 以保证拖动低延迟；不要将其完全改成依赖 `MediaControlManager`/MediaSession 状态流。清除暂停通知导致 native engine 销毁时，应保留 UI 当前进度或使用 MediaSession 进度兜底，避免用 native 返回的 0 覆盖进度。
 - **⚠️ 物理路径与 JNI 避坑硬约束**：探测引擎的 C++ `fopen` 无法直接读取 `content://` 或 MediaStore URI！自动探测循环点时，必须先使用 `LoopDetectionRepository` 将音频拷贝至私有 cache 目录，再将物理路径传入 `NativeAudio.analyzeLoopPoints`；分析完毕后必须在 `finally` 块中立即彻底删除临时文件，防止磁盘残留。
 
 ## 包结构速查

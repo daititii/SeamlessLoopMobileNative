@@ -58,6 +58,7 @@ fun MainScreen(
     
     val isPlayingPanelVisible by viewModel.isPlayingPanelVisible.observeAsState(false)
     val isSettingsPanelVisible by viewModel.isSettingsPanelVisible.observeAsState(false)
+    val seamlessLoopCountLimit by viewModel.seamlessLoopCountLimit.observeAsState(0)
     
     val playlists by viewModel.playlist.playlists.collectAsState()
 
@@ -223,7 +224,9 @@ fun MainScreen(
             onClose = remember(viewModel) { { viewModel.setSettingsPanelVisible(false) } },
             onRescan = remember(viewModel) { { context -> viewModel.scanLibrary(context) } },
             onSyncPc = onSyncPc,
-            onExportDatabase = onExportDatabase
+            onExportDatabase = onExportDatabase,
+            seamlessLoopCountLimit = seamlessLoopCountLimit,
+            onSeamlessLoopCountLimitChange = remember(viewModel) { viewModel::setSeamlessLoopCountLimit }
         )
     }
  

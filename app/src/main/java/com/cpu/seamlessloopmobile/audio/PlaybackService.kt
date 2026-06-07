@@ -145,6 +145,21 @@ class PlaybackService : MediaBrowserServiceCompat() {
                     mediaSession?.controller?.transportControls?.skipToNext()
                 }
             }
+            onSeamlessLoopLimitReached = {
+                val settingsManager = com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(this@PlaybackService)
+                val modeOrdinal = mediaSession?.controller?.playbackState?.extras?.getInt("play_mode") ?: settingsManager.playMode.ordinal
+                val mode = com.cpu.seamlessloopmobile.viewmodel.PlayMode.values().getOrNull(modeOrdinal) ?: com.cpu.seamlessloopmobile.viewmodel.PlayMode.LIST_LOOP
+
+                if (mode == com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP) {
+                    android.util.Log.d("PlaybackService", "🔁 单曲循环模式下达到无缝循环次数上限，重新播放当前歌曲")
+                    playbackManager?.currentSong?.let { song ->
+                        playbackManager?.playSong(song, 0L, false)
+                    }
+                } else {
+                    android.util.Log.d("PlaybackService", "🔁 无缝循环次数上限已达到，切换下一首")
+                    mediaSession?.controller?.transportControls?.skipToNext()
+                }
+            }
         }
 
         // 莱芙帮大人找回上次的记忆喵！
@@ -189,7 +204,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
                 return super.onMediaButtonEvent(mediaButtonEvent)
             }
 
-            override fun onPlay() { playbackManager?.resume() }
+            override fun onPlay() { resumeOrRestorePlayback() }
             override fun onPause() { playbackManager?.pause() }
             override fun onSkipToNext() {
                 val mode = mediaSession?.controller?.playbackState?.extras?.getInt("play_mode") ?: 0
@@ -365,6 +380,45 @@ class PlaybackService : MediaBrowserServiceCompat() {
         playbackManager?.stop()
         stopForeground(true)
         stopSelf()
+    }
+
+    private fun resumeOrRestorePlayback() {
+        val manager = playbackManager ?: return
+        if (manager.currentSong != null && manager.state.value != AudioPlayState.IDLE) {
+            manager.resume()
+            return
+        }
+
+        val settingsManager = com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(this)
+        val lastPath = settingsManager.lastSongPath
+        if (lastPath == null) {
+            android.util.Log.w("PlaybackService", "播放请求被忽略：没有可恢复的上一首歌曲")
+            return
+        }
+
+        serviceScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val songToRestore = queueManager.currentSong?.takeIf { it.filePath == lastPath }
+                ?: repository.getSongByPath(lastPath)
+            if (songToRestore == null) {
+                android.util.Log.w("PlaybackService", "播放请求被忽略：找不到上一首歌曲 $lastPath")
+                return@launch
+            }
+
+            val maxKnownPosition = if (settingsManager.isAbMode) {
+                // AB 模式使用 A+B 虚拟时间轴；A 段歌曲自身的 totalSamples 不是播放总长度。
+                val loopSong = repository.findAbPairRobust(this@PlaybackService, songToRestore)?.second
+                val introFrames = songToRestore.totalSamples
+                val loopFrames = loopSong?.totalSamples ?: 0L
+                if (introFrames > 0L && loopFrames > 0L) introFrames + loopFrames else 0L
+            } else {
+                songToRestore.totalSamples.takeIf { it > 0L } ?: 0L
+            }
+            // lastPosition 由 NativeAudio.getCurrentPosition() 保存，单位是帧；playSong 也接收帧。
+            val startPosition = settingsManager.lastPosition.coerceIn(0L, maxKnownPosition)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                playbackManager?.playSong(songToRestore, startPosition, startPaused = false)
+            }
+        }
     }
 
     /**

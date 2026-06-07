@@ -114,6 +114,7 @@ class MainViewModel(
         val savedMode = manager.playMode
         _playMode.value = savedMode
         isSeamlessLoopEnabled.value = manager.isSeamlessLoopEnabled
+        _seamlessLoopCountLimit.value = manager.seamlessLoopCountLimit
         
         // 给底层发个信号，告诉它当前的初始模式，也把状态机的模式同步好喵！
         val bundle = android.os.Bundle().apply {
@@ -132,6 +133,15 @@ class MainViewModel(
             putBoolean("is_seamless_loop_enabled", enabled)
         }
         mediaControlManager.sendCustomAction("SET_SEAMLESS_LOOP_ENABLED", bundle)
+    }
+
+    private val _seamlessLoopCountLimit = MutableLiveData(0)
+    val seamlessLoopCountLimit: LiveData<Int> = _seamlessLoopCountLimit
+
+    fun setSeamlessLoopCountLimit(limit: Int) {
+        val safeLimit = limit.coerceIn(0, SettingsManager.MAX_SEAMLESS_LOOP_COUNT_LIMIT)
+        _seamlessLoopCountLimit.value = safeLimit
+        settingsManager?.seamlessLoopCountLimit = safeLimit
     }
 
     private fun restorePlaybackSession() {

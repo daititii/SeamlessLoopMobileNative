@@ -44,6 +44,8 @@ fun PlayingPanel(
     val currentSongIndex by viewModel.currentSongIndex.observeAsState(-1)
     val playlist by viewModel.currentPlaylist.observeAsState(emptyList())
     val audioPlayState by viewModel.audioPlayState.collectAsState()
+    val mediaSessionPosition by viewModel.currentPosition.collectAsState()
+    val playbackState by viewModel.playbackState.collectAsState()
     val isPlaying = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PLAYING
     val isPreparing = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.PREPARING
     val isError = audioPlayState == com.cpu.seamlessloopmobile.audio.AudioPlayState.ERROR
@@ -193,9 +195,12 @@ fun PlayingPanel(
                 ) {
                     val isSeamlessLoopEnabled by viewModel.isSeamlessLoopEnabled.observeAsState(true)
 
-                    PlaybackProgressBar(songItem, onSeekComplete = {
-                        viewModel.refreshMediaSessionPosition()
-                    })
+                    PlaybackProgressBar(
+                        song = songItem,
+                        fallbackPositionFrames = mediaSessionPosition.takeIf { it > 0L }
+                            ?: playbackStatePositionFrames(playbackState),
+                        onSeekComplete = { viewModel.refreshMediaSessionPosition() }
+                    )
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -217,4 +222,17 @@ fun PlayingPanel(
             }
         }
     }
+}
+
+private fun playbackStatePositionFrames(
+    playbackState: android.support.v4.media.session.PlaybackStateCompat?
+): Long {
+    val positionMs = playbackState?.position ?: return 0L
+    if (positionMs <= 0L) return 0L
+
+    val sampleRate = runCatching { NativeAudio.getSampleRate() }
+        .getOrDefault(44100)
+        .takeIf { it > 0 }
+        ?: 44100
+    return positionMs * sampleRate / 1000L
 }
