@@ -131,31 +131,85 @@ fun MainInfoPage(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlaybackProgressBar(song: Song, onSeekComplete: (() -> Unit)? = null) {
+fun PlaybackProgressBar(
+    song: Song,
+    fallbackPositionFrames: Long = 0L,
+    onSeekComplete: (() -> Unit)? = null
+) {
     val isPreview = LocalInspectionMode.current
-    var currentFrame by remember { mutableStateOf(0L) }
-    var sliderPosition by remember { mutableStateOf<Float?>(null) }
+    var currentFrame by remember(song.id) { mutableStateOf(0L) }
+    var totalFrames by remember(song.id, song.totalSamples, song.duration) { mutableStateOf(0L) }
+    var sampleRate by remember(song.id) { mutableStateOf(44100L) }
+    var sliderPosition by remember(song.id) { mutableStateOf<Float?>(null) }
+    var hasSeenNativeProgress by remember(song.id) { mutableStateOf(false) }
+    val latestFallbackPositionFrames by rememberUpdatedState(fallbackPositionFrames)
     val coroutineScope = rememberCoroutineScope()
-    val totalFrames = if (isPreview) 1000000L else NativeAudio.getDuration()
-    val sampleRate = (if (isPreview) 44100 else NativeAudio.getSampleRate()).toLong()
 
-    LaunchedEffect(Unit) {
-        if (isPreview) return@LaunchedEffect
+    fun fallbackTotalFrames(rate: Long): Long {
+        return song.totalSamples.takeIf { it > 0L }
+            ?: song.duration.takeIf { it > 0L }?.let { it * rate / 1000L }
+            ?: 0L
+    }
+
+    LaunchedEffect(song.id, song.totalSamples, song.duration) {
+        if (isPreview) {
+            sampleRate = 44100L
+            totalFrames = 1000000L
+            currentFrame = 0L
+            return@LaunchedEffect
+        }
+
         while (true) {
+            val nextSampleRate = runCatching { NativeAudio.getSampleRate() }
+                .getOrDefault(44100)
+                .takeIf { it > 0 }
+                ?.toLong()
+                ?: 44100L
+            val nativeDuration = runCatching { NativeAudio.getDuration() }.getOrDefault(0L)
+            val nextTotalFrames = nativeDuration.takeIf { it > 0L } ?: fallbackTotalFrames(nextSampleRate)
+
+            sampleRate = nextSampleRate
+            totalFrames = nextTotalFrames
+
             if (sliderPosition == null) {
-                currentFrame = NativeAudio.getCurrentPosition()
+                val nativePosition = if (nativeDuration > 0L) {
+                    runCatching { NativeAudio.getCurrentPosition() }.getOrDefault(0L)
+                } else {
+                    0L
+                }
+                val nextPosition = when {
+                    // 通知被清除会销毁 native engine，此时 NativeAudio 会回 0。
+                    // 全屏播放页仍在前台时不要用这个 0 覆盖已有 UI 进度。
+                    nativeDuration <= 0L && currentFrame > 0L -> currentFrame
+                    nativeDuration <= 0L -> latestFallbackPositionFrames
+                    nativePosition > 0L -> {
+                        hasSeenNativeProgress = true
+                        nativePosition
+                    }
+                    !hasSeenNativeProgress -> latestFallbackPositionFrames
+                    else -> nativePosition
+                }
+                currentFrame = if (nextTotalFrames > 0L) {
+                    nextPosition.coerceIn(0L, nextTotalFrames)
+                } else {
+                    nextPosition.coerceAtLeast(0L)
+                }
             }
             delay(100)
         }
     }
 
+    val sliderMax = totalFrames.toFloat().coerceAtLeast(1f)
+    val displayedValue = (sliderPosition ?: currentFrame.toFloat()).coerceIn(0f, sliderMax)
+
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         Slider(
-            value = sliderPosition ?: currentFrame.toFloat(),
+            value = displayedValue,
             onValueChange = { sliderPosition = it },
             onValueChangeFinished = { 
                 sliderPosition?.let { finalPos ->
                     if (!isPreview) {
+                        hasSeenNativeProgress = true
                         currentFrame = finalPos.toLong()
                         NativeAudio.seekTo(finalPos.toLong())
                         
@@ -169,7 +223,7 @@ fun PlaybackProgressBar(song: Song, onSeekComplete: (() -> Unit)? = null) {
                     }
                 }
             },
-            valueRange = 0f..totalFrames.toFloat().coerceAtLeast(1f),
+            valueRange = 0f..sliderMax,
             modifier = Modifier.height(12.dp),
             thumb = {},
             track = { sliderState ->

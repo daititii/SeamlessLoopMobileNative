@@ -133,6 +133,11 @@ interface SongDao {
                 albumId = update.albumId,
                 isAbPartB = update.isAbPartB
             )
+
+            // PC 端导入时会携带 LoopCandidatesJson；普通媒体扫描更新则保持 null，不碰已有缓存。
+            if (update.loopCandidatesJson != null) {
+                updateLoopCandidatesJson(update.songId, update.loopCandidatesJson)
+            }
         }
         
         // 2. 关联表批量 Insert (分层优化，极大减少磁盘 IO 和 SQL 解析开销喵！)

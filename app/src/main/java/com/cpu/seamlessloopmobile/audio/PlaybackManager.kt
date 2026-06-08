@@ -60,6 +60,9 @@ class PlaybackManager(
                         // This event only means the decoder handover is done. System-visible
                         // progress is sampled by PlaybackService's 250ms sync job so the
                         // notification/lock screen never rewinds before that position is audible.
+                        coroutineScope.launch(Dispatchers.Main) {
+                            pendingDecoderLoopJumpCount++
+                        }
                     }
                 }
             }
@@ -69,6 +72,7 @@ class PlaybackManager(
     // 专门给 Service 回调的钩子，用于通知 UI 更新
     override var onPlaybackStatusChanged: ((isPlaying: Boolean, currentSong: Song?) -> Unit)? = null
     var onSongCompleted: (() -> Unit)? = null
+    var onSeamlessLoopLimitReached: (() -> Unit)? = null
     override var onPlaybackError: ((String) -> Unit)? = { error ->
         _state.value = AudioPlayState.ERROR
         currentSong?.let { updateMediaSessionState(it, false, isAbMode, error) }
@@ -78,6 +82,9 @@ class PlaybackManager(
         private set
 
     private var isAbMode = false
+    private var seamlessLoopCountForCurrentSong = 0
+    private var pendingDecoderLoopJumpCount = 0
+    private var lastObservedPositionFrames = -1L
 
     override val isPlaying: Boolean
         get() = mediaSession.controller.playbackState?.state == android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING
@@ -100,11 +107,17 @@ class PlaybackManager(
     }
 
     override fun resume() {
+        val song = currentSong
+        if (song == null) {
+            android.util.Log.w("PlaybackManager", "resume ignored because no current song is loaded")
+            _state.value = AudioPlayState.IDLE
+            onPlaybackStatusChanged?.invoke(false, null)
+            return
+        }
+
         NativeAudio.resumeAudioEngine()
         _state.value = AudioPlayState.PLAYING
-        currentSong?.let {
-            updateMediaSessionState(it, true, isAbMode)
-        }
+        updateMediaSessionState(song, true, isAbMode)
     }
 
     override fun stop() {
@@ -112,6 +125,7 @@ class PlaybackManager(
         _state.value = AudioPlayState.IDLE
         currentSong = null
         isAbMode = false
+        resetSeamlessLoopCounter()
         // 不在这里更新 Session，通常由 Service 处理销毁
     }
 
@@ -126,6 +140,8 @@ class PlaybackManager(
         val sr = NativeAudio.getSampleRate().let { if (it > 0) it else 44100 }
         val framePos = position * sr / 1000L
         NativeAudio.seekTo(framePos)
+        lastObservedPositionFrames = framePos
+        pendingDecoderLoopJumpCount = 0
         currentSong?.let {
             updateMediaSessionState(it, isPlaying, isAbMode)
         }
@@ -134,6 +150,8 @@ class PlaybackManager(
     fun seekToFrame(positionFrames: Long) {
         // Internal playback commands already operate in native sample frames.
         NativeAudio.seekTo(positionFrames)
+        lastObservedPositionFrames = positionFrames
+        pendingDecoderLoopJumpCount = 0
         currentSong?.let {
             updateMediaSessionState(it, isPlaying, isAbMode)
         }
@@ -145,9 +163,11 @@ class PlaybackManager(
 
     fun updatePosition() {
         if (_state.value != AudioPlayState.PLAYING) return
+        val positionFrames = NativeAudio.getCurrentPosition()
+        if (registerAudibleSeamlessLoopIfNeeded(positionFrames)) return
         // 底层返回帧数，但 PlaybackState 需存毫秒以与 METADATA_KEY_DURATION 同单位，
         // 否则通知栏进度条会因单位不一致而错位或溢出
-        val posMs = framesToPlaybackPositionMs(NativeAudio.getCurrentPosition(), NativeAudio.getSampleRate())
+        val posMs = framesToPlaybackPositionMs(positionFrames, NativeAudio.getSampleRate())
         // 从零构建 PlaybackState，不依赖 controller 的异步缓存，防止读到过时状态导致 setPlaybackState 被忽略喵！
         val extras = android.os.Bundle().apply {
             putBoolean("is_ab_mode", isAbMode)
@@ -229,6 +249,37 @@ class PlaybackManager(
 
     private var playJob: kotlinx.coroutines.Job? = null
 
+    private fun resetSeamlessLoopCounter() {
+        seamlessLoopCountForCurrentSong = 0
+        pendingDecoderLoopJumpCount = 0
+        lastObservedPositionFrames = -1L
+    }
+
+    private fun registerAudibleSeamlessLoopIfNeeded(positionFrames: Long): Boolean {
+        val previousPosition = lastObservedPositionFrames
+        lastObservedPositionFrames = positionFrames
+
+        if (pendingDecoderLoopJumpCount <= 0 || previousPosition < 0L || positionFrames >= previousPosition) {
+            return false
+        }
+
+        pendingDecoderLoopJumpCount--
+        seamlessLoopCountForCurrentSong++
+
+        val limit = settingsManager.seamlessLoopCountLimit
+        android.util.Log.d(
+            "PlaybackManager",
+            "🔁 当前歌曲无缝循环计数：$seamlessLoopCountForCurrentSong / ${if (limit == 0) "∞" else limit}"
+        )
+        if (limit > 0 && seamlessLoopCountForCurrentSong >= limit) {
+            android.util.Log.d("PlaybackManager", "🔁 无缝循环次数达到上限 $limit，准备切换下一首")
+            resetSeamlessLoopCounter()
+            onSeamlessLoopLimitReached?.invoke()
+            return true
+        }
+        return false
+    }
+
     override fun play(song: Song, startPos: Long, startPaused: Boolean) {
         playSong(song, startPos, startPaused)
     }
@@ -261,6 +312,7 @@ class PlaybackManager(
     private suspend fun actuallyPlaySong(song: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) = withContext(Dispatchers.IO) {
         this@PlaybackManager.currentSong = song
         _state.value = AudioPlayState.PREPARING
+        resetSeamlessLoopCounter()
         NativeAudio.stopAudioEngine()
             
             // --- 核心修复：防止内存对象过时喵！ ---
@@ -366,6 +418,7 @@ class PlaybackManager(
     private suspend fun playAbSong(introSong: Song, loopSong: Song, startPosition: Long = 0, startPaused: Boolean = false, isSingleLoop: Boolean = true) = withContext(Dispatchers.IO) {
         this@PlaybackManager.currentSong = introSong
         _state.value = AudioPlayState.PREPARING
+        resetSeamlessLoopCounter()
         NativeAudio.stopAudioEngine()
             
             try {

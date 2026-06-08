@@ -22,6 +22,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.cpu.seamlessloopmobile.ui.screen.MainScreen
 import com.cpu.seamlessloopmobile.data.SettingsManager
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 精简后的 MainActivity 喵！
@@ -37,6 +40,11 @@ class MainActivity : ComponentActivity() {
     // PC 数据库文件选择器喵
     private val dbPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { importFromPcDatabase(it) }
+    }
+
+    // PC 兼容数据库导出保存器喵：交给系统文件选择器决定导出位置，不额外索要写存储权限。
+    private val dbExportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        uri?.let { exportPcDatabaseToUri(it) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,7 +67,8 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         viewModel = viewModel,
                         playSong = { song -> viewModel.playSong(song) },
-                        onSyncPc = { dbPickerLauncher.launch("application/octet-stream") }
+                        onSyncPc = { dbPickerLauncher.launch("application/octet-stream") },
+                        onExportDatabase = { dbExportLauncher.launch(createDatabaseExportFileName()) }
                     )
                 }
             }
@@ -131,6 +140,51 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             )
+        }
+    }
+
+    private fun createDatabaseExportFileName(): String {
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        return "seamless_loop_pc_export_$timestamp.db"
+    }
+
+    private fun exportPcDatabaseToUri(uri: android.net.Uri) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val database = com.cpu.seamlessloopmobile.db.AppDatabase.getDatabase(this@MainActivity)
+                val result = com.cpu.seamlessloopmobile.db.PcDatabaseExporter.exportToPcDatabase(
+                    context = this@MainActivity,
+                    uri = uri,
+                    songDao = database.songDao(),
+                    playlistDao = database.playlistDao(),
+                    playQueueDao = database.playQueueDao()
+                )
+
+                runOnUiThread {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "PC 端数据库导出完成喵！${result.trackCount} 首歌、${result.playlistCount} 个歌单，大小 ${formatBytes(result.bytes)}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "PC database export failed", e)
+                runOnUiThread {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "PC 端数据库导出失败了(>_<): ${e.message}。若正在扫描，请稍后重试喵",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        return when {
+            bytes >= 1024L * 1024L -> String.format(Locale.US, "%.2f MB", bytes / 1024.0 / 1024.0)
+            bytes >= 1024L -> String.format(Locale.US, "%.1f KB", bytes / 1024.0)
+            else -> "$bytes B"
         }
     }
 }

@@ -30,6 +30,9 @@ fun SettingsDrawer(
     onClose: () -> Unit,
     onRescan: (android.content.Context) -> Unit,
     onSyncPc: () -> Unit,
+    onExportDatabase: () -> Unit,
+    seamlessLoopCountLimit: Int,
+    onSeamlessLoopCountLimitChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     AnimatedVisibility(
@@ -72,7 +75,10 @@ fun SettingsDrawer(
                     SettingsScreen(
                         onClose = onClose,
                         onRescan = { onRescan(context) },
-                        onSyncPc = onSyncPc
+                        onSyncPc = onSyncPc,
+                        onExportDatabase = onExportDatabase,
+                        seamlessLoopCountLimit = seamlessLoopCountLimit,
+                        onSeamlessLoopCountLimitChange = onSeamlessLoopCountLimitChange
                     )
                 }
             }

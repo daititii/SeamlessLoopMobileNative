@@ -8,6 +8,8 @@ import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * 后勤搬运工：负责从 PC 端导出的 SQLite 数据库中提取循环数据， 并在本地数据库中打下“灵魂锚点”。
@@ -78,7 +80,8 @@ object PcDatabaseImporter {
                             """
                     SELECT 
                         t.FileName, t.TotalSamples, lp.LoopStart, lp.LoopEnd, t.DisplayName,
-                        ar.Name AS Artist, al.Name AS Album, ur.Rating, t.CoverPath
+                        ar.Name AS Artist, al.Name AS Album, ur.Rating, t.CoverPath,
+                        lp.LoopCandidatesJson
                     FROM Tracks t
                     LEFT JOIN LoopPoints lp ON t.Id = lp.TrackId
                     LEFT JOIN UserRatings ur ON t.Id = ur.TrackId
@@ -86,7 +89,7 @@ object PcDatabaseImporter {
                     LEFT JOIN Albums al ON t.AlbumId = al.Id
                     """.trimIndent()
                         } else {
-                            "SELECT FileName, TotalSamples, LoopStart, LoopEnd, DisplayName, Artist, Album, Rating, CoverPath FROM LoopPoints"
+                            "SELECT FileName, TotalSamples, LoopStart, LoopEnd, DisplayName, Artist, Album, Rating, CoverPath, NULL AS LoopCandidatesJson FROM LoopPoints"
                         }
 
                 val cursor = extDb.rawQuery(query, null)
@@ -103,7 +106,8 @@ object PcDatabaseImporter {
                                         artist = cursor.getString(5),
                                         album = cursor.getString(6),
                                         rating = cursor.getInt(7),
-                                        coverPath = cursor.getString(8)
+                                        coverPath = cursor.getString(8),
+                                        loopCandidatesJson = toMobileLoopCandidatesJson(cursor.getString(9))
                                 )
                         extData.add(data)
                         // 预收集所有可能缺失的分类名
@@ -189,15 +193,21 @@ object PcDatabaseImporter {
                             }
 
                             if (matchedSong != null) {
+                                // 对齐 PC 端 SyncWithExternalDatabase 的保护策略：
+                                // 1) 外部库没有实质循环点成果时，不允许 0/0 覆盖手机端已经探测好的循环点。
+                                // 2) 外部评分为 0 时只视为“未评分”，不清空手机端已有评分。
+                                val pcHasLoopPoints = data.start > 0 || data.end > 0 || hasMeaningfulCandidates(data.loopCandidatesJson)
+                                val pcHasRating = data.rating > 0
+
                                 songUpdates.add(
                                         SongMetadataUpdate(
                                                 songId = matchedSong.id,
-                                                start = data.start,
-                                                end = data.end,
+                                                start = if (pcHasLoopPoints) data.start else matchedSong.loopStart,
+                                                end = if (pcHasLoopPoints) data.end else matchedSong.loopEnd,
                                                 total =
                                                         if (data.total > 0) data.total
                                                         else matchedSong.totalSamples,
-                                                rating = data.rating,
+                                                rating = if (pcHasRating) data.rating else matchedSong.rating,
                                                 artistId =
                                                         data.artist?.lowercase()?.let {
                                                             finalArtistMap[it]
@@ -208,7 +218,8 @@ object PcDatabaseImporter {
                                                         },
                                                 displayName = data.displayName,
                                                 coverPath = data.coverPath,
-                                                isAbPartB = matchedSong.isAbPartB // 同步时保持原有的 B 段标记喵
+                                                isAbPartB = matchedSong.isAbPartB, // 同步时保持原有的 B 段标记喵
+                                                loopCandidatesJson = if (pcHasLoopPoints) data.loopCandidatesJson else null
                                         )
                                 )
                                 syncCount++
@@ -323,8 +334,57 @@ object PcDatabaseImporter {
             val artist: String?,
             val album: String?,
             val rating: Int,
-            val coverPath: String?
+            val coverPath: String?,
+            val loopCandidatesJson: String?
     )
+
+    private fun toMobileLoopCandidatesJson(json: String?): String? {
+        val source = json?.takeIf { it.isNotBlank() && it != "[]" && it != "{}" } ?: return json
+
+        return try {
+            val input = JSONArray(source)
+            val output = JSONArray()
+            for (i in 0 until input.length()) {
+                val item = input.optJSONObject(i) ?: continue
+                val mobileItem = JSONObject().apply {
+                    put("loopStart", readLong(item, "loopStart", "LoopStart"))
+                    put("loopEnd", readLong(item, "loopEnd", "LoopEnd"))
+                    put("score", readDouble(item, "score", "Score"))
+                    put("noteDiff", readDouble(item, "noteDiff", "NoteDifference"))
+                    if (hasAny(item, "loudnessDiff", "LoudnessDifference")) {
+                        put("loudnessDiff", readDouble(item, "loudnessDiff", "LoudnessDifference"))
+                    }
+                }
+                output.put(mobileItem)
+            }
+            output.toString()
+        } catch (_: Exception) {
+            // 解析失败时原样保存；未来若 PC 端 JSON 结构变化，至少不丢原始缓存喵。
+            json
+        }
+    }
+
+    private fun readLong(item: JSONObject, vararg keys: String): Long {
+        keys.forEach { key ->
+            if (item.has(key) && !item.isNull(key)) return item.optLong(key)
+        }
+        return 0L
+    }
+
+    private fun readDouble(item: JSONObject, vararg keys: String): Double {
+        keys.forEach { key ->
+            if (item.has(key) && !item.isNull(key)) return item.optDouble(key)
+        }
+        return 0.0
+    }
+
+    private fun hasAny(item: JSONObject, vararg keys: String): Boolean {
+        return keys.any { key -> item.has(key) && !item.isNull(key) }
+    }
+
+    private fun hasMeaningfulCandidates(json: String?): Boolean {
+        return !json.isNullOrBlank() && json != "[]" && json != "{}"
+    }
 
     private fun getEffectiveDuration(song: Song, allLocalSongs: List<Song>): Long {
         if (song.isAbPartB) return song.duration
