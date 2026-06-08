@@ -104,33 +104,42 @@ class LoopDetectionViewModel(
     fun applyAndListenToLoopFromEnd(
         song: Song,
         point: LoopPoint,
+        onPlaySongRequired: ((Song, Long) -> Unit)? = null,
         onSongUpdated: (Song) -> Unit
     ) {
         scope.launch {
-            // 1. 将 JNI 锁争用和计算任务彻底剥离到 Default 协程中执行！
-            val seekTargetMs = withContext(Dispatchers.Default) {
+            // 1. 计算要试听的开始播放位置（帧数）
+            val seekTargetSamples = withContext(Dispatchers.Default) {
                 val sampleRate = NativeAudio.getSampleRate().toLong().let { if (it > 0) it else 44100L }
                 val threeSecondsInSamples = sampleRate * 3
-                val seekTargetSamples = (point.loopEnd - threeSecondsInSamples).coerceAtLeast(point.loopStart)
-                seekTargetSamples * 1000L / sampleRate
+                (point.loopEnd - threeSecondsInSamples).coerceAtLeast(point.loopStart)
             }
 
             // 2. 将数据库 UPDATE 写盘任务安全隔离在 IO 线程池中！
             val updatedSong = repository.updateSongLoopPoints(song, point.loopStart, point.loopEnd)
             
-            // 2. 切回主线程更新内存 UI 状态
+            // 3. 切回主线程更新内存 UI 状态
             withContext(Dispatchers.Main) {
                 onSongUpdated(updatedSong)
             }
 
-            // 3. 试听定位交给 PlaybackService 处理，避免把采样帧再次当成 MediaSession 毫秒 seek。
+            // 4. 判断目标歌曲是否为当前正在播放的歌曲
             withContext(Dispatchers.Main) {
-                val bundle = android.os.Bundle().apply {
-                    putLong("start_pos", point.loopStart)
-                    putLong("end_pos", point.loopEnd)
+                val currentPlayingUri = mediaControlManager.metadata.value?.getString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_MEDIA_URI)
+                val isCurrentSong = currentPlayingUri != null && currentPlayingUri == song.filePath
+                
+                if (isCurrentSong) {
+                    // 如果是当前正在播放的歌，直接通知底层修改内部临时循环区间并试听定位喵！
+                    val bundle = android.os.Bundle().apply {
+                        putLong("start_pos", point.loopStart)
+                        putLong("end_pos", point.loopEnd)
+                    }
+                    mediaControlManager.sendCustomAction("APPLY_LOOP_POINTS", bundle)
+                    mediaControlManager.play()
+                } else {
+                    // 如果不是当前播放的歌，通知外部调用者（MainViewModel）切换播放该歌曲，从算好的采样帧开始播放试听喵！
+                    onPlaySongRequired?.invoke(updatedSong, seekTargetSamples)
                 }
-                mediaControlManager.sendCustomAction("APPLY_LOOP_POINTS", bundle)
-                mediaControlManager.play()
             }
         }
     }
