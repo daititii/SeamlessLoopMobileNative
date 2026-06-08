@@ -228,9 +228,16 @@ class MainViewModel(
             candidates = candidates,
             sampleRate = sampleRate,
             onSelect = { point ->
-                loopDetection.applyAndListenToLoopFromEnd(song, point) { updatedSong ->
-                    updateSongInPlaylist(updatedSong)
-                }
+                loopDetection.applyAndListenToLoopFromEnd(
+                    song = song,
+                    point = point,
+                    onPlaySongRequired = { s, startPos ->
+                        playSong(s, startPosition = startPos)
+                    },
+                    onSongUpdated = { updatedSong ->
+                        updateSongInPlaylist(updatedSong)
+                    }
+                )
             },
             onReanalyze = {
                 dismissDialog()
