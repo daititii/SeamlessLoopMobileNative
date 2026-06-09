@@ -107,6 +107,33 @@ interface SongDao {
     suspend fun deleteSongsByIds(ids: List<Long>): Int
 
     @Query("""
+        UPDATE Songs SET
+            FileName = :fileName,
+            FilePath = :filePath,
+            mediaId = :mediaId,
+            duration = :duration,
+            TotalSamples = :totalSamples,
+            LastModified = :lastModified
+        WHERE Id = :id
+    """)
+    suspend fun updateSongLocationFields(
+        id: Long,
+        fileName: String,
+        filePath: String,
+        mediaId: Long,
+        duration: Long,
+        totalSamples: Long,
+        lastModified: Long
+    ): Int
+
+    @Query("UPDATE Songs SET TotalSamples = :totalSamples, LastModified = :lastModified WHERE Id = :id")
+    suspend fun updateSongTotalSamples(
+        id: Long,
+        totalSamples: Long,
+        lastModified: Long
+    ): Int
+
+    @Query("""
         UPDATE Songs SET 
             TotalSamples = :total, 
             DisplayName = :displayName, 
@@ -289,28 +316,43 @@ interface SongDao {
             }
         }
 
-        // 2. 按 MediaId 去重 (非 0)
+        // 2. 按 MediaId 去重 (非 0)。mediaId 可能因系统重扫/移动而不稳定，不能裸合并；
+        // 只有同名且时长接近的记录才视作同一首歌的重复影子。
         val mediaIdDuplicates = currentSongs.filter { it.mediaId != 0L }
             .groupBy { it.mediaId }
             .filter { it.value.size > 1 }
 
         mediaIdDuplicates.forEach { (_, songs) ->
-            val sortedSongs = songs.sortedByDescending { song ->
-                var score = 0
-                if (song.loopStart != 0L || song.loopEnd != 0L) score += 10
-                if (song.rating != 0) score += 5
-                if (!song.song.loopCandidatesJson.isNullOrBlank() && 
-                    song.song.loopCandidatesJson != "[]" && 
-                    song.song.loopCandidatesJson != "{}") score += 3
-                if (song.totalSamples != 0L) score += 2
-                score * 100000 - song.id
-            }
-            val keepSong = sortedSongs.first()
-            val discardSongs = sortedSongs.drop(1)
-            discardSongs.forEach { discard ->
-                migratePlaylistItems(discard.id, keepSong.id)
-                migratePlayQueue(discard.id, keepSong.id)
-                idsToDelete.add(discard.id)
+            val pending = songs.toMutableList()
+            while (pending.isNotEmpty()) {
+                val seed = pending.removeAt(0)
+                val duplicateShadows = pending.filter { candidate ->
+                    candidate.fileName.equals(seed.fileName, ignoreCase = true) &&
+                        kotlin.math.abs(candidate.duration - seed.duration) <= 500L
+                }
+                if (duplicateShadows.isEmpty()) continue
+
+                val duplicateIds = duplicateShadows.map { it.id }.toSet()
+                pending.removeAll { it.id in duplicateIds }
+
+                val sortedSongs = (listOf(seed) + duplicateShadows).sortedByDescending { song ->
+                    var score = 0
+                    if (song.loopStart != 0L || song.loopEnd != 0L) score += 10
+                    if (song.rating != 0) score += 5
+                    if (!song.song.loopCandidatesJson.isNullOrBlank() &&
+                        song.song.loopCandidatesJson != "[]" &&
+                        song.song.loopCandidatesJson != "{}") score += 3
+                    if (song.totalSamples != 0L) score += 2
+                    score * 100000 - song.id
+                }
+                val keepSong = sortedSongs.first()
+                val discardSongs = sortedSongs.drop(1)
+                discardSongs.forEach { discard ->
+                    migratePlaylistItems(discard.id, keepSong.id)
+                    migratePlayQueue(discard.id, keepSong.id)
+                    idsToDelete.add(discard.id)
+                    currentSongs.removeAll { it.id == discard.id }
+                }
             }
         }
 

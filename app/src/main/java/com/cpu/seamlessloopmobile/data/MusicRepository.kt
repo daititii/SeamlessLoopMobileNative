@@ -75,7 +75,7 @@ class MusicRepository(
 
     // --- 扫描与探测转发 (MusicScannerRepository) ---
 
-    suspend fun getInitialScannedSongs(context: Context): List<Song> = musicScannerRepository.getInitialScannedSongs(context)
+    suspend fun getInitialScannedSongs(context: Context): MusicScanResult = musicScannerRepository.getInitialScannedSongs(context)
     
     suspend fun cleanupStaleSongs(context: Context): Int = musicScannerRepository.cleanupStaleSongs(context)
 

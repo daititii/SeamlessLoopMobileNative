@@ -7,6 +7,7 @@ import com.cpu.seamlessloopmobile.data.MusicRepository
 import com.cpu.seamlessloopmobile.model.Folder
 import com.cpu.seamlessloopmobile.model.Song
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.*
@@ -104,14 +105,15 @@ class LibraryViewModel(
             _syncStatus.value = com.cpu.seamlessloopmobile.ui.state.DataUiState.Loading
             // 扫描完成后，数据库会发生变化，Room Flow 会自动通知到 UI 喵！🚀
             try {
-                withContext(Dispatchers.IO) {
-                    val cleanedCount = repository.cleanupStaleSongs(context)
-                    if (cleanedCount > 0) {
-                        android.util.Log.d("LibraryViewModel", "🧹 大扫除完成，清理了 $cleanedCount 条失效记录喵！")
-                    }
+                val scanResult = withContext(Dispatchers.IO) {
                     repository.getInitialScannedSongs(context)
                 }
-                _syncStatus.value = com.cpu.seamlessloopmobile.ui.state.DataUiState.Success("")
+                val completionState = com.cpu.seamlessloopmobile.ui.state.DataUiState.Success(scanResult.statusMessage())
+                _syncStatus.value = completionState
+                delay(2000L)
+                if (_syncStatus.value == completionState) {
+                    _syncStatus.value = com.cpu.seamlessloopmobile.ui.state.DataUiState.Success("")
+                }
             } catch (e: Exception) {
                 android.util.Log.e("LibraryViewModel", "❌ 扫描出错: ${e.message}")
                 _syncStatus.value = com.cpu.seamlessloopmobile.ui.state.DataUiState.Error(e.message ?: "未知错误")
