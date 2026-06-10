@@ -559,7 +559,7 @@ class MainViewModel(
     fun makeSongsFavorite(songPaths: Set<String>) {
         viewModelScope.launch {
             val songs = library.allSongs.value.filter { it.filePath in songPaths }
-            val currentList = _currentPlaylist.value?.toMutableList()
+            val currentList = _currentPlaylist.value?.toMutableList() ?: return@launch
             var updated = false
             songs.forEach { song ->
                 val currentRating = song.rating
@@ -567,16 +567,14 @@ class MainViewModel(
                     val nextRating = currentRating + 1
                     repository.updateSongRating(song, nextRating)
                     
-                    if (currentList != null) {
-                        val index = currentList.indexOfFirst { it.id == song.id }
-                        if (index != -1) {
-                            currentList[index] = currentList[index].copy(rating = nextRating)
-                            updated = true
-                        }
+                    val index = currentList.indexOfFirst { it.id == song.id }
+                    if (index != -1) {
+                        currentList[index] = currentList[index].copy(rating = nextRating)
+                        updated = true
                     }
                 }
             }
-            if (updated && currentList != null) {
+            if (updated) {
                 _currentPlaylist.postValue(currentList)
             }
         }
