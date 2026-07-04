@@ -40,41 +40,6 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Cache Android SDK components
-        id: cache_android_sdk
-        uses: actions/cache@v6
-        with:
-          path: |
-            ${{ env.ANDROID_HOME }}/platforms/android-35
-            ${{ env.ANDROID_HOME }}/build-tools/35.0.0
-            ${{ env.ANDROID_HOME }}/cmake/3.22.1
-            ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
-          key: android-sdk-${{ runner.os }}-api35-build-tools35.0.0-cmake3.22.1-ndk27.0.12077973
-
-      - name: Install Android SDK components
-        shell: bash
-        run: |
-          set -euo pipefail
-          required_paths=(
-            "$ANDROID_HOME/platforms/android-35"
-            "$ANDROID_HOME/build-tools/35.0.0"
-            "$ANDROID_HOME/cmake/3.22.1"
-            "$ANDROID_HOME/ndk/27.0.12077973"
-          )
-          missing=false
-          for path in "${required_paths[@]}"; do
-            if [[ ! -d "$path" ]]; then
-              echo "Missing Android SDK component: $path"
-              missing=true
-            fi
-          done
-
-          if [[ "$missing" == "true" ]]; then
-            yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.0.12077973"
-          else
-            echo "Android SDK components restored from cache or already installed."
-          fi
-
       - name: Resolve action build version
         id: version
         uses: actions/github-script@v9
@@ -104,8 +69,11 @@ jobs:
             }
 
             const safeBaseVersion = baseVersion.replace(/[^0-9A-Za-z._-]/g, '-');
-            const buildVersion = `${safeBaseVersion}-action.${context.runNumber}`;
 
+            const shortSha = context.sha.substring(0, 7);
+            
+            const buildVersion = `${safeBaseVersion}-action.${context.runNumber}-${shortSha}`;
+            
             core.info(`Base release version: ${baseVersion}`);
             core.info(`Action build version: ${buildVersion}`);
             core.setOutput('base_version', baseVersion);
@@ -122,50 +90,22 @@ jobs:
 
       - name: Build release APK
         run: ./gradlew :app:assembleRelease --build-cache
-        
-      - name: Sign release APK
-        id: sign_release
-        if: env.HAS_RELEASE_SIGNING == 'true' && github.event_name != 'pull_request'
-        env:
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-          ALIAS: ${{ secrets.ALIAS }}
-          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          BUILD_TOOLS_VERSION: '35.0.0'
-        run: |
-          echo "$SIGNING_KEY" | base64 --decode > release.keystore
-          
-          UNSIGNED_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
-          SIGNED_APK="app/build/outputs/apk/release/app-release-signed.apk"
-          
-          $ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner sign \
-            --ks release.keystore \
-            --ks-key-alias "$ALIAS" \
-            --ks-pass "pass:$KEY_STORE_PASSWORD" \
-            --key-pass "pass:$KEY_PASSWORD" \
-            --out "$SIGNED_APK" \
-            "$UNSIGNED_APK"
-          
-          rm release.keystore
-          echo "signedReleaseFile=$SIGNED_APK" >> "$GITHUB_OUTPUT"
 
       - name: Collect APKs
         env:
           BUILD_VERSION: ${{ steps.version.outputs.build_version }}
-          SIGNED_RELEASE_FILE: ${{ steps.sign_release.outputs.signedReleaseFile }}
         shell: bash
         run: |
           set -euo pipefail
           output_dir="build/action-apks"
           mkdir -p "$output_dir"
 
-          cp "app/build/outputs/apk/debug/app-debug.apk" \
-            "$output_dir/SeamlessLoopMobile-${BUILD_VERSION}-debug.apk"
+          if [[ -f "app/build/outputs/apk/debug/app-debug.apk" ]]; then
+            cp "app/build/outputs/apk/debug/app-debug.apk" \
+              "$output_dir/SeamlessLoopMobile-${BUILD_VERSION}-debug.apk"
+          fi
 
-          if [[ -n "${SIGNED_RELEASE_FILE}" && -f "${SIGNED_RELEASE_FILE}" ]]; then
-            cp "${SIGNED_RELEASE_FILE}" \
-              "$output_dir/SeamlessLoopMobile-${BUILD_VERSION}-release.apk"
-          elif [[ -f "app/build/outputs/apk/release/app-release.apk" ]]; then
+          if [[ -f "app/build/outputs/apk/release/app-release.apk" ]]; then
             cp "app/build/outputs/apk/release/app-release.apk" \
               "$output_dir/SeamlessLoopMobile-${BUILD_VERSION}-release.apk"
           elif [[ -f "app/build/outputs/apk/release/app-release-unsigned.apk" ]]; then
@@ -173,7 +113,6 @@ jobs:
               "$output_dir/SeamlessLoopMobile-${BUILD_VERSION}-release-unsigned.apk"
           else
             echo "No release APK found." >&2
-            find app/build/outputs/apk -type f -name "*.apk" -print >&2
             exit 1
           fi
 
@@ -182,6 +121,7 @@ jobs:
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v7
         with:
+          compression-level: 0
           name: SeamlessLoopMobile-${{ steps.version.outputs.build_version }}
           path: build/action-apks/*.apk
           if-no-files-found: error
