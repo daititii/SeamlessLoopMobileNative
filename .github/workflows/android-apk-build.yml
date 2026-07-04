@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up JDK
         uses: actions/setup-java@v5
@@ -40,7 +40,7 @@ jobs:
 
       - name: Cache Android SDK components
         id: cache_android_sdk
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ${{ env.ANDROID_HOME }}/platforms/android-35
@@ -53,14 +53,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           required_paths=(
             "$ANDROID_HOME/platforms/android-35"
             "$ANDROID_HOME/build-tools/35.0.0"
             "$ANDROID_HOME/cmake/3.22.1"
             "$ANDROID_HOME/ndk/27.0.12077973"
           )
-
           missing=false
           for path in "${required_paths[@]}"; do
             if [[ ! -d "$path" ]]; then
@@ -70,7 +68,7 @@ jobs:
           done
 
           if [[ "$missing" == "true" ]]; then
-            sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.0.12077973"
+            yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.0.12077973"
           else
             echo "Android SDK components restored from cache or already installed."
           fi
@@ -122,19 +120,32 @@ jobs:
 
       - name: Build release APK
         run: ./gradlew :app:assembleRelease --build-cache
-
+        
       - name: Sign release APK
         id: sign_release
         if: env.HAS_RELEASE_SIGNING == 'true'
-        uses: r0adkll/sign-android-release@v1
-        with:
-          releaseDirectory: app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ secrets.ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
         env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           BUILD_TOOLS_VERSION: '35.0.0'
+        run: |
+          echo "$SIGNING_KEY" | base64 --decode > release.keystore
+          
+          UNSIGNED_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          SIGNED_APK="app/build/outputs/apk/release/app-release-signed.apk"
+          
+          $ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner sign \
+            --ks release.keystore \
+            --ks-key-alias "$ALIAS" \
+            --ks-pass "pass:$KEY_STORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --out "$SIGNED_APK" \
+            "$UNSIGNED_APK"
+          
+          rm release.keystore
+          echo "signedReleaseFile=$SIGNED_APK" >> "$GITHUB_OUTPUT"
 
       - name: Collect APKs
         env:
@@ -143,7 +154,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           output_dir="build/action-apks"
           mkdir -p "$output_dir"
 
