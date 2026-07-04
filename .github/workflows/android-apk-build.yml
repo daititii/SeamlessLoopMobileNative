@@ -2,7 +2,9 @@ name: Android APK Build
 
 on:
   workflow_dispatch:
-
+  pull_request:      
+    branches:
+      - main
 permissions:
   contents: read
 
@@ -123,7 +125,7 @@ jobs:
         
       - name: Sign release APK
         id: sign_release
-        if: env.HAS_RELEASE_SIGNING == 'true'
+        if: env.HAS_RELEASE_SIGNING == 'true' && github.event_name != 'pull_request'
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
           ALIAS: ${{ secrets.ALIAS }}
