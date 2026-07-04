@@ -15,6 +15,8 @@ jobs:
     name: Build debug and release APKs
     runs-on: ubuntu-latest
     env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       HAS_RELEASE_SIGNING: ${{ secrets.SIGNING_KEY != '' && secrets.ALIAS != '' && secrets.KEY_STORE_PASSWORD != '' && secrets.KEY_PASSWORD != '' }}
 
     steps:
@@ -29,17 +31,53 @@ jobs:
           cache: gradle
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-cleanup: on-success
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+
+      - name: Cache Android SDK components
+        id: cache_android_sdk
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}/platforms/android-35
+            ${{ env.ANDROID_HOME }}/build-tools/35.0.0
+            ${{ env.ANDROID_HOME }}/cmake/3.22.1
+            ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+          key: android-sdk-${{ runner.os }}-api35-build-tools35.0.0-cmake3.22.1-ndk27.0.12077973
 
       - name: Install Android SDK components
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.0.12077973"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_paths=(
+            "$ANDROID_HOME/platforms/android-35"
+            "$ANDROID_HOME/build-tools/35.0.0"
+            "$ANDROID_HOME/cmake/3.22.1"
+            "$ANDROID_HOME/ndk/27.0.12077973"
+          )
+
+          missing=false
+          for path in "${required_paths[@]}"; do
+            if [[ ! -d "$path" ]]; then
+              echo "Missing Android SDK component: $path"
+              missing=true
+            fi
+          done
+
+          if [[ "$missing" == "true" ]]; then
+            sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.0.12077973"
+          else
+            echo "Android SDK components restored from cache or already installed."
+          fi
 
       - name: Resolve action build version
         id: version
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -77,13 +115,13 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest
+        run: ./gradlew :app:testDebugUnitTest --build-cache
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug 
+        run: ./gradlew :app:assembleDebug --build-cache
 
       - name: Build release APK
-        run: ./gradlew :app:assembleRelease
+        run: ./gradlew :app:assembleRelease --build-cache
 
       - name: Sign release APK
         id: sign_release
