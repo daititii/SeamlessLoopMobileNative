@@ -10,6 +10,7 @@ import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.data.MusicRepository
 import com.cpu.seamlessloopmobile.data.SettingsManager
+import com.cpu.seamlessloopmobile.data.ThemePreference
 import com.cpu.seamlessloopmobile.jni.LoopPoint
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.google.gson.Gson
@@ -38,6 +39,8 @@ enum class PlayMode {
 sealed class MusicUiState {
     object Home : MusicUiState()
     object Search : MusicUiState()
+    object Settings : MusicUiState()
+    object PlaybackStats : MusicUiState()
     
     // 一级分类展开
     @Deprecated("Use Tab navigation instead")
@@ -115,6 +118,8 @@ class MainViewModel(
         _playMode.value = savedMode
         isSeamlessLoopEnabled.value = manager.isSeamlessLoopEnabled
         _seamlessLoopCountLimit.value = manager.seamlessLoopCountLimit
+        _themePreference.value = manager.themePreference
+        _buttonHapticFeedbackEnabled.value = manager.buttonHapticFeedbackEnabled
         
         // 给底层发个信号，告诉它当前的初始模式，也把状态机的模式同步好喵！
         val bundle = android.os.Bundle().apply {
@@ -138,10 +143,26 @@ class MainViewModel(
     private val _seamlessLoopCountLimit = MutableLiveData(0)
     val seamlessLoopCountLimit: LiveData<Int> = _seamlessLoopCountLimit
 
+    private val _themePreference = MutableLiveData(ThemePreference.SYSTEM)
+    val themePreference: LiveData<ThemePreference> = _themePreference
+
+    private val _buttonHapticFeedbackEnabled = MutableLiveData(true)
+    val buttonHapticFeedbackEnabled: LiveData<Boolean> = _buttonHapticFeedbackEnabled
+
     fun setSeamlessLoopCountLimit(limit: Int) {
         val safeLimit = limit.coerceIn(0, SettingsManager.MAX_SEAMLESS_LOOP_COUNT_LIMIT)
         _seamlessLoopCountLimit.value = safeLimit
         settingsManager?.seamlessLoopCountLimit = safeLimit
+    }
+
+    fun setThemePreference(preference: ThemePreference) {
+        _themePreference.value = preference
+        settingsManager?.themePreference = preference
+    }
+
+    fun setButtonHapticFeedbackEnabled(enabled: Boolean) {
+        _buttonHapticFeedbackEnabled.value = enabled
+        settingsManager?.buttonHapticFeedbackEnabled = enabled
     }
 
     private fun restorePlaybackSession() {
@@ -189,15 +210,8 @@ class MainViewModel(
     private val _isSearchPanelVisible = MutableLiveData(false)
     val isSearchPanelVisible: LiveData<Boolean> = _isSearchPanelVisible
 
-    private val _isSettingsPanelVisible = MutableLiveData(false)
-    val isSettingsPanelVisible: LiveData<Boolean> = _isSettingsPanelVisible
-
     fun setSearchPanelVisible(visible: Boolean) {
         _isSearchPanelVisible.value = visible
-    }
-
-    fun setSettingsPanelVisible(visible: Boolean) {
-        _isSettingsPanelVisible.value = visible
     }
 
     // --- 循环检测状态只读流代理喵 ---

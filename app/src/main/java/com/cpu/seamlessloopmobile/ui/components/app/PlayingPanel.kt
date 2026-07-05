@@ -26,6 +26,7 @@ import com.cpu.seamlessloopmobile.ui.components.common.PlaybackControls
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.ui.theme.SeamlessLoopColors
 import androidx.compose.ui.platform.LocalContext
+import com.cpu.seamlessloopmobile.utils.rememberHapticClick
 
 /**
  * 全屏音频播放核心面板，已移动至 ui/components/app/ 目录并融入 SeamlessLoopTheme 配色喵！(๑•̀ㅂ•́)و✧
@@ -38,6 +39,7 @@ fun PlayingPanel(
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrev: () -> Unit,
+    buttonHapticFeedbackEnabled: Boolean = true,
     onMoreClick: (com.cpu.seamlessloopmobile.model.Song) -> Unit
 ) {
     val context = LocalContext.current
@@ -104,17 +106,26 @@ fun PlayingPanel(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // --- 顶部控制 ---
+                val topPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .height(topPadding + 64.dp)
+                        .padding(top = topPadding, start = 4.dp, end = 4.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     IconButton(
-                        onClick = onClose,
-                        modifier = Modifier.align(Alignment.CenterStart)
+                        onClick = rememberHapticClick(buttonHapticFeedbackEnabled, onClick = onClose),
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .size(56.dp)
                     ) {
-                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "收起", tint = SeamlessLoopColors.White)
+                        Icon(
+                            Icons.Default.KeyboardArrowDown,
+                            contentDescription = "收起",
+                            tint = SeamlessLoopColors.White,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                     
                     Row(
@@ -130,6 +141,20 @@ fun PlayingPanel(
                             )
                         }
                     }
+
+                    IconButton(
+                        onClick = rememberHapticClick(buttonHapticFeedbackEnabled) { onMoreClick(songItem) },
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .size(56.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = "更多",
+                            tint = SeamlessLoopColors.White,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
                 }
 
                 // --- 分页内容 ---
@@ -139,7 +164,12 @@ fun PlayingPanel(
                     beyondViewportPageCount = 1
                 ) { page ->
                     when (page) {
-                        0 -> MainInfoPage(songItem, isPlaying, onRatingClick = { viewModel.cycleSongRating(songItem) })
+                        0 -> MainInfoPage(
+                            songItem = songItem,
+                            isPlaying = isPlaying,
+                            buttonHapticFeedbackEnabled = buttonHapticFeedbackEnabled,
+                            onRatingClick = { viewModel.cycleSongRating(songItem) }
+                        )
                         1 -> {
                             val isDetecting by viewModel.isDetectingLoop.collectAsState()
                             
@@ -211,12 +241,12 @@ fun PlayingPanel(
                         isPreparing = isPreparing,
                         isError = isError,
                         showLoading = showLoading,
+                        buttonHapticFeedbackEnabled = buttonHapticFeedbackEnabled,
                         onTogglePlayMode = { viewModel.togglePlayMode() },
                         onToggleSeamlessLoop = { viewModel.setSeamlessLoopEnabled(!isSeamlessLoopEnabled) },
                         onPrev = onPrev,
                         onPlayPause = onPlayPause,
-                        onNext = onNext,
-                        onMoreClick = { onMoreClick(songItem) }
+                        onNext = onNext
                     )
                 }
             }

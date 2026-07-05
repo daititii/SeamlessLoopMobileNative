@@ -2,10 +2,9 @@ package com.cpu.seamlessloopmobile.ui.screen.search
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
@@ -23,7 +22,6 @@ fun SearchScreen(
     viewModel: MainViewModel,
     playSong: (Song) -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
     val allSongs by viewModel.library.allSongs.collectAsState()
     val isSelectionMode by viewModel.selection.isSelectionMode.observeAsState(false)
     val selectedItems by viewModel.selection.selectedItems.observeAsState(emptySet())
@@ -32,11 +30,12 @@ fun SearchScreen(
 
     var searchQuery by remember { mutableStateOf("") }
     var filteredSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    val visibleSongs = if (searchQuery.isBlank()) allSongs else filteredSongs
 
     // --- 300ms 响应式搜索防抖过滤机制喵！🔍 ---
     LaunchedEffect(searchQuery, allSongs) {
         if (searchQuery.isBlank()) {
-            filteredSongs = emptyList()
+            filteredSongs = allSongs
         } else {
             delay(300)
             filteredSongs = allSongs.filter { song ->
@@ -58,6 +57,7 @@ fun SearchScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {
@@ -65,17 +65,6 @@ fun SearchScreen(
                         value = searchQuery,
                         onValueChange = { searchQuery = it }
                     )
-                },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (isSelectionMode) {
-                            viewModel.clearSelection()
-                        } else {
-                            viewModel.goBack()
-                        }
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -92,13 +81,13 @@ fun SearchScreen(
             val currentPlayingPath = currentPlaylist.getOrNull(currentSongIndex)?.filePath
             
             SongListScreen(
-                songs = filteredSongs,
+                songs = visibleSongs,
                 currentPlayingSongPath = currentPlayingPath,
                 isSelectionMode = isSelectionMode,
                 selectedItems = selectedItems,
                 onPlaySong = { song ->
-                    val index = filteredSongs.indexOf(song)
-                    viewModel.updateCurrentPlaylist(filteredSongs, index)
+                    val index = visibleSongs.indexOf(song)
+                    viewModel.updateCurrentPlaylist(visibleSongs, index)
                     playSong(song)
                 },
                 onToggleSelection = { song ->

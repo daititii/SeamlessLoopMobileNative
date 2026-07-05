@@ -113,6 +113,10 @@ interface SongDao {
             mediaId = :mediaId,
             duration = :duration,
             TotalSamples = :totalSamples,
+            CoverPath = :coverPath,
+            MimeType = :mimeType,
+            SampleRateHz = :sampleRateHz,
+            BitrateKbps = :bitrateKbps,
             LastModified = :lastModified
         WHERE Id = :id
     """)
@@ -123,6 +127,10 @@ interface SongDao {
         mediaId: Long,
         duration: Long,
         totalSamples: Long,
+        coverPath: String?,
+        mimeType: String?,
+        sampleRateHz: Int?,
+        bitrateKbps: Int?,
         lastModified: Long
     ): Int
 
@@ -138,12 +146,26 @@ interface SongDao {
             TotalSamples = :total, 
             DisplayName = :displayName, 
             CoverPath = :coverPath, 
+            MimeType = :mimeType,
+            SampleRateHz = :sampleRateHz,
+            BitrateKbps = :bitrateKbps,
             ArtistId = :artistId, 
             AlbumId = :albumId,
             IsAbPartB = :isAbPartB
         WHERE Id = :id
     """)
-    suspend fun updateSongSyncFields(id: Long, total: Long, displayName: String?, coverPath: String?, artistId: Long?, albumId: Long?, isAbPartB: Boolean)
+    suspend fun updateSongSyncFields(
+        id: Long,
+        total: Long,
+        displayName: String?,
+        coverPath: String?,
+        mimeType: String?,
+        sampleRateHz: Int?,
+        bitrateKbps: Int?,
+        artistId: Long?,
+        albumId: Long?,
+        isAbPartB: Boolean
+    )
 
     @Transaction
     suspend fun updateSongsMetadataBatch(updates: List<SongMetadataUpdate>) {
@@ -156,6 +178,9 @@ interface SongDao {
                 total = update.total,
                 displayName = update.displayName,
                 coverPath = update.coverPath,
+                mimeType = update.mimeType,
+                sampleRateHz = update.sampleRateHz,
+                bitrateKbps = update.bitrateKbps,
                 artistId = update.artistId,
                 albumId = update.albumId,
                 isAbPartB = update.isAbPartB

@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.application)
-    // alias(libs.plugins.kotlin.android)
     alias(libs.plugins.google.devtools.ksp)
     alias(libs.plugins.compose.compiler)
 }
@@ -30,6 +29,10 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            isDebuggable = true
+            isMinifyEnabled = false
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -53,6 +56,10 @@ android {
         prefab = true
         compose = true
     }
+}
+
+composeCompiler {
+    includeSourceInformation = true
 }
 
 ksp {
@@ -97,5 +104,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.gson)
+    implementation(libs.haze.jetpack.compose)
+    implementation(libs.coil.compose)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

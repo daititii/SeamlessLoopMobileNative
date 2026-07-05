@@ -23,6 +23,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.cpu.seamlessloopmobile.jni.LoopPoint
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.ui.theme.SeamlessLoopColors
+import com.cpu.seamlessloopmobile.utils.rememberHapticClick
 import java.util.Locale
 
 /**
@@ -66,7 +67,7 @@ fun LoopCandidatesDialog(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = onDismiss) {
+                    IconButton(onClick = rememberHapticClick(onClick = onDismiss)) {
                         Icon(
                             Icons.Default.Close,
                             contentDescription = "关闭",

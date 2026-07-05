@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cpu.seamlessloopmobile.model.Playlist
 import com.cpu.seamlessloopmobile.model.Song
+import com.cpu.seamlessloopmobile.utils.rememberHapticClick
 
 // --- 通用标题 ---
 
@@ -181,11 +182,18 @@ fun SongListItem(
                     modifier = Modifier.padding(end = 8.dp)
                 )
             }
-            Icon(
-                imageVector = Icons.Default.MusicNote,
-                contentDescription = null,
-                tint = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(40.dp)
+            SongArtwork(
+                coverPath = song.coverPath,
+                contentDescription = song.displayName,
+                modifier = Modifier.size(44.dp),
+                shape = RoundedCornerShape(12.dp),
+                iconSize = 22.dp,
+                backgroundColor = if (isPlaying) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+                iconTint = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -205,7 +213,7 @@ fun SongListItem(
                 )
             }
             
-            IconButton(onClick = onMoreClick) {
+            IconButton(onClick = rememberHapticClick(onClick = onMoreClick)) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
                     contentDescription = "更多选项",
