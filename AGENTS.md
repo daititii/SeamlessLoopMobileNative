@@ -31,6 +31,10 @@ gradlew.bat connectedAndroidTest               # 需要设备
 
 - **播放统计**：`PlaybackStatsTracker` 只统计处于 `AudioPlayState.PLAYING` 的真实墙钟收听时长，数据由 `ListenStatsRepository` 写入 `filesDir/listen_stats.json`。排行按累计收听时长降序；不统计播放次数，也不统计循环次数。删除/丢失文件时保留历史并在统计页显示缺失状态。
 
+- **GitHub 同步**：设置页含 `GitHub 同步` 页面，用 GitHub Contents API 在单个 JSON 快照文件中同步歌单、循环点和评分。`GitHubSyncCoordinator` 负责导出本地 → 下载远端 → 合并 → 应用 → 带 SHA 乐观锁上传；`RoomSyncSnapshotStore` 负责 Room 快照转换；`SharedPreferencesPlaylistIdMapper` 维护歌单本地 ID 与同步 ID 映射。同步不包含音频文件、播放统计、播放队列、封面/格式展示字段或 App 设置。
+
+- **自动同步**：`GitHubAutoSyncScheduler` + `GitHubAutoSyncWorker` 使用 WorkManager 周期任务实现，默认关闭；开启后在网络可用时约每小时同步一次。配置/token 不完整时 UI 不允许开启；清除 GitHub 配置会关闭并取消 WorkManager 任务。当前不做 mutation-triggered 同步，因为评分/歌单/循环点的本地修改入口尚未全部统一接入 mutation hook。
+
 - **ViewModel/子管家**：`MainViewModel` 作为协调者，由 `MainViewModelFactory` 创建并通过属性赋值持有四个子管家（`LibraryViewModel`、`SelectionViewModel`、`PlaylistViewModel`、`LoopDetectionViewModel`）。注意：`LibraryViewModel` 与 `PlaylistViewModel` 是普通 class，共享 `MainViewModel.viewModelScope`；`SelectionViewModel` 与 `LoopDetectionViewModel` 继承 `ViewModel`，但也是由工厂直接创建后挂到 `MainViewModel` 上。自动循环点探测与试听调度由 `LoopDetectionViewModel` 管理，耗时调用需剥离出主线程以防止音频锁与 UI 锁争用。
 
 - **Native 层**：`app/src/main/cpp/` — 包含两个核心引擎：
@@ -77,7 +81,16 @@ gradlew.bat connectedAndroidTest               # 需要设备
 - `SettingsManager` — 单例 `getInstance(context)`，Gson 序列化，持久化 lastSongPath/lastPosition/playMode/isAbMode 等
 - `SettingsManager` 同时持久化 `isSeamlessLoopEnabled`、`seamlessLoopCountLimit`、`themePreference`、`buttonHapticFeedbackEnabled`；循环次数上限 0 表示无限循环，设置 UI 需校验为 `0..MAX_SEAMLESS_LOOP_COUNT_LIMIT` 的整数。
 - `data/stats/` — `TrackStat` + `ListenStatsRepository`，使用 JSON 保存真实收听时长统计。
-- `data/sync/` — 同步模型、portable identity、合并策略和后端接口契约，当前用于预留后续云/GitHub 同步。
+- `data/sync/` — GitHub/云同步模型、portable identity、合并策略、同步协调器、数据管理仓库、WorkManager 自动同步 Worker；`github/` 是 GitHub Contents API 后端，`room/` 是 Room 快照转换与歌单 ID 映射。
+
+**GitHub 同步注意事项**：
+- Token 当前由 `SharedPreferencesGitHubSyncStore` 以 `MODE_PRIVATE` 明文保存，只是 MVP；后续应迁移到 EncryptedSharedPreferences/Android KeyStore。
+- `GitHubSyncConfig.DEFAULT_BRANCH = "main"`，`DEFAULT_PATH = "seamless-loop/sync.json"`。
+- 需要 `INTERNET` 权限；依赖 OkHttp 与 WorkManager (`work-runtime-ktx`)。
+- 快照 schema version 当前为 `1`；歌曲 portable identity 主要使用 `fileName + durationMs`，辅以 `totalSamples` 和容差匹配。
+- 循环点 `0/0` 与评分 `0` 视为未设置，不能覆盖远端/本地已有实质数据。
+- 自动同步唯一任务名为 `com.cpu.seamlessloopmobile.GITHUB_AUTO_SYNC_PERIODIC`，周期 1 小时，网络可用约束，`ExistingPeriodicWorkPolicy.KEEP`。
+- Worker 和手动同步当前没有共享同一个 coordinator mutex；依赖 GitHub SHA 乐观锁、Room 事务与下次周期同步收敛。若要更强一致性，需要新增跨入口同步锁。
 
 **扫描流程**：
 `AudioScanner.scan()` (MediaStore) → `MusicScannerRepository.getInitialScannedSongs()` → 多级匹配（优先 fileName+duration，兼顾 mediaId/filePath/容差匹配）→ Artist/Album 预创建 → 批量写入 → A/B 标记（文件后缀 _B/_b/_loop/_Loop 设 `isAbPartB=true`，被大多数查询过滤）
@@ -115,7 +128,7 @@ gradlew.bat connectedAndroidTest               # 需要设备
 | 路径 | 职责 |
 |------|------|
 | `audio/` | PlaybackService, PlaybackManager (IMultiPlayer), MediaControlManager, QueueManager, AudioFocusManager, Notify, HeadsetPlugReceiver, SystemMediaProgressSyncController, MediaSessionPlaybackStateThrottler；`timer/` 睡眠定时器契约；`effects/` 音效控制契约；`stats/` 播放统计追踪 |
-| `data/` | MusicRepository + SongRepository + PlaylistRepository + MusicScannerRepository + SettingsManager + LoopDetectionRepository；`stats/` 收听时长 JSON 仓库；`sync/` 同步契约与合并策略 |
+| `data/` | MusicRepository + SongRepository + PlaylistRepository + MusicScannerRepository + SettingsManager + LoopDetectionRepository；`stats/` 收听时长 JSON 仓库；`sync/` GitHub 同步契约、合并、后端、Room 快照与自动同步 |
 | `db/` | AppDatabase + DateConverter + PcDatabaseImporter + PcDatabaseExporter（实体/DAO 已移到 model/） |
 | `model/` | 9 个 Room 实体 + 3 个 DAO + Song(Lookup POJO) + `SongMetadataUpdate`（定义在 Song.kt）+ LibraryItem + Folder 等 15 个 `.kt` 文件 |
 | `ui/screen/` | MainScreen + MainAppBar + MainTabsPager + PlaylistTabScreen + search/settings/stats/songlist 子目录 |

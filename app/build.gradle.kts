@@ -74,7 +74,9 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation("org.mockito:mockito-core:5.11.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.1")
     testImplementation(libs.androidx.core)
+    testImplementation(libs.androidx.work.testing)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 
@@ -106,5 +108,8 @@ dependencies {
     implementation(libs.gson)
     implementation(libs.haze.jetpack.compose)
     implementation(libs.coil.compose)
+    implementation(libs.okhttp)
+    implementation(libs.androidx.work.runtime.ktx)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

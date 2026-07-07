@@ -4,7 +4,9 @@ Android 端高性能**无缝循环音频播放器**，采用 Kotlin + C++ (Oboe)
 
 现在支持 PC 端数据库导入与手机端数据导出为 PC 端可识别数据库；手机上的循环点、评分、歌单等修改可以通过“导出 PC 端数据库”传回电脑端使用。
 
-当前界面已升级为更完整的本地播放器体验：底部主导航、毛玻璃迷你播放器、封面展示、独立搜索/设置/播放统计页面，以及统一的弹出式页面切换动画。
+当前界面参考了 NeriPlayer 的本地播放器体验，并结合本项目的无缝循环定位重新实现：底部主导航、毛玻璃迷你播放器、封面展示、独立搜索/设置/播放统计页面，以及统一的弹出式页面切换动画。
+
+同时新增 GitHub 同步：可通过 GitHub Contents API 在单个 JSON 快照中同步歌单、循环点和评分；自动同步默认关闭，用户开启后会在网络可用时由后台周期任务同步。
 
 ![a0e7472702aab23e61a4fb1f948aa075](./image/README/a0e7472702aab23e61a4fb1f948aa075.jpg)
 
@@ -18,6 +20,7 @@ Android 端高性能**无缝循环音频播放器**，采用 Kotlin + C++ (Oboe)
 - **Room 3NF 数据持久化**：精心设计的 Room 2.7.0-alpha11 规范 3NF 数据库，支持双指纹去重（优先匹配 `FileName+Duration`，兜底 `FilePath` 匹配）。
 - **现代播放器界面**：Compose + Material3 构建媒体库、搜索、设置、播放统计和全屏播放页；底部 `MiniPlayer` 支持 Haze 毛玻璃、封面、进度与常用播放控制。
 - **真实收听时长统计**：只统计处于播放状态的墙钟收听时间，按累计时长排行；不统计播放次数和循环次数，文件缺失时仍保留历史记录。
+- **GitHub 同步**：将歌单、循环点和评分同步到 GitHub 仓库中的单个 JSON 文件；支持手动同步、云端/本机摘要预览、用本机数据覆盖云端、删除云端快照，以及默认关闭的 WorkManager 自动同步。
 - **封面与音频格式展示**：扫描时写入封面 URI、MIME、采样率和码率，在列表、迷你播放器和播放页中统一展示。
 - **主题与触感反馈**：支持跟随系统/浅色/深色主题偏好，并可在设置中开关按钮触感反馈。
 
@@ -57,6 +60,16 @@ Android 端高性能**无缝循环音频播放器**，采用 Kotlin + C++ (Oboe)
 ```text
 seamless_loop_pc_export_yyyyMMdd_HHmmss.db
 ```
+
+### ☁️ GitHub 同步
+
+> [!TIP]
+> **点击底部“设置”，进入“GitHub 同步”。**
+> - 填写 GitHub Token、Owner、Repository、Branch 和同步文件 Path 后保存配置。
+> - 点击 **立即同步** 可手动同步歌单、循环点和评分。
+> - 开启 **自动同步** 后，APP 会在网络可用时约每小时后台同步一次；默认关闭。
+
+GitHub 同步使用仓库内的单个 JSON 快照文件（默认 `seamless-loop/sync.json`），不会上传音频文件本体，也不会同步播放统计、播放队列、封面/格式展示字段或 App 设置。循环点 `0/0` 和评分 `0` 会被视为“未设置”，不会覆盖已有的实质数据。
 
 
 
@@ -101,4 +114,4 @@ seamless_loop_pc_export_yyyyMMdd_HHmmss.db
 5. **Room Schema**：Room 9 张实体表和 3 个 DAO 的详细映射图。
 6. **包结构速查**：子模块（audio, data, db, viewmodel, model, scanner, jni 等）职责定义。
 
-本轮 UI 与统计改造记录见 [docs/2026-07-06_NeriPlayer风格UI与播放统计.md](./docs/2026-07-06_NeriPlayer风格UI与播放统计.md)。
+本轮 UI 与统计改造参考了 NeriPlayer 的视觉与交互方向，记录见 [docs/2026-07-06_NeriPlayer风格UI与播放统计.md](./docs/2026-07-06_NeriPlayer风格UI与播放统计.md)。GitHub 同步与自动同步记录见 [docs/2026-07-07_GitHub同步与自动同步.md](./docs/2026-07-07_GitHub同步与自动同步.md)。

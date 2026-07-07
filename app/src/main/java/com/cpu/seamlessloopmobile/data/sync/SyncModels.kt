@@ -18,7 +18,16 @@ data class SyncLoopPoint(
     val loopStart: Long,
     val loopEnd: Long,
     val lastModified: Long
-)
+) {
+    /** True when this entry carries a real loop range rather than an unset sentinel. */
+    val isSubstantive: Boolean get() = !isUnset(loopStart, loopEnd)
+
+    companion object {
+        /** Sentinel value indicating an unset/zero loop point. */
+        fun isUnset(loopStart: Long, loopEnd: Long): Boolean =
+            loopStart == 0L && loopEnd == 0L
+    }
+}
 
 /**
  * 用户评分快照数据（已与 songId 解耦）。
@@ -26,7 +35,12 @@ data class SyncLoopPoint(
 data class SyncRating(
     val rating: Int,
     val lastModified: Long
-)
+) {
+    companion object {
+        /** Sentinel value: rating 0 means unset. */
+        const val UNSET_RATING: Int = 0
+    }
+}
 
 /**
  * 歌单中的单曲条目，用 SyncSongIdentity 标识歌曲。
@@ -67,11 +81,16 @@ data class SyncRatingEntry(
 )
 
 /**
+ * 当前支持的快照 schema 版本。
+ */
+const val CURRENT_SYNC_SCHEMA_VERSION = 1
+
+/**
  * 完整的同步快照，包含播放列表、循环点和评分数据。
  * 不包含设备特定设置或原始 Room 数据库路径。
  */
 data class SyncSnapshot(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = CURRENT_SYNC_SCHEMA_VERSION,
     val deviceId: String,
     val exportedAt: Long,
     val playlists: List<SyncPlaylist> = emptyList(),

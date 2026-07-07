@@ -23,6 +23,7 @@ import com.cpu.seamlessloopmobile.ui.screen.songlist.MainSongListScreen
 import com.cpu.seamlessloopmobile.viewmodel.MainViewModel
 import com.cpu.seamlessloopmobile.viewmodel.MusicUiState
 import com.cpu.seamlessloopmobile.viewmodel.MusicDialog
+import com.cpu.seamlessloopmobile.viewmodel.GitHubSyncUiState
 import com.cpu.seamlessloopmobile.data.ThemePreference
 import androidx.activity.compose.BackHandler
 import com.cpu.seamlessloopmobile.ui.screen.search.SearchScreen
@@ -83,6 +84,7 @@ fun MainScreen(
     val isPlayingPanelVisible by viewModel.isPlayingPanelVisible.observeAsState(false)
     val seamlessLoopCountLimit by viewModel.seamlessLoopCountLimit.observeAsState(0)
     val buttonHapticFeedbackEnabled by viewModel.buttonHapticFeedbackEnabled.observeAsState(true)
+    val githubSyncState by viewModel.githubSyncState.observeAsState(GitHubSyncUiState())
     val bottomDestination = when (uiState) {
         is MusicUiState.Settings -> MainDestination.Settings
         is MusicUiState.Search -> MainDestination.Search
@@ -179,7 +181,16 @@ fun MainScreen(
                             },
                             isDarkTheme = isDarkTheme,
                             themePreference = themePreference,
-                            onThemePreferenceChange = onThemePreferenceChange
+                            onThemePreferenceChange = onThemePreferenceChange,
+                            githubSyncState = githubSyncState,
+                            onGitHubAutoSyncEnabledChange = remember(viewModel) { viewModel::setGitHubAutoSyncEnabled },
+                            onSaveGitHubSyncConfig = remember(viewModel) { viewModel::saveGitHubSyncConfig },
+                            onClearGitHubSyncConfig = remember(viewModel) { viewModel::clearGitHubSyncConfig },
+                            onRunGitHubSync = remember(viewModel) { viewModel::runGitHubSync },
+                            onRefreshSyncDataManagementPreview = remember(viewModel) { viewModel::refreshSyncDataManagementPreview },
+                            onForcePushLocalToCloud = remember(viewModel) { viewModel::forcePushLocalToCloud },
+                            onDeleteCloudSnapshot = remember(viewModel) { viewModel::deleteCloudSnapshot },
+                            onClearLocalSyncData = remember(viewModel) { viewModel::clearLocalSyncData }
                         )
                     }
 

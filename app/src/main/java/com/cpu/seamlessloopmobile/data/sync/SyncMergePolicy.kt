@@ -73,9 +73,13 @@ object DefaultPlaylistMergePolicy : PlaylistMergePolicy {
 }
 
 /**
- * 默认循环点合并策略：Last-Writer-Wins（根据 lastModified）。
+ * 默认循环点合并策略：Last-Writer-Wins（根据 lastModified），
+ * 附加保护规则：零值/未设置循环点不能覆盖有实质内容的循环点。
+ *
  * - 如果只有一方有数据则采用该方数据
- * - 如果双方都有数据则采用 lastModified 更新的一方
+ * - 如果双方都有数据且都有效则采用 lastModified 更新的一方
+ * - 保护规则：若 LWW 胜方为未设置（loopStart==0 && loopEnd==0），
+ *   而负方有实质内容，则保留负方数据，防止意外清空
  * - 如果双方都为 null 则返回 null
  */
 object DefaultLoopPointMergePolicy : LoopPointMergePolicy {
@@ -83,19 +87,43 @@ object DefaultLoopPointMergePolicy : LoopPointMergePolicy {
     override fun resolve(remote: SyncLoopPoint?, local: SyncLoopPoint?): SyncLoopPoint? {
         if (remote == null) return local
         if (local == null) return remote
-        return if (remote.lastModified >= local.lastModified) remote else local
+
+        val remoteIsUnset = remote.loopStart == 0L && remote.loopEnd == 0L
+        val localIsUnset = local.loopStart == 0L && local.loopEnd == 0L
+
+        return when {
+            // 保护规则：胜方未设置，负方有实质 → 保留负方
+            remoteIsUnset && !localIsUnset -> local
+            !remoteIsUnset && localIsUnset -> remote
+            // 双方都未设置或都有实质 → LWW
+            else -> if (remote.lastModified >= local.lastModified) remote else local
+        }
     }
 }
 
 /**
- * 默认评分合并策略：Last-Writer-Wins（根据 lastModified）。
- * 规则与 DefaultLoopPointMergePolicy 一致。
+ * 默认评分合并策略：Last-Writer-Wins（根据 lastModified），
+ * 附加保护规则：评分 0 视为未设置，不能覆盖非零评分。
+ *
+ * - 如果只有一方有数据则采用该方数据
+ * - 如果双方都有数据则采用 lastModified 更新的一方
+ * - 保护规则：若 LWW 胜方评分为 0（未设置），而负方有非零评分，
+ *   则保留负方数据
+ * - 如果双方都为 null 则返回 null
  */
 object DefaultRatingMergePolicy : RatingMergePolicy {
 
     override fun resolve(remote: SyncRating?, local: SyncRating?): SyncRating? {
         if (remote == null) return local
         if (local == null) return remote
-        return if (remote.lastModified >= local.lastModified) remote else local
+
+        return when {
+            // 保护规则：远程 0 未设置，本地有值 → 保留本地
+            remote.rating == 0 && local.rating != 0 -> local
+            // 保护规则：本地 0 未设置，远程有值 → 保留远程
+            local.rating == 0 && remote.rating != 0 -> remote
+            // 双方都未设置（0）或都有值 → LWW
+            else -> if (remote.lastModified >= local.lastModified) remote else local
+        }
     }
 }

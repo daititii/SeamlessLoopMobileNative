@@ -219,4 +219,74 @@ class SyncMergePolicyTest {
         val remote = SyncRating(3, now)
         assertEquals(remote, DefaultRatingMergePolicy.resolve(remote, local))
     }
+
+    // -----------------------------------------------------------------------
+    // 保护规则：循环点零值保护
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `loop point zero values protected - remote unset keeps local substantive`() {
+        val local = SyncLoopPoint(100L, 200L, 3000L)   // substantive
+        val remote = SyncLoopPoint(0L, 0L, 4000L)       // unset, newer
+        // remote is newer but unset → keep local
+        assertEquals(local, DefaultLoopPointMergePolicy.resolve(remote, local))
+    }
+
+    @Test
+    fun `loop point zero values protected - local unset keeps remote substantive`() {
+        val local = SyncLoopPoint(0L, 0L, 4000L)        // unset, newer
+        val remote = SyncLoopPoint(100L, 200L, 3000L)   // substantive
+        // local is newer but unset → keep remote
+        assertEquals(remote, DefaultLoopPointMergePolicy.resolve(remote, local))
+    }
+
+    @Test
+    fun `loop point both unset picks newer`() {
+        val local = SyncLoopPoint(0L, 0L, 1000L)
+        val remote = SyncLoopPoint(0L, 0L, 2000L)
+        // both unset, remote newer → remote
+        assertEquals(remote, DefaultLoopPointMergePolicy.resolve(remote, local))
+    }
+
+    @Test
+    fun `loop point both substantive normal LWW`() {
+        val local = SyncLoopPoint(100L, 200L, 2000L)
+        val remote = SyncLoopPoint(300L, 400L, 1000L)
+        // both substantive, local newer → local
+        assertEquals(local, DefaultLoopPointMergePolicy.resolve(remote, local))
+    }
+
+    // -----------------------------------------------------------------------
+    // 保护规则：评分零值保护
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `rating zero protected - remote unset keeps local substantive`() {
+        val local = SyncRating(4, 2000L)    // substantive
+        val remote = SyncRating(0, 3000L)   // unset, newer
+        // remote is newer but 0 → keep local
+        assertEquals(local, DefaultRatingMergePolicy.resolve(remote, local))
+    }
+
+    @Test
+    fun `rating zero protected - local unset keeps remote substantive`() {
+        val local = SyncRating(0, 3000L)    // unset, newer
+        val remote = SyncRating(4, 2000L)   // substantive
+        // local is newer but 0 → keep remote
+        assertEquals(remote, DefaultRatingMergePolicy.resolve(remote, local))
+    }
+
+    @Test
+    fun `rating both zero picks newer`() {
+        val local = SyncRating(0, 1000L)
+        val remote = SyncRating(0, 2000L)
+        assertEquals(remote, DefaultRatingMergePolicy.resolve(remote, local))
+    }
+
+    @Test
+    fun `rating both nonzero normal LWW`() {
+        val local = SyncRating(3, 2000L)
+        val remote = SyncRating(5, 1000L)
+        assertEquals(local, DefaultRatingMergePolicy.resolve(remote, local))
+    }
 }

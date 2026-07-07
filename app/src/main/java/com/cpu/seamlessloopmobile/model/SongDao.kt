@@ -48,6 +48,27 @@ interface SongDao {
     @Query("SELECT * FROM Songs WHERE FilePath LIKE :pathPrefix || '%'")
     suspend fun getSongsByPathPrefix(pathPrefix: String): List<Song>
 
+    // --- Sync 助手方法 ---
+
+    @Query("SELECT * FROM LoopPoints WHERE SongId = :songId LIMIT 1")
+    suspend fun getLoopPointBySongId(songId: Long): LoopPoint?
+
+    @Query("SELECT * FROM UserRatings WHERE SongId = :songId LIMIT 1")
+    suspend fun getUserRatingBySongId(songId: Long): UserRating?
+
+    @Transaction
+    @Query("""
+        SELECT * FROM Songs
+        WHERE FileName = :name
+          AND duration BETWEEN :minDuration AND :maxDuration
+          AND IsAbPartB = 0
+    """)
+    suspend fun getSongsByNameWithDurationRange(
+        name: String,
+        minDuration: Long,
+        maxDuration: Long
+    ): List<Song>
+
     // --- 关联表专用操作 ---
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -85,6 +106,12 @@ interface SongDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUserRatingsBatch(userRatings: List<UserRating>)
+
+    @Query("DELETE FROM LoopPoints")
+    suspend fun deleteAllLoopPoints(): Int
+
+    @Query("DELETE FROM UserRatings")
+    suspend fun deleteAllUserRatings(): Int
 
     // --- 基础增删改 (针对 Entity) ---
 
