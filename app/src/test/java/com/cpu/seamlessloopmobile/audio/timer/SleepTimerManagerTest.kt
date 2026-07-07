@@ -27,7 +27,7 @@ class SleepTimerManagerTest {
     @Test
     fun initialStateIsInactive() {
         var expired = false
-        val manager = SleepTimerManager(testScope) { expired = true }
+        val manager = SleepTimerManager(scope = testScope, onTimerExpired = { expired = true })
 
         assertFalse(manager.timerState.value.isActive)
         assertEquals(SleepTimerMode.COUNTDOWN, manager.timerState.value.mode)
@@ -39,7 +39,7 @@ class SleepTimerManagerTest {
     @Test
     fun startCountdownActivatesTimer() {
         var expired = false
-        val manager = SleepTimerManager(testScope) { expired = true }
+        val manager = SleepTimerManager(scope = testScope, onTimerExpired = { expired = true })
 
         manager.startCountdown(1)
 
@@ -71,7 +71,7 @@ class SleepTimerManagerTest {
     @Test
     fun startFinishCurrentActivatesTimer() {
         var expired = false
-        val manager = SleepTimerManager(testScope) { expired = true }
+        val manager = SleepTimerManager(scope = testScope, onTimerExpired = { expired = true })
 
         manager.startFinishCurrent()
 
@@ -84,7 +84,7 @@ class SleepTimerManagerTest {
     @Test
     fun startFinishPlaylistActivatesTimer() {
         var expired = false
-        val manager = SleepTimerManager(testScope) { expired = true }
+        val manager = SleepTimerManager(scope = testScope, onTimerExpired = { expired = true })
 
         manager.startFinishPlaylist()
 
@@ -97,7 +97,7 @@ class SleepTimerManagerTest {
     @Test
     fun cancelResetsState() {
         var expired = false
-        val manager = SleepTimerManager(testScope) { expired = true }
+        val manager = SleepTimerManager(scope = testScope, onTimerExpired = { expired = true })
 
         manager.startCountdown(5)
         assertTrue(manager.timerState.value.isActive)
@@ -126,7 +126,7 @@ class SleepTimerManagerTest {
     @Test
     fun shouldStopOnTrackEndFinishCurrentReturnsTrue() {
         var expired = false
-        val manager = SleepTimerManager(testScope) { expired = true }
+        val manager = SleepTimerManager(scope = testScope, onTimerExpired = { expired = true })
 
         manager.startFinishCurrent()
         assertTrue(manager.shouldStopOnTrackEnd(isLastInPlaylist = false))
@@ -137,7 +137,7 @@ class SleepTimerManagerTest {
     @Test
     fun shouldStopOnTrackEndFinishPlaylistOnlyWhenLast() {
         var expired = false
-        val manager = SleepTimerManager(testScope) { expired = true }
+        val manager = SleepTimerManager(scope = testScope, onTimerExpired = { expired = true })
 
         manager.startFinishPlaylist()
 
@@ -155,7 +155,7 @@ class SleepTimerManagerTest {
     @Test
     fun shouldStopOnTrackEndInactiveTimerReturnsFalse() {
         var expired = false
-        val manager = SleepTimerManager(testScope) { expired = true }
+        val manager = SleepTimerManager(scope = testScope, onTimerExpired = { expired = true })
 
         assertFalse(manager.shouldStopOnTrackEnd(isLastInPlaylist = true))
         assertFalse(expired)
@@ -164,7 +164,7 @@ class SleepTimerManagerTest {
     @Test
     fun startCountdownWithNonPositiveIsNoOp() {
         var expired = false
-        val manager = SleepTimerManager(testScope) { expired = true }
+        val manager = SleepTimerManager(scope = testScope, onTimerExpired = { expired = true })
 
         manager.startCountdown(0)
         assertFalse(manager.timerState.value.isActive)
@@ -176,13 +176,13 @@ class SleepTimerManagerTest {
 
     @Test
     fun formatRemainingTimeInactiveReturnsEmpty() {
-        val manager = SleepTimerManager(testScope) {}
+        val manager = SleepTimerManager(scope = testScope, onTimerExpired = {})
         assertEquals("", manager.formatRemainingTime())
     }
 
     @Test
     fun formatRemainingTimeCountdown() {
-        val manager = SleepTimerManager(testScope) {}
+        val manager = SleepTimerManager(scope = testScope, onTimerExpired = {})
         manager.startCountdown(2) // 2 minutes
 
         assertEquals("02:00", manager.formatRemainingTime())
@@ -190,7 +190,7 @@ class SleepTimerManagerTest {
 
     @Test
     fun formatRemainingTimeFinishModesShowDash() {
-        val manager = SleepTimerManager(testScope) {}
+        val manager = SleepTimerManager(scope = testScope, onTimerExpired = {})
 
         manager.startFinishCurrent()
         assertEquals("--:--", manager.formatRemainingTime())
