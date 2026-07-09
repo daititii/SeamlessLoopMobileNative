@@ -23,7 +23,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,12 +33,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,15 +60,44 @@ fun PlaybackStatsScreen(
     repository: ListenStatsRepository,
     buttonHapticFeedbackEnabled: Boolean = true,
     onTrackClick: (TrackStat) -> Unit = {},
+    onClearStats: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val allStats by repository.allStats.collectAsState()
+    var showClearStatsDialog by remember { mutableStateOf(false) }
     val sortedStats = remember(allStats) {
         allStats
             .filter { it.totalListenMs > 0L }
             .sortedByDescending { it.totalListenMs }
     }
     val totalListenMs = remember(sortedStats) { sortedStats.sumOf { it.totalListenMs } }
+
+    if (showClearStatsDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearStatsDialog = false },
+            title = { Text("清除播放统计") },
+            text = { Text("这会清空所有歌曲的收听时长统计，不会删除音乐文件。") },
+            confirmButton = {
+                TextButton(
+                    onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
+                        onClearStats()
+                        showClearStatsDialog = false
+                    }
+                ) {
+                    Text("清除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
+                        showClearStatsDialog = false
+                    }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -75,10 +109,21 @@ fun PlaybackStatsScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
+                actions = {
+                    IconButton(
+                        onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
+                            showClearStatsDialog = true
+                        },
+                        enabled = sortedStats.isNotEmpty()
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "清除播放统计")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
         }

@@ -208,6 +208,9 @@ fun MainScreen(
                                     }
                                 }
                             },
+                            onClearStats = remember(statsRepository, coroutineScope) {
+                                { coroutineScope.launch { statsRepository.clearAll() } }
+                            },
                             onBack = remember(viewModel) { { viewModel.goBack() } }
                         )
                     }
