@@ -13,7 +13,7 @@ data class MergeResult(
 /**
  * 双向同步合并引擎。
  *
- * 接收远端（可能为 null）和本地快照，按歌曲身份标识和歌单 ID 进行合并，
+ * 接收远端（可能为 null）和本地快照，按稳定歌曲身份标识和歌单 ID 进行合并，
  * 使用可注入的策略对象处理各数据类型的冲突。
  */
 class SyncMergeEngine(
@@ -26,7 +26,7 @@ class SyncMergeEngine(
      * 合并远端和本地快照。
      * - 如果远端为 null，直接返回本地快照（首次同步）
      * - 按歌单 ID 合并播放列表
-     * - 按歌曲身份标识合并循环点和评分
+     * - 按 fileName(忽略大小写)+durationMs 合并循环点和评分；totalSamples 仅作辅助匹配字段
      * - 合并结果保留本地的 schemaVersion、deviceId、exportedAt
      *
      * @param remote 来自远端的快照（可能为 null）
@@ -51,10 +51,10 @@ class SyncMergeEngine(
         val mergedLoopPoints = mergeEntries(
             remote.loopPoints,
             local.loopPoints,
-            { it.song },
+            { it.song.stableKey() },
             { r, l ->
                 val merged = loopPointPolicy.resolve(r?.loopPoint, l?.loopPoint)
-                val song = l?.song ?: r?.song
+                val song = preferStableSongIdentity(remote = r?.song, local = l?.song)
                 if (song != null && merged != null) SyncLoopPointEntry(song, merged) else null
             },
             conflicts
@@ -62,10 +62,10 @@ class SyncMergeEngine(
         val mergedRatings = mergeEntries(
             remote.ratings,
             local.ratings,
-            { it.song },
+            { it.song.stableKey() },
             { r, l ->
                 val merged = ratingPolicy.resolve(r?.rating, l?.rating)
-                val song = l?.song ?: r?.song
+                val song = preferStableSongIdentity(remote = r?.song, local = l?.song)
                 if (song != null && merged != null) SyncRatingEntry(song, merged) else null
             },
             conflicts
@@ -113,8 +113,8 @@ class SyncMergeEngine(
             val localPlaylist = localById[id]
             val remotePlaylist = remoteById[id]
 
-            if (localPlaylist == null) return@mapNotNull remotePlaylist
-            if (remotePlaylist == null) return@mapNotNull localPlaylist
+            if (localPlaylist == null) return@mapNotNull remotePlaylist?.withoutDuplicateStableItems()
+            if (remotePlaylist == null) return@mapNotNull localPlaylist.withoutDuplicateStableItems()
 
             // Record conflict if names differ
             if (localPlaylist.name != remotePlaylist.name) {
@@ -128,9 +128,12 @@ class SyncMergeEngine(
                     )
                 )
             }
-            playlistPolicy.resolve(remotePlaylist, localPlaylist)
+            playlistPolicy.resolve(remotePlaylist, localPlaylist).withoutDuplicateStableItems()
         }.sortedBy { it.name }
     }
+
+    private fun SyncPlaylist.withoutDuplicateStableItems(): SyncPlaylist =
+        copy(items = items.distinctBy { it.song.stableKey() })
 
     /**
      * 泛型条目合并辅助方法。

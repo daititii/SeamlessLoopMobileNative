@@ -177,6 +177,95 @@ class SyncMergeEngineTest {
     }
 
     @Test
+    fun `merge ratings with same file and duration ignores totalSamples mismatch and keeps remote identity`() {
+        val remoteSong = SyncSongIdentity("1-02. Summer Pockets.flac", 239_987L, 10_583_412L)
+        val localSong = SyncSongIdentity("1-02. Summer Pockets.flac", 239_987L, 10_583_426L)
+        val local = SyncSnapshot(
+            deviceId = "local",
+            exportedAt = 100L,
+            ratings = listOf(
+                SyncRatingEntry(localSong, SyncRating(4, 1_000L))
+            )
+        )
+        val remote = SyncSnapshot(
+            deviceId = "remote",
+            exportedAt = 200L,
+            ratings = listOf(
+                SyncRatingEntry(remoteSong, SyncRating(3, 2_000L))
+            )
+        )
+
+        val result = runBlockingTest { engine.merge(remote, local) }
+
+        assertEquals(1, result.snapshot.ratings.size)
+        assertEquals(remoteSong, result.snapshot.ratings.single().song)
+        assertEquals(3, result.snapshot.ratings.single().rating.rating)
+    }
+
+    @Test
+    fun `merge loop points with same file and duration ignores totalSamples mismatch and keeps remote identity`() {
+        val remoteSong = SyncSongIdentity("loop.flac", 120_000L, 5_292_000L)
+        val localSong = SyncSongIdentity("loop.flac", 120_000L, 5_292_014L)
+        val local = SyncSnapshot(
+            deviceId = "local",
+            exportedAt = 100L,
+            loopPoints = listOf(
+                SyncLoopPointEntry(localSong, SyncLoopPoint(100L, 1_000L, 1_000L))
+            )
+        )
+        val remote = SyncSnapshot(
+            deviceId = "remote",
+            exportedAt = 200L,
+            loopPoints = listOf(
+                SyncLoopPointEntry(remoteSong, SyncLoopPoint(200L, 2_000L, 2_000L))
+            )
+        )
+
+        val result = runBlockingTest { engine.merge(remote, local) }
+
+        assertEquals(1, result.snapshot.loopPoints.size)
+        assertEquals(remoteSong, result.snapshot.loopPoints.single().song)
+        assertEquals(200L, result.snapshot.loopPoints.single().loopPoint.loopStart)
+    }
+
+    @Test
+    fun `merge playlist items with same file and duration ignores totalSamples mismatch and keeps remote identity`() {
+        val remoteSong = SyncSongIdentity("track.flac", 180_000L, 7_938_000L)
+        val localSong = SyncSongIdentity("track.flac", 180_000L, 7_938_014L)
+        val local = SyncSnapshot(
+            deviceId = "local",
+            exportedAt = 100L,
+            playlists = listOf(
+                SyncPlaylist(
+                    id = "p1",
+                    name = "Playlist",
+                    createdAt = 100L,
+                    modifiedAt = 3_000L,
+                    items = listOf(SyncPlaylistItem(localSong, sortOrder = 0))
+                )
+            )
+        )
+        val remote = SyncSnapshot(
+            deviceId = "remote",
+            exportedAt = 200L,
+            playlists = listOf(
+                SyncPlaylist(
+                    id = "p1",
+                    name = "Playlist",
+                    createdAt = 100L,
+                    modifiedAt = 2_000L,
+                    items = listOf(SyncPlaylistItem(remoteSong, sortOrder = 0))
+                )
+            )
+        )
+
+        val result = runBlockingTest { engine.merge(remote, local) }
+
+        assertEquals(1, result.snapshot.playlists.single().items.size)
+        assertEquals(remoteSong, result.snapshot.playlists.single().items.single().song)
+    }
+
+    @Test
     fun `merge loop points from different songs`() {
         val songA = SyncSongIdentity("a.mp3", 10000L)
         val songB = SyncSongIdentity("b.mp3", 20000L)

@@ -47,25 +47,32 @@ interface RatingMergePolicy {
 /**
  * 默认播放列表合并策略：
  * - 歌单元数据采用 Last-Writer-Wins（根据 modifiedAt）
- * - 歌单内的歌曲条目按 song identity 去重合并，保持最新的 sortOrder
+ * - 歌单内的歌曲条目按 fileName(忽略大小写)+durationMs 去重合并；totalSamples 不参与去重
+ * - 同一歌曲两端 totalSamples 不同时，尽量保留远端 SyncSongIdentity，避免跨端反复改 JSON
  */
 object DefaultPlaylistMergePolicy : PlaylistMergePolicy {
 
     override fun resolve(remote: SyncPlaylist, local: SyncPlaylist): SyncPlaylist {
         val (winner, loser) = if (remote.modifiedAt >= local.modifiedAt) remote to local else local to remote
-        val mergedItems = mergeItems(winner.items, loser.items)
+        val remoteItemsByKey = remote.items.associateBy { it.song.stableKey() }
+        val mergedItems = mergeItems(winner.items, loser.items, remoteItemsByKey)
         return winner.copy(items = mergedItems)
     }
 
     private fun mergeItems(
         base: List<SyncPlaylistItem>,
-        other: List<SyncPlaylistItem>
+        other: List<SyncPlaylistItem>,
+        remoteItemsByKey: Map<SyncSongStableKey, SyncPlaylistItem>
     ): List<SyncPlaylistItem> {
-        val result = base.toMutableList()
-        val seenIdentities = base.map { it.song }.toMutableSet()
+        val result = base.map { item ->
+            val remoteItem = remoteItemsByKey[item.song.stableKey()]
+            if (remoteItem != null) item.copy(song = remoteItem.song) else item
+        }.toMutableList()
+        val seenIdentities = base.map { it.song.stableKey() }.toMutableSet()
         for (item in other) {
-            if (seenIdentities.add(item.song)) {
-                result.add(item)
+            val key = item.song.stableKey()
+            if (seenIdentities.add(key)) {
+                result.add(remoteItemsByKey[key] ?: item)
             }
         }
         return result.sortedBy { it.sortOrder }

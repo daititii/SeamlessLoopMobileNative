@@ -21,6 +21,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -152,6 +153,55 @@ class RoomSyncSnapshotStoreTest {
         assertEquals(1, playlists.size)
         assertEquals("Remote List", playlists.single().playlist.name)
         val playlistSongs = playlistDao.getSongsInPlaylist(playlists.single().playlist.id)
+        assertEquals(listOf(localSongId), playlistSongs.map { it.id })
+    }
+
+    @Test
+    fun applySnapshotMatchesByExactDurationBeforeTotalSamplesAndToleratesSampleDifferences() = runBlocking {
+        val localSongId = insertSong(
+            fileName = "1-02. Summer Pockets.flac",
+            filePath = "/local/1-02. Summer Pockets.flac",
+            duration = 239_987L,
+            totalSamples = 10_583_412L
+        )
+        val remoteIdentity = SyncSongIdentity(
+            fileName = "1-02. Summer Pockets.flac",
+            durationMs = 239_987L,
+            totalSamples = 10_583_426L
+        )
+
+        val report = store.applySnapshot(
+            SyncSnapshot(
+                deviceId = "desktop",
+                exportedAt = 20_000L,
+                ratings = listOf(
+                    SyncRatingEntry(remoteIdentity, SyncRating(4, 20_000L))
+                ),
+                loopPoints = listOf(
+                    SyncLoopPointEntry(remoteIdentity, SyncLoopPoint(1_000L, 10_000L, 20_000L))
+                ),
+                playlists = listOf(
+                    SyncPlaylist(
+                        id = "desktop-playlist",
+                        name = "Desktop Playlist",
+                        createdAt = 10_000L,
+                        modifiedAt = 20_000L,
+                        items = listOf(SyncPlaylistItem(remoteIdentity, sortOrder = 0))
+                    )
+                )
+            )
+        )
+
+        assertEquals(1, report.ratingsDownloaded)
+        assertEquals(1, report.loopPointsDownloaded)
+        assertEquals(1, report.playlistsDownloaded)
+        assertTrue(report.conflicts.isEmpty())
+        val updatedSong = songDao.getSongById(localSongId)
+        assertNotNull(updatedSong)
+        assertEquals(4, updatedSong?.rating)
+        assertEquals(1_000L, updatedSong?.loopStart)
+        assertEquals(10_000L, updatedSong?.loopEnd)
+        val playlistSongs = playlistDao.getSongsInPlaylist(playlistDao.getPlaylistsWithCounts().single().playlist.id)
         assertEquals(listOf(localSongId), playlistSongs.map { it.id })
     }
 

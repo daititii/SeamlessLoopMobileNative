@@ -87,7 +87,7 @@ gradlew.bat connectedAndroidTest               # 需要设备
 - Token 当前由 `SharedPreferencesGitHubSyncStore` 以 `MODE_PRIVATE` 明文保存，只是 MVP；后续应迁移到 EncryptedSharedPreferences/Android KeyStore。
 - `GitHubSyncConfig.DEFAULT_BRANCH = "main"`，`DEFAULT_PATH = "seamless-loop/sync.json"`。
 - 需要 `INTERNET` 权限；依赖 OkHttp 与 WorkManager (`work-runtime-ktx`)。
-- 快照 schema version 当前为 `1`；歌曲 portable identity 主要使用 `fileName + durationMs`，辅以 `totalSamples` 和容差匹配。
+- 快照 schema version 当前为 `1`；同步合并主键使用 `fileName.lowercase() + durationMs`，`totalSamples` 只作辅助匹配字段。手机/桌面端同曲 sample 数可能有微差，不能用 `totalSamples` 区分同 duration 歌曲；合并同一 identity 时优先保留远端原始 `SyncSongIdentity.totalSamples`，避免跨端反复改 JSON。
 - 循环点 `0/0` 与评分 `0` 视为未设置，不能覆盖远端/本地已有实质数据。
 - 自动同步唯一任务名为 `com.cpu.seamlessloopmobile.GITHUB_AUTO_SYNC_PERIODIC`，周期 1 小时，网络可用约束，`ExistingPeriodicWorkPolicy.KEEP`。
 - Worker 和手动同步当前没有共享同一个 coordinator mutex；依赖 GitHub SHA 乐观锁、Room 事务与下次周期同步收敛。若要更强一致性，需要新增跨入口同步锁。

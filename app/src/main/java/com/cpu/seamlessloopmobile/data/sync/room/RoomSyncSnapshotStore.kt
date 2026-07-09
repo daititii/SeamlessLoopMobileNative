@@ -19,6 +19,7 @@ import com.cpu.seamlessloopmobile.data.sync.SyncReport
 import com.cpu.seamlessloopmobile.data.sync.SyncSnapshot
 import com.cpu.seamlessloopmobile.data.sync.SyncSongIdentity
 import com.cpu.seamlessloopmobile.data.sync.SyncSnapshotStore
+import com.cpu.seamlessloopmobile.data.sync.stableKey
 import kotlin.math.abs
 
 /**
@@ -223,7 +224,7 @@ class RoomSyncSnapshotStore(
                     .thenBy { it.song.fileName.lowercase() }
                     .thenBy { it.song.durationMs }
             )
-            val matchedSongIds = orderedItems.mapNotNull { item ->
+            val matchedSongIds = orderedItems.distinctBy { it.song.stableKey() }.mapNotNull { item ->
                 val song = matcher.match(item.song)
                 if (song == null) {
                     conflicts.add(SyncConflict(
@@ -315,7 +316,7 @@ class RoomSyncSnapshotStore(
         /**
          * 执行多级匹配。
          * 顺序：精确 fileName+duration → 精确 fileName+totalSamples →
-         *       fileName + duration ±200ms → 唯一同名。
+         *       fileName+totalSamples ±10000 → fileName+duration ±200ms → 唯一同名。
          */
         fun match(identity: SyncSongIdentity): Song? {
             val key = identity.fileName.lowercase()
@@ -334,8 +335,16 @@ class RoomSyncSnapshotStore(
                     ?.let { return it }
             }
 
-            // 3. fileName + duration ±200ms
+            // 3. fileName + totalSamples ±10000
             val candidates = byName[key].orEmpty()
+            identity.totalSamples?.let { samples ->
+                val sampleToleranceMatches = candidates.filter {
+                    it.totalSamples > 0L && abs(it.totalSamples - samples) <= TOTAL_SAMPLES_TOLERANCE
+                }
+                if (sampleToleranceMatches.size == 1) return sampleToleranceMatches.first()
+            }
+
+            // 4. fileName + duration ±200ms
             if (candidates.isNotEmpty()) {
                 val toleranceMatches = candidates.filter {
                     abs(it.duration - identity.durationMs) <= 200L
@@ -343,10 +352,14 @@ class RoomSyncSnapshotStore(
                 if (toleranceMatches.size == 1) return toleranceMatches.first()
             }
 
-            // 4. 唯一同名（只有一个候选）
+            // 5. 唯一同名（只有一个候选）
             if (candidates.size == 1) return candidates.first()
 
             return null
+        }
+
+        companion object {
+            private const val TOTAL_SAMPLES_TOLERANCE = 10_000L
         }
     }
 
@@ -370,6 +383,7 @@ class RoomSyncSnapshotStore(
         items: List<SyncPlaylistItem>
     ): String {
         val itemsPart = items
+            .distinctBy { it.song.stableKey() }
             .sortedWith(
                 compareBy<SyncPlaylistItem> { it.sortOrder }
                     .thenBy { it.song.fileName.lowercase() }

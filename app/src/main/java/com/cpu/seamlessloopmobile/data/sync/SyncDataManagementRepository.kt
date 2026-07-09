@@ -92,15 +92,17 @@ class SyncDataManagementRepository(
         val matcher = SongIdentityMatcher(allLocalSongs)
 
         // 收集所有唯一的歌曲身份引用
-        val allSongRefs = mutableSetOf<SyncSongIdentity>()
-        snapshot.playlists.forEach { pl -> pl.items.forEach { allSongRefs.add(it.song) } }
-        snapshot.loopPoints.forEach { allSongRefs.add(it.song) }
-        snapshot.ratings.forEach { allSongRefs.add(it.song) }
+        val allSongRefs = linkedMapOf<SyncSongStableKey, SyncSongIdentity>()
+        snapshot.playlists.forEach { pl ->
+            pl.items.forEach { allSongRefs.putIfAbsent(it.song.stableKey(), it.song) }
+        }
+        snapshot.loopPoints.forEach { allSongRefs.putIfAbsent(it.song.stableKey(), it.song) }
+        snapshot.ratings.forEach { allSongRefs.putIfAbsent(it.song.stableKey(), it.song) }
 
         val matched = mutableSetOf<SyncSongIdentity>()
         val missing = mutableListOf<SyncSongIdentity>()
 
-        for (ref in allSongRefs) {
+        for (ref in allSongRefs.values) {
             if (matcher.match(ref) != null) {
                 matched.add(ref)
             } else {
@@ -237,6 +239,8 @@ class SyncDataManagementRepository(
 
     // ===================================================================
     // 歌曲身份匹配器（独立副本，与 RoomSyncSnapshotStore 中逻辑一致）
+    // 顺序：精确 fileName+duration → 精确 fileName+totalSamples →
+    //       fileName+totalSamples ±10000 → fileName+duration ±200ms → 唯一同名。
     // ===================================================================
 
     private class SongIdentityMatcher(allLocalSongs: List<Song>) {
@@ -261,12 +265,22 @@ class SyncDataManagementRepository(
                     ?.let { return it }
             }
             val candidates = byName[key].orEmpty()
+            identity.totalSamples?.let { samples ->
+                val sampleToleranceMatches = candidates.filter {
+                    it.totalSamples > 0L && abs(it.totalSamples - samples) <= TOTAL_SAMPLES_TOLERANCE
+                }
+                if (sampleToleranceMatches.size == 1) return sampleToleranceMatches.first()
+            }
             val toleranceMatches = candidates.filter {
                 abs(it.duration - identity.durationMs) <= 200L
             }
             if (toleranceMatches.size == 1) return toleranceMatches.first()
             if (candidates.size == 1) return candidates.first()
             return null
+        }
+
+        companion object {
+            private const val TOTAL_SAMPLES_TOLERANCE = 10_000L
         }
     }
 }

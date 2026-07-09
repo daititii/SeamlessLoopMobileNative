@@ -216,6 +216,51 @@ class SyncDataManagementRepositoryTest {
         assertEquals(3, cloud.playlistItems)
     }
 
+    @Test
+    fun `preview treats same file and duration with different totalSamples as matched same reference`() = runBlocking {
+        insertSong(
+            fileName = "1-02. Summer Pockets.flac",
+            filePath = "/a/1-02. Summer Pockets.flac",
+            duration = 239_987L,
+            totalSamples = 10_583_412L
+        )
+
+        val phoneRef = SyncSongIdentity("1-02. Summer Pockets.flac", 239_987L, 10_583_412L)
+        val desktopRef = SyncSongIdentity("1-02. Summer Pockets.flac", 239_987L, 10_583_426L)
+        val cloudSnapshot = SyncSnapshot(
+            deviceId = "desktop",
+            exportedAt = 100L,
+            playlists = listOf(
+                SyncPlaylist(
+                    id = "p1",
+                    name = "P1",
+                    createdAt = 0L,
+                    modifiedAt = 0L,
+                    items = listOf(
+                        SyncPlaylistItem(desktopRef, 0),
+                        SyncPlaylistItem(phoneRef, 1)
+                    )
+                )
+            ),
+            ratings = listOf(
+                SyncRatingEntry(desktopRef, SyncRating(4, 20L))
+            )
+        )
+
+        fakeBackend.downloadResult = SyncResult.Success(
+            report = SyncReport(), snapshot = cloudSnapshot, remoteRevision = "s"
+        )
+
+        val result = repo.preview()
+        assertTrue(result is SyncDataManagementResult.Success)
+        val cloud = (result as SyncDataManagementResult.Success).data.cloud!!
+
+        assertEquals(1, cloud.matchedSongReferenceCount)
+        assertEquals(0, cloud.missingSongReferenceCount)
+        assertTrue(cloud.missingSongReferences.isEmpty())
+        assertEquals(2, cloud.playlistItems)
+    }
+
     // ===================================================================
     // 2. preview returns non-existing cloud on NOT_FOUND
     // ===================================================================
