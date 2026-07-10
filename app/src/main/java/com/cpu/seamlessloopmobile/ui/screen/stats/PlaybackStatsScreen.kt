@@ -23,20 +23,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.WarningAmber
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,10 +50,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cpu.seamlessloopmobile.data.stats.ListenStatsRepository
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsPeriod
 import com.cpu.seamlessloopmobile.data.stats.TrackStat
 import com.cpu.seamlessloopmobile.ui.components.common.SongArtwork
 import com.cpu.seamlessloopmobile.utils.rememberHapticClick
 import java.io.File
+import java.time.Duration
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import kotlinx.coroutines.delay
+
+private data class PeriodTrackStat(
+    val stat: TrackStat,
+    val listenMs: Long
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,45 +72,38 @@ fun PlaybackStatsScreen(
     repository: ListenStatsRepository,
     buttonHapticFeedbackEnabled: Boolean = true,
     onTrackClick: (TrackStat) -> Unit = {},
-    onClearStats: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val allStats by repository.allStats.collectAsState()
-    var showClearStatsDialog by remember { mutableStateOf(false) }
-    val sortedStats = remember(allStats) {
+    var selectedPeriod by remember { mutableStateOf(ListenStatsPeriod.ALL) }
+    var today by remember { mutableStateOf(LocalDate.now(ZoneId.systemDefault())) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val zone = ZoneId.systemDefault()
+            val now = Instant.now()
+            val nextMidnight = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant()
+            val delayMillis = Duration.between(now, nextMidnight)
+                .toMillis()
+                .coerceIn(1L, 15 * 60 * 1000L)
+            delay(delayMillis)
+            today = LocalDate.now(ZoneId.systemDefault())
+        }
+    }
+    val sortedStats = remember(allStats, selectedPeriod, today) {
         allStats
-            .filter { it.totalListenMs > 0L }
-            .sortedByDescending { it.totalListenMs }
-    }
-    val totalListenMs = remember(sortedStats) { sortedStats.sumOf { it.totalListenMs } }
-
-    if (showClearStatsDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearStatsDialog = false },
-            title = { Text("清除播放统计") },
-            text = { Text("这会清空所有歌曲的收听时长统计，不会删除音乐文件。") },
-            confirmButton = {
-                TextButton(
-                    onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
-                        onClearStats()
-                        showClearStatsDialog = false
-                    }
-                ) {
-                    Text("清除", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
-                        showClearStatsDialog = false
-                    }
-                ) {
-                    Text("取消")
-                }
+            .mapNotNull { stat ->
+                stat.listenMsFor(selectedPeriod, today)
+                    .takeIf { it > 0L }
+                    ?.let { listenMs -> PeriodTrackStat(stat, listenMs) }
             }
-        )
+            .sortedByDescending { it.listenMs }
     }
-
+    val totalListenMs = remember(sortedStats) {
+        sortedStats.fold(0L) { total, periodStat ->
+            val listenMs = periodStat.listenMs.coerceAtLeast(0L)
+            if (total > Long.MAX_VALUE - listenMs) Long.MAX_VALUE else total + listenMs
+        }
+    }
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -107,16 +112,6 @@ fun PlaybackStatsScreen(
                 navigationIcon = {
                     IconButton(onClick = rememberHapticClick(buttonHapticFeedbackEnabled, onClick = onBack)) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
-                            showClearStatsDialog = true
-                        },
-                        enabled = sortedStats.isNotEmpty()
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = "清除播放统计")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -137,12 +132,19 @@ fun PlaybackStatsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
+                PeriodSelector(
+                    selectedPeriod = selectedPeriod,
+                    onPeriodSelected = { selectedPeriod = it }
+                )
+            }
+
+            item {
                 OverviewSection(totalListenMs = totalListenMs, trackedSongsCount = sortedStats.size)
             }
 
             if (sortedStats.isEmpty()) {
                 item {
-                    EmptyStatsState()
+                    EmptyStatsState(selectedPeriod)
                 }
             } else {
                 item {
@@ -162,16 +164,47 @@ fun PlaybackStatsScreen(
 
                 itemsIndexed(
                     sortedStats,
-                    key = { _, it -> "${it.identityKey}|${it.songId}|${it.filePath}|${it.fileName}" }
-                ) { index, stat ->
+                    key = { _, it ->
+                        val stat = it.stat
+                        "${stat.identityKey}|${stat.songId}|${stat.filePath}|${stat.fileName}"
+                    }
+                ) { index, periodStat ->
                     PlaybackStatRow(
                         rank = index + 1,
-                        stat = stat,
+                        periodStat = periodStat,
                         buttonHapticFeedbackEnabled = buttonHapticFeedbackEnabled,
-                        onClick = { onTrackClick(stat) }
+                        onClick = { onTrackClick(periodStat.stat) }
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PeriodSelector(
+    selectedPeriod: ListenStatsPeriod,
+    onPeriodSelected: (ListenStatsPeriod) -> Unit
+) {
+    val periods = remember {
+        listOf(
+            ListenStatsPeriod.DAY to "日",
+            ListenStatsPeriod.WEEK to "周",
+            ListenStatsPeriod.MONTH to "月",
+            ListenStatsPeriod.YEAR to "年",
+            ListenStatsPeriod.ALL to "总"
+        )
+    }
+
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        periods.forEachIndexed { index, (period, label) ->
+            SegmentedButton(
+                modifier = Modifier.weight(1f),
+                selected = period == selectedPeriod,
+                onClick = { onPeriodSelected(period) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = periods.size),
+                label = { Text(label, maxLines = 1) }
+            )
         }
     }
 }
@@ -192,7 +225,7 @@ private fun OverviewSection(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OverviewMetric(label = "总收听", value = formatListenDuration(totalListenMs))
+            OverviewMetric(label = "收听时长", value = formatListenDuration(totalListenMs))
             Box(
                 modifier = Modifier
                     .height(20.dp)
@@ -207,10 +240,11 @@ private fun OverviewSection(
 @Composable
 private fun PlaybackStatRow(
     rank: Int,
-    stat: TrackStat,
+    periodStat: PeriodTrackStat,
     buttonHapticFeedbackEnabled: Boolean,
     onClick: () -> Unit
 ) {
+    val stat = periodStat.stat
     val isStale = remember(stat.filePath) {
         stat.filePath.isBlank() || !File(stat.filePath).exists()
     }
@@ -277,7 +311,7 @@ private fun PlaybackStatRow(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = formatListenDuration(stat.totalListenMs),
+                    text = formatListenDuration(periodStat.listenMs),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -306,10 +340,10 @@ private fun PlaybackStatRow(
 }
 
 @Composable
-private fun TopTracksBarChart(stats: List<TrackStat>) {
+private fun TopTracksBarChart(stats: List<PeriodTrackStat>) {
     if (stats.isEmpty()) return
 
-    val maxListenMs = stats.maxOf { it.totalListenMs }.coerceAtLeast(1L)
+    val maxListenMs = stats.maxOf { it.listenMs }.coerceAtLeast(1L)
 
     Column(
         modifier = Modifier
@@ -321,14 +355,9 @@ private fun TopTracksBarChart(stats: List<TrackStat>) {
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            text = "Top 5",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        stats.forEachIndexed { index, stat ->
-            val fraction = (stat.totalListenMs.toFloat() / maxListenMs.toFloat()).coerceIn(0f, 1f)
+        stats.forEachIndexed { index, periodStat ->
+            val stat = periodStat.stat
+            val fraction = (periodStat.listenMs.toFloat() / maxListenMs.toFloat()).coerceIn(0f, 1f)
             val animatedFraction = animateFloatAsState(
                 targetValue = fraction,
                 animationSpec = tween(durationMillis = 500 + index * 90),
@@ -369,7 +398,7 @@ private fun TopTracksBarChart(stats: List<TrackStat>) {
                         )
                     }
                     Text(
-                        text = formatListenDuration(stat.totalListenMs),
+                        text = formatListenDuration(periodStat.listenMs),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
@@ -422,7 +451,20 @@ private fun RowScope.OverviewMetric(
 }
 
 @Composable
-private fun EmptyStatsState() {
+private fun EmptyStatsState(selectedPeriod: ListenStatsPeriod) {
+    val title = when (selectedPeriod) {
+        ListenStatsPeriod.DAY -> "本日暂无收听记录"
+        ListenStatsPeriod.WEEK -> "本周暂无收听记录"
+        ListenStatsPeriod.MONTH -> "本月暂无收听记录"
+        ListenStatsPeriod.YEAR -> "今年暂无收听记录"
+        ListenStatsPeriod.ALL -> "还没有可显示的收听记录"
+    }
+    val description = if (selectedPeriod == ListenStatsPeriod.ALL) {
+        "开始播放后会在这里累计收听时长。"
+    } else {
+        "选择其他时间范围查看收听时长。"
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -434,12 +476,12 @@ private fun EmptyStatsState() {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = "还没有可显示的收听记录",
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "开始播放后会在这里累计收听时长。",
+                text = description,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

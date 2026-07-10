@@ -34,6 +34,8 @@ class MainViewModelFactory(
             
             // GitHub 同步基础设施
             val database = com.cpu.seamlessloopmobile.db.AppDatabase.getDatabase(context)
+            val listenStatsRepository = com.cpu.seamlessloopmobile.data.stats.ListenStatsRepository
+                .getInstance(context.applicationContext)
             val githubSyncStore = com.cpu.seamlessloopmobile.data.sync.SharedPreferencesGitHubSyncStore(context.applicationContext)
             val playlistIdMapper = com.cpu.seamlessloopmobile.data.sync.room.SharedPreferencesPlaylistIdMapper(context.applicationContext)
             val roomSyncSnapshotStore = com.cpu.seamlessloopmobile.data.sync.room.RoomSyncSnapshotStore(
@@ -46,6 +48,15 @@ class MainViewModelFactory(
             viewModel.githubSyncStore = githubSyncStore
             viewModel.playlistIdMapper = playlistIdMapper
             viewModel.roomSyncSnapshotStore = roomSyncSnapshotStore
+            viewModel.localSyncDataManagementRepository = com.cpu.seamlessloopmobile.data.sync.SyncDataManagementRepository(
+                database = database,
+                songDao = songDao,
+                playlistDao = playlistDao,
+                snapshotStore = roomSyncSnapshotStore,
+                metadataStore = githubSyncStore,
+                playlistIdMapper = playlistIdMapper,
+                listenStatsRepository = listenStatsRepository
+            )
 
             // 自动同步调度器
             viewModel.githubAutoSyncScheduler = com.cpu.seamlessloopmobile.data.sync.GitHubAutoSyncScheduler(
@@ -66,7 +77,8 @@ class MainViewModelFactory(
                     snapshotStore = roomSyncSnapshotStore,
                     backend = mgmtBackend,
                     metadataStore = githubSyncStore,
-                    playlistIdMapper = playlistIdMapper
+                    playlistIdMapper = playlistIdMapper,
+                    listenStatsRepository = listenStatsRepository
                 )
             }
 

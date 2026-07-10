@@ -218,6 +218,24 @@ class PlaybackStatsTrackerTest {
     }
 
     @Test
+    fun statsClearDiscardsPreClearPendingTimeAndPersistsOnlyPostClearTime() = runTest {
+        val s = song(id = 1, fileName = "clear.mp3", duration = 90_000L)
+        tracker.onSongChanged(s)
+        tracker.onPlayingChanged(true)
+
+        fakeElapsed = 5_000L
+        repo.clearAll()
+        tracker.onStatsCleared()
+
+        fakeElapsed = 8_000L
+        tracker.flushPeriodic()
+
+        val key = TrackStat.identityKey("clear.mp3", 90_000L, "/music/clear.mp3")
+        assertEquals(3_000L, repo.getByIdentityKey(key)?.totalListenMs ?: 0L)
+        assertTrue(tracker.isTracking)
+    }
+
+    @Test
     fun identityKeyUsesFileNameAndDurationWhenDurationPositive() {
         val key = TrackStat.identityKey("song.mp3", 200_000L, "/ignored/path.mp3")
         assertEquals("song.mp3|200000", key)

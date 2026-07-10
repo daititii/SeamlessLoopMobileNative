@@ -28,6 +28,7 @@ import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -88,6 +89,7 @@ class MainViewModel(
     lateinit var githubSyncStore: SharedPreferencesGitHubSyncStore
     lateinit var playlistIdMapper: SharedPreferencesPlaylistIdMapper
     lateinit var roomSyncSnapshotStore: RoomSyncSnapshotStore
+    lateinit var localSyncDataManagementRepository: SyncDataManagementRepository
 
     /** 数据管理仓库工厂 —— 由 [MainViewModelFactory] 注入，每次调用传入最新 [GitHubSyncConfig]。 */
     lateinit var syncDataManagementRepositoryFactory: (GitHubSyncConfig) -> SyncDataManagementRepository
@@ -412,6 +414,8 @@ class MainViewModel(
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 updateGitHubSyncState {
                     it.copy(
@@ -466,6 +470,8 @@ class MainViewModel(
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 updateGitHubSyncState {
                     it.copy(
@@ -539,11 +545,13 @@ class MainViewModel(
      * @param clearPlaylists 是否清除歌单
      * @param clearLoopPoints 是否清除循环点
      * @param clearRatings 是否清除评分
+     * @param clearListenStats 是否清除播放统计
      */
     fun clearLocalSyncData(
         clearPlaylists: Boolean,
         clearLoopPoints: Boolean,
-        clearRatings: Boolean
+        clearRatings: Boolean,
+        clearListenStats: Boolean
     ) {
         viewModelScope.launch {
             updateGitHubSyncState {
@@ -554,19 +562,15 @@ class MainViewModel(
                 )
             }
 
-            val repo = buildManagementRepository() ?: run {
-                updateGitHubSyncState { it.copy(isManagementOperationRunning = false) }
-                return@launch
-            }
-
             val selection = ClearLocalSyncDataSelection(
                 clearPlaylists = clearPlaylists,
                 clearLoopPoints = clearLoopPoints,
-                clearRatings = clearRatings
+                clearRatings = clearRatings,
+                clearListenStats = clearListenStats
             )
 
             try {
-                when (val result = repo.clearLocalSyncData(selection)) {
+                when (val result = localSyncDataManagementRepository.clearLocalSyncData(selection)) {
                     is SyncDataManagementResult.Success -> {
                         val currentPreview = _githubSyncState.value?.managementPreview
                         val updatedPreview = currentPreview?.copy(local = result.data)
@@ -574,7 +578,7 @@ class MainViewModel(
                             it.copy(
                                 isManagementOperationRunning = false,
                                 isManagementLoading = false,
-                                managementStatusMessage = "本机同步数据已清除",
+                                managementStatusMessage = "所选本机数据已清除",
                                 managementPreview = updatedPreview,
                                 managementErrorMessage = ""
                             )
@@ -590,6 +594,8 @@ class MainViewModel(
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 updateGitHubSyncState {
                     it.copy(

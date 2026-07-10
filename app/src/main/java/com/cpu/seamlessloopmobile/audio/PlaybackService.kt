@@ -129,6 +129,11 @@ class PlaybackService : MediaBrowserServiceCompat() {
 
         listenStatsRepository = ListenStatsRepository.getInstance(this)
         playbackStatsTracker = PlaybackStatsTracker(listenStatsRepository)
+        serviceScope.launch {
+            listenStatsRepository.clearEvents.collect {
+                playbackStatsTracker.onStatsCleared()
+            }
+        }
 
         playbackManager = PlaybackManager(
             context = this,

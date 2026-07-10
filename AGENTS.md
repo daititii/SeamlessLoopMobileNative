@@ -29,7 +29,7 @@ gradlew.bat connectedAndroidTest               # 需要设备
 
 - **无缝循环次数限制**：`SettingsManager.seamlessLoopCountLimit` 控制当前歌曲完成多少次无缝回绕后触发调度，默认 0 表示无限循环，上限 `SettingsManager.MAX_SEAMLESS_LOOP_COUNT_LIMIT`（当前 9999）。`PlaybackManager` 通过 native `EVENT_LOOP_JUMP` + 实际进度回绕确认来计数；达到上限后 LIST_LOOP/SHUFFLE 切下一首，SINGLE_LOOP 重新播放当前歌曲并重置计数。
 
-- **播放统计**：`PlaybackStatsTracker` 只统计处于 `AudioPlayState.PLAYING` 的真实墙钟收听时长，数据由 `ListenStatsRepository` 写入 `filesDir/listen_stats.json`。排行按累计收听时长降序；不统计播放次数，也不统计循环次数。删除/丢失文件时保留历史并在统计页显示缺失状态。
+- **播放统计**：`PlaybackStatsTracker` 只统计处于 `AudioPlayState.PLAYING` 的真实墙钟收听时长，数据由 `ListenStatsRepository` 写入 `filesDir/listen_stats.json`。除累计总时长外，新记录会按本地日期保存并支持日/周（周一开始）/月/年/总排行；旧 JSON 的历史累计值保留在“总”中。不统计播放次数或循环次数。删除/丢失文件时保留历史并在统计页显示缺失状态。清理入口统一位于 `GitHub 同步 → 数据管理 → 清理本机数据`，播放统计不参与云端同步或同步元数据变更。
 
 - **GitHub 同步**：设置页含 `GitHub 同步` 页面，用 GitHub Contents API 在单个 JSON 快照文件中同步歌单、循环点和评分。`GitHubSyncCoordinator` 负责导出本地 → 下载远端 → 合并 → 应用 → 带 SHA 乐观锁上传；`RoomSyncSnapshotStore` 负责 Room 快照转换；`SharedPreferencesPlaylistIdMapper` 维护歌单本地 ID 与同步 ID 映射。同步不包含音频文件、播放统计、播放队列、封面/格式展示字段或 App 设置。
 
@@ -80,7 +80,7 @@ gradlew.bat connectedAndroidTest               # 需要设备
 - `MusicScannerRepository` — 扫描逻辑，含 `getInitialScannedSongs()`（全量扫描+批量更新+Artist/Album 预创建+A/B 标记+多级匹配）、`findAbPair()` / `findAbPairRobust()`（DB + MediaStore）
 - `SettingsManager` — 单例 `getInstance(context)`，Gson 序列化，持久化 lastSongPath/lastPosition/playMode/isAbMode 等
 - `SettingsManager` 同时持久化 `isSeamlessLoopEnabled`、`seamlessLoopCountLimit`、`themePreference`、`buttonHapticFeedbackEnabled`；循环次数上限 0 表示无限循环，设置 UI 需校验为 `0..MAX_SEAMLESS_LOOP_COUNT_LIMIT` 的整数。
-- `data/stats/` — `TrackStat` + `ListenStatsRepository`，使用 JSON 保存真实收听时长统计。
+- `data/stats/` — `TrackStat` + `ListenStatsRepository`，使用 JSON 保存真实收听时长总计与本地日期桶。
 - `data/sync/` — GitHub/云同步模型、portable identity、合并策略、同步协调器、数据管理仓库、WorkManager 自动同步 Worker；`github/` 是 GitHub Contents API 后端，`room/` 是 Room 快照转换与歌单 ID 映射。
 
 **GitHub 同步注意事项**：

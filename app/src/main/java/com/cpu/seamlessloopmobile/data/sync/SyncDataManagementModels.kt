@@ -47,9 +47,11 @@ data class SyncDataManagementPreview(
 data class ClearLocalSyncDataSelection(
     val clearPlaylists: Boolean = false,
     val clearLoopPoints: Boolean = false,
-    val clearRatings: Boolean = false
+    val clearRatings: Boolean = false,
+    val clearListenStats: Boolean = false
 ) {
-    val hasSelection: Boolean get() = clearPlaylists || clearLoopPoints || clearRatings
+    val hasSelection: Boolean
+        get() = clearPlaylists || clearLoopPoints || clearRatings || clearListenStats
 }
 
 // ===================================================================

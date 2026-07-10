@@ -14,7 +14,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.cpu.seamlessloopmobile.model.Song
@@ -54,7 +53,6 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.haze
 import com.cpu.seamlessloopmobile.utils.LocalButtonHapticFeedbackEnabled
-import kotlinx.coroutines.launch
 
 /**
  * 主界面总装配站喵！(๑•̀ㅂ•́)و✧
@@ -93,7 +91,6 @@ fun MainScreen(
     val context = LocalContext.current
     val miniPlayerHazeState = remember { HazeState() }
     val statsRepository = remember(context) { ListenStatsRepository.getInstance(context) }
-    val coroutineScope = rememberCoroutineScope()
     
     val playlists by viewModel.playlist.playlists.collectAsState()
     val allSongs by viewModel.library.allSongs.collectAsState()
@@ -173,9 +170,6 @@ fun MainScreen(
                             onSeamlessLoopCountLimitChange = remember(viewModel) { viewModel::setSeamlessLoopCountLimit },
                             buttonHapticFeedbackEnabled = buttonHapticFeedbackEnabled,
                             onButtonHapticFeedbackEnabledChange = remember(viewModel) { viewModel::setButtonHapticFeedbackEnabled },
-                            onClearListenStats = remember(statsRepository, coroutineScope) {
-                                { coroutineScope.launch { statsRepository.clearAll() } }
-                            },
                             isDarkTheme = isDarkTheme,
                             themePreference = themePreference,
                             onThemePreferenceChange = onThemePreferenceChange,
@@ -204,9 +198,6 @@ fun MainScreen(
                                         playSong(song)
                                     }
                                 }
-                            },
-                            onClearStats = remember(statsRepository, coroutineScope) {
-                                { coroutineScope.launch { statsRepository.clearAll() } }
                             },
                             onBack = remember(viewModel) { { viewModel.goBack() } }
                         )

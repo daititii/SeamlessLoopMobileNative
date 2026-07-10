@@ -1,12 +1,14 @@
 package com.cpu.seamlessloopmobile.data.sync
 
 import androidx.room.withTransaction
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsRepository
 import com.cpu.seamlessloopmobile.db.AppDatabase
 import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.model.SongDao
 import com.cpu.seamlessloopmobile.data.sync.room.PlaylistIdMapper
 import com.cpu.seamlessloopmobile.data.sync.room.RoomSyncSnapshotStore
+import kotlinx.coroutines.CancellationException
 import kotlin.math.abs
 
 /**
@@ -20,9 +22,10 @@ class SyncDataManagementRepository(
     private val songDao: SongDao,
     private val playlistDao: PlaylistDao,
     private val snapshotStore: RoomSyncSnapshotStore,
-    private val backend: GitHubSnapshotRemote,
+    private val backend: GitHubSnapshotRemote? = null,
     private val metadataStore: SyncMetadataStore,
-    private val playlistIdMapper: PlaylistIdMapper
+    private val playlistIdMapper: PlaylistIdMapper,
+    private val listenStatsRepository: ListenStatsRepository
 ) {
 
     // ===================================================================
@@ -58,6 +61,7 @@ class SyncDataManagementRepository(
      */
     suspend fun preview(): SyncDataManagementResult<SyncDataManagementPreview> {
         val local = getLocalSummary()
+        val backend = backend ?: return remoteBackendUnavailable()
 
         val cloudResult = when (val result = backend.downloadSnapshot(null)) {
             is SyncResult.Success -> {
@@ -135,6 +139,7 @@ class SyncDataManagementRepository(
      * 会覆盖远程已有数据。
      */
     suspend fun forcePushLocalToCloud(): SyncDataManagementResult<SyncReport> {
+        val backend = backend ?: return remoteBackendUnavailable()
         // 获取当前远程 SHA（如文件不存在则 SHA 为 null）
         val currentSha = when (val result = backend.downloadSnapshot(null)) {
             is SyncResult.Success -> result.remoteRevision
@@ -183,6 +188,7 @@ class SyncDataManagementRepository(
      * 删除 GitHub 上的远程快照文件。
      */
     suspend fun deleteCloudSnapshot(): SyncDataManagementResult<Unit> {
+        val backend = backend ?: return remoteBackendUnavailable()
         val result = backend.deleteSnapshot()
 
         return when (result) {
@@ -204,8 +210,8 @@ class SyncDataManagementRepository(
     // ===================================================================
 
     /**
-     * 按选择清除本地同步相关的数据。
-     * 不会删除歌曲本身。
+     * 按选择清除本机数据，不会删除歌曲本身。
+     * Room 数据在同一事务内清除；播放统计 JSON 在事务外单独清除。
      */
     suspend fun clearLocalSyncData(
         selection: ClearLocalSyncDataSelection
@@ -217,24 +223,50 @@ class SyncDataManagementRepository(
             )
         }
 
-        database.withTransaction {
-            if (selection.clearLoopPoints) {
-                songDao.deleteAllLoopPoints()
+        val clearsSyncedData = selection.clearPlaylists ||
+            selection.clearLoopPoints || selection.clearRatings
+
+        if (clearsSyncedData) {
+            database.withTransaction {
+                if (selection.clearLoopPoints) {
+                    songDao.deleteAllLoopPoints()
+                }
+                if (selection.clearRatings) {
+                    songDao.deleteAllUserRatings()
+                }
+                if (selection.clearPlaylists) {
+                    playlistDao.deleteAllPlaylists()
+                    playlistIdMapper.clearAllMappings()
+                }
             }
-            if (selection.clearRatings) {
-                songDao.deleteAllUserRatings()
-            }
-            if (selection.clearPlaylists) {
-                playlistDao.deleteAllPlaylists()
-                playlistIdMapper.clearAllMappings()
+            metadataStore.clearSyncMetadata()
+            metadataStore.markMutation()
+        }
+
+        if (selection.clearListenStats) {
+            try {
+                listenStatsRepository.clearAll()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val message = if (clearsSyncedData) {
+                    "Synced data was cleared, but playback statistics could not be cleared: ${e.message ?: "unknown error"}"
+                } else {
+                    "Playback statistics could not be cleared: ${e.message ?: "unknown error"}"
+                }
+                return SyncDataManagementResult.Failure(message, SyncErrorCode.UNKNOWN)
             }
         }
 
-        metadataStore.clearSyncMetadata()
-        metadataStore.markMutation()
-
         val updated = getLocalSummary()
         return SyncDataManagementResult.Success(updated)
+    }
+
+    private fun <T> remoteBackendUnavailable(): SyncDataManagementResult<T> {
+        return SyncDataManagementResult.Failure(
+            "GitHub remote backend is unavailable",
+            SyncErrorCode.UNKNOWN
+        )
     }
 
     // ===================================================================

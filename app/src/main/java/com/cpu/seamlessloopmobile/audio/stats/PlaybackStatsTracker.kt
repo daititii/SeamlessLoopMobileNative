@@ -102,6 +102,17 @@ class PlaybackStatsTracker(
         currentIdentityKey = null
     }
 
+    /**
+     * Discards unpersisted time after statistics are cleared externally.
+     * Active tracking continues from the clear point instead of restoring pre-clear time.
+     */
+    fun onStatsCleared() {
+        accumulatedThisSession = 0L
+        if (isTracking) {
+            sessionStartElapsed = timeSource()
+        }
+    }
+
     /** Returns `true` if periodic flushes should be scheduled (tracking is active). */
     fun shouldFlushPeriodically(): Boolean = isTracking
 

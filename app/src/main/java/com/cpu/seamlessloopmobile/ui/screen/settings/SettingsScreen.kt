@@ -101,7 +101,6 @@ fun SettingsScreen(
     onSeamlessLoopCountLimitChange: (Int) -> Unit,
     buttonHapticFeedbackEnabled: Boolean,
     onButtonHapticFeedbackEnabledChange: (Boolean) -> Unit,
-    onClearListenStats: () -> Unit,
     isDarkTheme: Boolean,
     themePreference: ThemePreference,
     onThemePreferenceChange: (ThemePreference) -> Unit,
@@ -113,7 +112,12 @@ fun SettingsScreen(
     onRefreshSyncDataManagementPreview: () -> Unit,
     onForcePushLocalToCloud: () -> Unit,
     onDeleteCloudSnapshot: () -> Unit,
-    onClearLocalSyncData: (clearPlaylists: Boolean, clearLoopPoints: Boolean, clearRatings: Boolean) -> Unit,
+    onClearLocalSyncData: (
+        clearPlaylists: Boolean,
+        clearLoopPoints: Boolean,
+        clearRatings: Boolean,
+        clearListenStats: Boolean
+    ) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var activePage by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
@@ -188,7 +192,6 @@ fun SettingsScreen(
                             onRescan = onRescan,
                             onSyncPc = onSyncPc,
                             onExportDatabase = onExportDatabase,
-                            onClearListenStats = onClearListenStats,
                             buttonHapticFeedbackEnabled = buttonHapticFeedbackEnabled
                         )
                         SettingsPage.Sync -> GitHubSyncSettings(
@@ -678,38 +681,9 @@ private fun DataSettings(
     onRescan: (Context) -> Unit,
     onSyncPc: () -> Unit,
     onExportDatabase: () -> Unit,
-    onClearListenStats: () -> Unit,
     buttonHapticFeedbackEnabled: Boolean
 ) {
     val context = LocalContext.current
-    var showClearStatsDialog by remember { mutableStateOf(false) }
-
-    if (showClearStatsDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearStatsDialog = false },
-            title = { Text("清除播放统计") },
-            text = { Text("这会清空所有歌曲的收听时长统计，不会删除音乐文件。") },
-            confirmButton = {
-                TextButton(
-                    onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
-                        onClearListenStats()
-                        showClearStatsDialog = false
-                    }
-                ) {
-                    Text("清除", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
-                        showClearStatsDialog = false
-                    }
-                ) {
-                    Text("取消")
-                }
-            }
-        )
-    }
 
     SettingsSectionCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -776,20 +750,6 @@ private fun DataSettings(
             Spacer(modifier = Modifier.width(8.dp))
             Text("导出 PC 端数据库", fontWeight = FontWeight.Bold)
         }
-
-        Spacer(modifier = Modifier.height(12.dp))
-        OutlinedButton(
-            onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
-                showClearStatsDialog = true
-            },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            contentPadding = PaddingValues(vertical = 12.dp)
-        ) {
-            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("清除播放统计", fontWeight = FontWeight.Bold)
-        }
     }
 }
 
@@ -804,7 +764,12 @@ private fun GitHubSyncSettings(
     onRefreshSyncDataManagementPreview: () -> Unit,
     onForcePushLocalToCloud: () -> Unit,
     onDeleteCloudSnapshot: () -> Unit,
-    onClearLocalSyncData: (clearPlaylists: Boolean, clearLoopPoints: Boolean, clearRatings: Boolean) -> Unit
+    onClearLocalSyncData: (
+        clearPlaylists: Boolean,
+        clearLoopPoints: Boolean,
+        clearRatings: Boolean,
+        clearListenStats: Boolean
+    ) -> Unit
 ) {
     var token by rememberSaveable(githubSyncState.isConfigured, githubSyncState.hasToken) { mutableStateOf("") }
     var owner by rememberSaveable(githubSyncState.owner) { mutableStateOf(githubSyncState.owner) }
@@ -815,9 +780,10 @@ private fun GitHubSyncSettings(
     var showForcePushDialog by remember { mutableStateOf(false) }
     var showDeleteCloudDialog by remember { mutableStateOf(false) }
     var showClearLocalDialog by remember { mutableStateOf(false) }
-    var clearLocalPlaylists by rememberSaveable { mutableStateOf(false) }
-    var clearLocalLoopPoints by rememberSaveable { mutableStateOf(false) }
-    var clearLocalRatings by rememberSaveable { mutableStateOf(false) }
+    var clearLocalPlaylists by remember { mutableStateOf(false) }
+    var clearLocalLoopPoints by remember { mutableStateOf(false) }
+    var clearLocalRatings by remember { mutableStateOf(false) }
+    var clearLocalListenStats by remember { mutableStateOf(false) }
 
     val missingConfigFields = owner.isBlank() || repo.isBlank() || branch.isBlank() || path.isBlank()
     val saveEnabled = !missingConfigFields && (githubSyncState.hasToken || token.isNotBlank())
@@ -825,7 +791,10 @@ private fun GitHubSyncSettings(
         githubSyncState.hasToken &&
         !githubSyncState.isManagementLoading &&
         !githubSyncState.isManagementOperationRunning
-    val clearLocalSelectionValid = clearLocalPlaylists || clearLocalLoopPoints || clearLocalRatings
+    val clearLocalActionEnabled = !githubSyncState.isManagementLoading &&
+        !githubSyncState.isManagementOperationRunning
+    val clearLocalSelectionValid =
+        clearLocalPlaylists || clearLocalLoopPoints || clearLocalRatings || clearLocalListenStats
     val autoSyncToggleEnabled = githubSyncState.canEnableAutoSync || githubSyncState.isAutoSyncEnabled
     val lastSyncText = remember(githubSyncState.lastSyncTime) {
         if (githubSyncState.lastSyncTime > 0L) {
@@ -838,6 +807,12 @@ private fun GitHubSyncSettings(
     val report = githubSyncState.lastReport
     val managementPreview = githubSyncState.managementPreview
     val cloudPreview = managementPreview?.cloud
+    fun resetClearLocalSelections() {
+        clearLocalPlaylists = false
+        clearLocalLoopPoints = false
+        clearLocalRatings = false
+        clearLocalListenStats = false
+    }
     val cloudExportedAtText = remember(cloudPreview?.exportedAt) {
         val exportedAt = cloudPreview?.exportedAt ?: 0L
         if (exportedAt > 0L) {
@@ -932,49 +907,62 @@ private fun GitHubSyncSettings(
 
     if (showClearLocalDialog) {
         AlertDialog(
-            onDismissRequest = { showClearLocalDialog = false },
-            title = { Text("清除本机同步数据") },
+            onDismissRequest = {
+                showClearLocalDialog = false
+                resetClearLocalSelections()
+            },
+            title = { Text("清理本机数据") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("这不会删除云端数据，下次同步时这些内容仍可能重新下载。")
-                    ClearLocalSyncOptionRow(
+                    Text("所选内容将从本机清除；云端的歌单、循环点和评分不会删除，之后同步时可能恢复；播放统计不会同步。")
+                    LocalDataOptionRow(
                         checked = clearLocalPlaylists,
                         label = "歌单",
                         buttonHapticFeedbackEnabled = buttonHapticFeedbackEnabled,
                         onCheckedChange = { clearLocalPlaylists = it }
                     )
-                    ClearLocalSyncOptionRow(
+                    LocalDataOptionRow(
                         checked = clearLocalLoopPoints,
                         label = "循环点",
                         buttonHapticFeedbackEnabled = buttonHapticFeedbackEnabled,
                         onCheckedChange = { clearLocalLoopPoints = it }
                     )
-                    ClearLocalSyncOptionRow(
+                    LocalDataOptionRow(
                         checked = clearLocalRatings,
                         label = "评分",
                         buttonHapticFeedbackEnabled = buttonHapticFeedbackEnabled,
                         onCheckedChange = { clearLocalRatings = it }
+                    )
+                    LocalDataOptionRow(
+                        checked = clearLocalListenStats,
+                        label = "播放统计",
+                        buttonHapticFeedbackEnabled = buttonHapticFeedbackEnabled,
+                        onCheckedChange = { clearLocalListenStats = it }
                     )
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
-                        onClearLocalSyncData(clearLocalPlaylists, clearLocalLoopPoints, clearLocalRatings)
+                        onClearLocalSyncData(
+                            clearLocalPlaylists,
+                            clearLocalLoopPoints,
+                            clearLocalRatings,
+                            clearLocalListenStats
+                        )
                         showClearLocalDialog = false
-                        clearLocalPlaylists = false
-                        clearLocalLoopPoints = false
-                        clearLocalRatings = false
+                        resetClearLocalSelections()
                     },
                     enabled = clearLocalSelectionValid
                 ) {
-                    Text("清除", color = MaterialTheme.colorScheme.error)
+                    Text("清理", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(
                     onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
                         showClearLocalDialog = false
+                        resetClearLocalSelections()
                     }
                 ) {
                     Text("取消")
@@ -1389,16 +1377,17 @@ private fun GitHubSyncSettings(
 
         OutlinedButton(
             onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
+                resetClearLocalSelections()
                 showClearLocalDialog = true
             },
-            enabled = managementActionEnabled,
+            enabled = clearLocalActionEnabled,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("清除本机同步数据", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("清理本机数据", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 
@@ -1463,7 +1452,7 @@ private fun SyncDataSummaryText(summary: LocalSyncDataSummary) {
 }
 
 @Composable
-private fun ClearLocalSyncOptionRow(
+private fun LocalDataOptionRow(
     checked: Boolean,
     label: String,
     buttonHapticFeedbackEnabled: Boolean,

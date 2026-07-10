@@ -3,6 +3,8 @@ package com.cpu.seamlessloopmobile.data.sync
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsRepository
+import com.cpu.seamlessloopmobile.data.stats.TrackStat
 import com.cpu.seamlessloopmobile.data.sync.room.PlaylistIdMapper
 import com.cpu.seamlessloopmobile.data.sync.room.PlaylistSyncRecord
 import com.cpu.seamlessloopmobile.data.sync.room.RoomSyncSnapshotStore
@@ -25,6 +27,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.File
 
 /**
  * SyncDataManagementRepository 单元测试。
@@ -43,7 +46,10 @@ class SyncDataManagementRepositoryTest {
     private lateinit var snapshotStore: RoomSyncSnapshotStore
     private lateinit var fakeBackend: FakeGitHubSnapshotRemote
     private lateinit var fakeMetadata: FakeSyncMetadataStore
+    private lateinit var listenStatsRepository: ListenStatsRepository
+    private lateinit var listenStatsFile: File
     private lateinit var repo: SyncDataManagementRepository
+    private lateinit var localRepo: SyncDataManagementRepository
 
     @Before
     fun setUp() {
@@ -57,6 +63,8 @@ class SyncDataManagementRepositoryTest {
         snapshotStore = RoomSyncSnapshotStore(db, songDao, playlistDao, mapper)
         fakeBackend = FakeGitHubSnapshotRemote()
         fakeMetadata = FakeSyncMetadataStore()
+        listenStatsFile = File.createTempFile("listen_stats", ".json")
+        listenStatsRepository = ListenStatsRepository(listenStatsFile)
         repo = SyncDataManagementRepository(
             database = db,
             songDao = songDao,
@@ -64,13 +72,24 @@ class SyncDataManagementRepositoryTest {
             snapshotStore = snapshotStore,
             backend = fakeBackend,
             metadataStore = fakeMetadata,
-            playlistIdMapper = mapper
+            playlistIdMapper = mapper,
+            listenStatsRepository = listenStatsRepository
+        )
+        localRepo = SyncDataManagementRepository(
+            database = db,
+            songDao = songDao,
+            playlistDao = playlistDao,
+            snapshotStore = snapshotStore,
+            metadataStore = fakeMetadata,
+            playlistIdMapper = mapper,
+            listenStatsRepository = listenStatsRepository
         )
     }
 
     @After
     fun tearDown() {
         db.close()
+        listenStatsFile.delete()
     }
 
     // ===================================================================
@@ -542,6 +561,119 @@ class SyncDataManagementRepositoryTest {
         assertTrue("Expected Failure", result is SyncDataManagementResult.Failure)
     }
 
+    @Test
+    fun `clear local stats only clears stats without changing synced data or metadata`() = runBlocking {
+        val songId = insertSong(
+            fileName = "s.mp3",
+            loopStart = 1000L,
+            loopEnd = 5000L,
+            rating = 4
+        )
+        val playlistId = playlistDao.insertPlaylist(Playlist(name = "Test", createdAt = 100L)).toInt()
+        playlistDao.clearAndSyncPlaylist(playlistId, listOf(songId))
+        listenStatsRepository.recordListenDeltaNow(
+            TrackStat(fileName = "s.mp3", durationMs = 100_000L, identityKey = "s.mp3|100000"),
+            1_000L
+        )
+
+        val result = localRepo.clearLocalSyncData(
+            ClearLocalSyncDataSelection(clearListenStats = true)
+        )
+
+        assertTrue("Expected Success", result is SyncDataManagementResult.Success)
+        assertTrue(listenStatsRepository.allStats.value.isEmpty())
+        assertEquals(1, songDao.getAllSongs().size)
+        assertEquals(1, playlistDao.getPlaylistsWithCounts().size)
+        assertEquals(1000L, songDao.getAllSongs().single().loopStart)
+        assertEquals(4, songDao.getAllSongs().single().rating)
+        assertEquals("sha-old", fakeMetadata.lastRemoteRevision)
+        assertEquals(1000L, fakeMetadata.lastSyncTime)
+        assertEquals(5, fakeMetadata.mutationVersion)
+    }
+
+    @Test
+    fun `clear local combined selection clears stats and synced data`() = runBlocking {
+        insertSong(fileName = "s.mp3", loopStart = 1000L, loopEnd = 5000L, rating = 4)
+        listenStatsRepository.recordListenDeltaNow(
+            TrackStat(fileName = "s.mp3", durationMs = 100_000L, identityKey = "s.mp3|100000"),
+            1_000L
+        )
+
+        val result = repo.clearLocalSyncData(
+            ClearLocalSyncDataSelection(clearLoopPoints = true, clearListenStats = true)
+        )
+
+        assertTrue("Expected Success", result is SyncDataManagementResult.Success)
+        assertTrue(listenStatsRepository.allStats.value.isEmpty())
+        assertEquals(0L, songDao.getAllSongs().single().loopStart)
+        assertNull(fakeMetadata.lastRemoteRevision)
+        assertEquals(6, fakeMetadata.mutationVersion)
+    }
+
+    @Test
+    fun `local repository clears all selected local data without remote backend`() = runBlocking {
+        val songId = insertSong(fileName = "s.mp3", loopStart = 1000L, loopEnd = 5000L, rating = 4)
+        val playlistId = playlistDao.insertPlaylist(Playlist(name = "Test", createdAt = 100L)).toInt()
+        playlistDao.clearAndSyncPlaylist(playlistId, listOf(songId))
+        listenStatsRepository.recordListenDeltaNow(
+            TrackStat(fileName = "s.mp3", durationMs = 100_000L, identityKey = "s.mp3|100000"),
+            1_000L
+        )
+
+        val result = localRepo.clearLocalSyncData(
+            ClearLocalSyncDataSelection(
+                clearPlaylists = true,
+                clearLoopPoints = true,
+                clearRatings = true,
+                clearListenStats = true
+            )
+        )
+
+        assertTrue(result is SyncDataManagementResult.Success)
+        assertTrue(listenStatsRepository.allStats.value.isEmpty())
+        assertEquals(1, songDao.getAllSongs().size)
+        assertEquals(0, playlistDao.getPlaylistsWithCounts().size)
+        assertEquals(0L, songDao.getAllSongs().single().loopStart)
+        assertEquals(0, songDao.getAllSongs().single().rating)
+        assertNull(fakeMetadata.lastRemoteRevision)
+        assertEquals(6, fakeMetadata.mutationVersion)
+    }
+
+    @Test
+    fun `local repository rejects remote operations without backend`() = runBlocking {
+        assertTrue(localRepo.preview() is SyncDataManagementResult.Failure)
+        assertTrue(localRepo.forcePushLocalToCloud() is SyncDataManagementResult.Failure)
+        assertTrue(localRepo.deleteCloudSnapshot() is SyncDataManagementResult.Failure)
+    }
+
+    @Test
+    fun `clear local stats failure returns failure without claiming success`() = runBlocking {
+        val failingRepo = repositoryWithUnwritableStatsFile()
+
+        val result = failingRepo.clearLocalSyncData(
+            ClearLocalSyncDataSelection(clearListenStats = true)
+        )
+
+        assertTrue(result is SyncDataManagementResult.Failure)
+        assertEquals("sha-old", fakeMetadata.lastRemoteRevision)
+        assertEquals(5, fakeMetadata.mutationVersion)
+    }
+
+    @Test
+    fun `combined clear preserves sync metadata mutation when stats clear fails`() = runBlocking {
+        insertSong(fileName = "s.mp3", loopStart = 1_000L, loopEnd = 5_000L)
+        val failingRepo = repositoryWithUnwritableStatsFile()
+
+        val result = failingRepo.clearLocalSyncData(
+            ClearLocalSyncDataSelection(clearLoopPoints = true, clearListenStats = true)
+        )
+
+        assertTrue(result is SyncDataManagementResult.Failure)
+        assertEquals(0L, songDao.getAllSongs().single().loopStart)
+        assertNull(fakeMetadata.lastRemoteRevision)
+        assertEquals(6, fakeMetadata.mutationVersion)
+    }
+
     // ===================================================================
     // 6. getLocalSummary returns correct counts
     // ===================================================================
@@ -570,6 +702,24 @@ class SyncDataManagementRepositoryTest {
         assertEquals(2, summary.playlistItemCount)
         assertEquals(2, summary.loopPointCount)
         assertEquals(1, summary.ratingCount)
+    }
+
+    private fun repositoryWithUnwritableStatsFile(): SyncDataManagementRepository {
+        val statsDirectory = File.createTempFile("listen_stats_directory", "").apply {
+            delete()
+            mkdir()
+            deleteOnExit()
+        }
+        return SyncDataManagementRepository(
+            database = db,
+            songDao = songDao,
+            playlistDao = playlistDao,
+            snapshotStore = snapshotStore,
+            backend = fakeBackend,
+            metadataStore = fakeMetadata,
+            playlistIdMapper = mapper,
+            listenStatsRepository = ListenStatsRepository(statsDirectory)
+        )
     }
 
     // ===================================================================
