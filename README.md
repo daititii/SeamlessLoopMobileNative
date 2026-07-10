@@ -113,5 +113,3 @@ GitHub 同步使用仓库内的单个 JSON 快照文件（默认 `seamless-loop/
 4. **播放统计语义**：只按真实收听时长排序，不统计播放次数或循环次数。
 5. **Room Schema**：Room 9 张实体表和 3 个 DAO 的详细映射图。
 6. **包结构速查**：子模块（audio, data, db, viewmodel, model, scanner, jni 等）职责定义。
-
-本轮 UI 与统计改造参考了 NeriPlayer 的视觉与交互方向，记录见 [docs/2026-07-06_NeriPlayer风格UI与播放统计.md](./docs/2026-07-06_NeriPlayer风格UI与播放统计.md)。GitHub 同步与自动同步记录见 [docs/2026-07-07_GitHub同步与自动同步.md](./docs/2026-07-07_GitHub同步与自动同步.md)。
