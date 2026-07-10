@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -147,13 +146,10 @@ fun MainScreen(
                 targetState = uiState,
                 transitionSpec = {
                     (scaleIn(
-                        animationSpec = tween(240, easing = FastOutSlowInEasing),
-                        initialScale = 0.92f
-                    ) + fadeIn(animationSpec = tween(160))) togetherWith
-                        (scaleOut(
-                            animationSpec = tween(220, easing = FastOutSlowInEasing),
-                            targetScale = 1.06f
-                        ) + fadeOut(animationSpec = tween(160)))
+                        animationSpec = tween(200, easing = FastOutSlowInEasing),
+                        initialScale = 0.98f
+                    ) + fadeIn(animationSpec = tween(180))) togetherWith
+                        fadeOut(animationSpec = tween(160))
                 },
                 label = "MainPageTransition",
                 modifier = Modifier.fillMaxSize()
@@ -162,7 +158,8 @@ fun MainScreen(
                     is MusicUiState.Search -> {
                         SearchScreen(
                             viewModel = viewModel,
-                            playSong = playSong
+                            playSong = playSong,
+                            onBack = remember(viewModel) { { viewModel.goBack() } }
                         )
                     }
 

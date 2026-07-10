@@ -2,14 +2,6 @@ package com.cpu.seamlessloopmobile.ui.screen.settings
 
 import android.content.Context
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
@@ -54,6 +47,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -144,31 +138,19 @@ fun SettingsScreen(
         activePage = null
     }
 
-    AnimatedContent(
-        targetState = activePage,
-        transitionSpec = {
-            (scaleIn(
-                animationSpec = tween(260, easing = FastOutSlowInEasing),
-                initialScale = 0.92f
-            ) + fadeIn(animationSpec = tween(180))) togetherWith
-                (scaleOut(
-                    animationSpec = tween(160, easing = FastOutSlowInEasing),
-                    targetScale = 1.04f
-                ) + fadeOut(animationSpec = tween(120)))
-        },
-        label = "SettingsPageNavigation",
-        modifier = modifier.fillMaxSize()
-    ) { page ->
-        if (page == null) {
+    val currentPage = activePage
+    Box(modifier = modifier.fillMaxSize()) {
+        if (currentPage == null) {
             SettingsHomePage(
                 buttonHapticFeedbackEnabled = buttonHapticFeedbackEnabled,
                 onPageClick = { activePage = it }
             )
         } else {
             SettingsDetailPage(
-                page = page,
+                page = currentPage,
+                onBack = { activePage = null },
                 content = {
-                    when (page) {
+                    when (currentPage) {
                         SettingsPage.Appearance -> AppearanceSettings(
                             isDarkTheme = isDarkTheme,
                             themePreference = themePreference,
@@ -281,6 +263,7 @@ private fun SettingsHomePage(
 @Composable
 private fun SettingsDetailPage(
     page: SettingsPage,
+    onBack: () -> Unit,
     content: @Composable () -> Unit
 ) {
     Scaffold(
@@ -288,9 +271,21 @@ private fun SettingsDetailPage(
         topBar = {
             TopAppBar(
                 title = { Text(page.title, fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回"
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
         }
@@ -579,8 +574,8 @@ private fun ThemePreferenceButton(
             modifier = modifier,
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             )
         ) {
             Text(text = text, maxLines = 1, overflow = TextOverflow.Ellipsis)

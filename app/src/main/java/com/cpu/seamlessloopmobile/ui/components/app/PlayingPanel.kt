@@ -1,10 +1,12 @@
 package com.cpu.seamlessloopmobile.ui.components.app
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -24,7 +26,7 @@ import com.cpu.seamlessloopmobile.ui.components.common.MainInfoPage
 import com.cpu.seamlessloopmobile.ui.components.common.PlaybackProgressBar
 import com.cpu.seamlessloopmobile.ui.components.common.PlaybackControls
 import com.cpu.seamlessloopmobile.jni.NativeAudio
-import com.cpu.seamlessloopmobile.ui.theme.SeamlessLoopColors
+import com.cpu.seamlessloopmobile.ui.theme.SeamlessLoopPlayerColors
 import androidx.compose.ui.platform.LocalContext
 import com.cpu.seamlessloopmobile.utils.rememberHapticClick
 
@@ -83,8 +85,14 @@ fun PlayingPanel(
 
     AnimatedVisibility(
         visible = isVisible && playingSong != null,
-        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+        enter = slideInVertically(
+            animationSpec = tween(280),
+            initialOffsetY = { it / 8 }
+        ) + fadeIn(animationSpec = tween(220)),
+        exit = slideOutVertically(
+            animationSpec = tween(220),
+            targetOffsetY = { it / 10 }
+        ) + fadeOut(animationSpec = tween(180))
     ) {
         val songItem = playingSong ?: return@AnimatedVisibility
 
@@ -94,8 +102,8 @@ fun PlayingPanel(
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            SeamlessLoopColors.DarkBgGradientStart,
-                            SeamlessLoopColors.DarkBgGradientEnd
+                            SeamlessLoopPlayerColors.GradientStart,
+                            SeamlessLoopPlayerColors.GradientEnd
                         )
                     )
                 )
@@ -123,7 +131,7 @@ fun PlayingPanel(
                         Icon(
                             Icons.Default.KeyboardArrowDown,
                             contentDescription = "收起",
-                            tint = SeamlessLoopColors.White,
+                            tint = SeamlessLoopPlayerColors.PrimaryText,
                             modifier = Modifier.size(28.dp)
                         )
                     }
@@ -133,11 +141,24 @@ fun PlayingPanel(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         repeat(2) { index ->
+                            val selected = pagerState.currentPage == index
+                            val indicatorWidth by animateDpAsState(
+                                targetValue = if (selected) 18.dp else 6.dp,
+                                animationSpec = tween(160),
+                                label = "player_page_indicator"
+                            )
                             Box(
                                 modifier = Modifier
-                                    .size(if (pagerState.currentPage == index) 8.dp else 4.dp)
-                                    .clip(CircleShape)
-                                    .background(if (pagerState.currentPage == index) SeamlessLoopColors.PurpleAccent else SeamlessLoopColors.Gray)
+                                    .width(indicatorWidth)
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(
+                                        if (selected) {
+                                            SeamlessLoopPlayerColors.Primary
+                                        } else {
+                                            SeamlessLoopPlayerColors.Inactive
+                                        }
+                                    )
                             )
                         }
                     }
@@ -151,7 +172,7 @@ fun PlayingPanel(
                         Icon(
                             Icons.Default.MoreVert,
                             contentDescription = "更多",
-                            tint = SeamlessLoopColors.White,
+                            tint = SeamlessLoopPlayerColors.PrimaryText,
                             modifier = Modifier.size(26.dp)
                         )
                     }

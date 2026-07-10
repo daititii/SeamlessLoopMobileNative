@@ -1,11 +1,14 @@
 package com.cpu.seamlessloopmobile.ui.components.common
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -25,7 +28,7 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import com.cpu.seamlessloopmobile.jni.NativeAudio
 import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.utils.TimeUtils
-import com.cpu.seamlessloopmobile.ui.theme.SeamlessLoopColors
+import com.cpu.seamlessloopmobile.ui.theme.SeamlessLoopPlayerColors
 import com.cpu.seamlessloopmobile.utils.rememberHapticClick
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -41,33 +44,41 @@ fun MainInfoPage(
     buttonHapticFeedbackEnabled: Boolean = true,
     onRatingClick: () -> Unit = {}
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(12.dp))
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val artworkSize = minOf(
+            312.dp,
+            (maxWidth - 48.dp).coerceAtLeast(0.dp),
+            (maxHeight * 0.42f).coerceAtLeast(0.dp)
+        )
+        val artworkIconSize = minOf(88.dp, artworkSize * 0.34f)
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+        Spacer(modifier = Modifier.height(4.dp))
 
         SongArtwork(
             coverPath = songItem.coverPath,
             contentDescription = songItem.displayName,
-            modifier = Modifier.size(268.dp),
-            shape = RoundedCornerShape(28.dp),
-            iconSize = 88.dp,
-            backgroundColor = SeamlessLoopColors.DarkBgGradientEnd.copy(alpha = 0.82f),
-            iconTint = SeamlessLoopColors.PurpleAccent
+            modifier = Modifier.size(artworkSize),
+            shape = RoundedCornerShape(24.dp),
+            iconSize = artworkIconSize,
+            backgroundColor = SeamlessLoopPlayerColors.Panel.copy(alpha = 0.82f),
+            iconTint = SeamlessLoopPlayerColors.Primary
         )
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         // --- 歌曲信息 ---
         Text(
             text = songItem.displayName ?: songItem.fileName,
             style = MaterialTheme.typography.headlineMedium.copy(
                 fontWeight = FontWeight.Bold,
-                color = SeamlessLoopColors.White,
-                fontSize = 24.sp
+                color = SeamlessLoopPlayerColors.PrimaryText
             ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -75,10 +86,9 @@ fun MainInfoPage(
         )
         
         Text(
-            text = songItem.artist ?: "Unknown Artist",
+            text = songItem.artist?.takeIf { it.isNotBlank() } ?: "未知艺人",
             style = MaterialTheme.typography.bodyLarge.copy(
-                color = SeamlessLoopColors.Gray,
-                fontSize = 16.sp
+                color = SeamlessLoopPlayerColors.SecondaryText
             ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -93,16 +103,21 @@ fun MainInfoPage(
         Button(
             onClick = rememberHapticClick(buttonHapticFeedbackEnabled, onClick = onRatingClick),
             colors = ButtonDefaults.buttonColors(
-                containerColor = SeamlessLoopColors.White.copy(alpha = 0.05f),
-                contentColor = if (songItem.rating > 0) Color(0xFFFFD700) else SeamlessLoopColors.Gray
+                containerColor = SeamlessLoopPlayerColors.PrimaryText.copy(alpha = 0.05f),
+                contentColor = if (songItem.rating > 0) {
+                    SeamlessLoopPlayerColors.LoopMarker
+                } else {
+                    SeamlessLoopPlayerColors.TertiaryText
+                }
             ),
             shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.heightIn(min = 48.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     if (songItem.rating > 0) Icons.Default.Star else Icons.Default.StarBorder,
-                    contentDescription = "Rating",
+                    contentDescription = "评分",
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -113,7 +128,8 @@ fun MainInfoPage(
             }
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(12.dp))
+        }
     }
 }
 
@@ -121,7 +137,7 @@ fun MainInfoPage(
 private fun AudioFileInfoRow(song: Song) {
     val mime = formatMimeType(song.mimeType)
         ?: formatMimeType(mimeFromFileName(song.fileName))
-        ?: "UNKNOWN"
+        ?: "未知格式"
     val sampleRate = song.sampleRateHz?.takeIf { it > 0 }?.let { formatSampleRate(it) }
         ?: "-- kHz"
     val bitrate = song.bitrateKbps?.takeIf { it > 0 }?.let { "$it kbps" }
@@ -131,7 +147,7 @@ private fun AudioFileInfoRow(song: Song) {
     Text(
         text = "$mime  ·  $sampleRate | $bitrate",
         style = MaterialTheme.typography.labelMedium.copy(
-            color = SeamlessLoopColors.LightGray.copy(alpha = 0.82f),
+            color = SeamlessLoopPlayerColors.SecondaryText.copy(alpha = 0.82f),
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium
         ),
@@ -260,7 +276,7 @@ fun PlaybackProgressBar(
     ) {
         Text(
             text = startTime,
-            color = SeamlessLoopColors.LightGray,
+            color = SeamlessLoopPlayerColors.SecondaryText,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.width(48.dp),
@@ -295,15 +311,15 @@ fun PlaybackProgressBar(
                     modifier = Modifier
                         .size(14.dp)
                         .clip(CircleShape)
-                        .background(SeamlessLoopColors.PurpleAccent)
-                        .border(2.dp, SeamlessLoopColors.White.copy(alpha = 0.82f), CircleShape)
+                        .background(SeamlessLoopPlayerColors.Primary)
+                        .border(2.dp, SeamlessLoopPlayerColors.PrimaryText.copy(alpha = 0.82f), CircleShape)
                 )
             },
             track = { sliderState ->
                 val fraction = if (sliderState.valueRange.endInclusive > sliderState.valueRange.start) {
                     (sliderState.value - sliderState.valueRange.start) / (sliderState.valueRange.endInclusive - sliderState.valueRange.start)
                 } else 0f
-                val markerColor = Color(0xFFFFD166)
+                val markerColor = SeamlessLoopPlayerColors.LoopMarker
                 val loopStartFraction = if (totalFrames > 0L && song.loopStart > 0L) {
                     (song.loopStart.toFloat() / totalFrames.toFloat()).coerceIn(0f, 1f)
                 } else null
@@ -322,14 +338,14 @@ fun PlaybackProgressBar(
                             .fillMaxWidth()
                             .height(4.dp)
                             .clip(RoundedCornerShape(2.dp))
-                            .background(SeamlessLoopColors.Gray.copy(alpha = 0.34f))
+                            .background(SeamlessLoopPlayerColors.Track.copy(alpha = 0.64f))
                     )
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(fraction.coerceIn(0f, 1f))
                             .height(4.dp)
                             .clip(RoundedCornerShape(2.dp))
-                            .background(SeamlessLoopColors.PurpleAccent)
+                            .background(SeamlessLoopPlayerColors.Primary)
                     )
                     loopStartFraction?.let { LoopMarker(it, markerColor) }
                     loopEndFraction?.let { LoopMarker(it, markerColor) }
@@ -338,7 +354,7 @@ fun PlaybackProgressBar(
         )
         Text(
             text = totalTime,
-            color = SeamlessLoopColors.LightGray,
+            color = SeamlessLoopPlayerColors.SecondaryText,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.width(48.dp),
@@ -383,6 +399,26 @@ fun PlaybackControls(
     onPlayPause: () -> Unit,
     onNext: () -> Unit
 ) {
+    val playButtonContainerColor = if (isError) {
+        SeamlessLoopPlayerColors.ErrorContainer
+    } else {
+        SeamlessLoopPlayerColors.Primary
+    }
+    val playButtonContentColor = if (isError) {
+        SeamlessLoopPlayerColors.OnErrorContainer
+    } else {
+        SeamlessLoopPlayerColors.GradientStart
+    }
+    val loopControlTint by animateColorAsState(
+        targetValue = if (isSeamlessLoopEnabled) {
+            SeamlessLoopPlayerColors.Primary
+        } else {
+            SeamlessLoopPlayerColors.Inactive
+        },
+        animationSpec = tween(140),
+        label = "seamless_loop_control_color"
+    )
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -391,13 +427,16 @@ fun PlaybackControls(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.Center
         ) {
-            IconButton(onClick = rememberHapticClick(buttonHapticFeedbackEnabled, onClick = onTogglePlayMode)) {
+            IconButton(
+                onClick = rememberHapticClick(buttonHapticFeedbackEnabled, onClick = onTogglePlayMode),
+                modifier = Modifier.size(48.dp)
+            ) {
                 val modeIcon = when(playMode) {
                     com.cpu.seamlessloopmobile.viewmodel.PlayMode.LIST_LOOP -> Icons.Default.Repeat
                     com.cpu.seamlessloopmobile.viewmodel.PlayMode.SINGLE_LOOP -> Icons.Default.RepeatOne
                     com.cpu.seamlessloopmobile.viewmodel.PlayMode.SHUFFLE -> Icons.Default.Shuffle
                 }
-                Icon(modeIcon, contentDescription = "播放模式", tint = SeamlessLoopColors.PurpleAccent, modifier = Modifier.size(24.dp))
+                Icon(modeIcon, contentDescription = "播放模式", tint = SeamlessLoopPlayerColors.Primary, modifier = Modifier.size(24.dp))
             }
         }
 
@@ -405,8 +444,11 @@ fun PlaybackControls(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.Center
         ) {
-            IconButton(onClick = rememberHapticClick(buttonHapticFeedbackEnabled, onClick = onPrev)) {
-                Icon(Icons.Default.SkipPrevious, contentDescription = "上一首", tint = SeamlessLoopColors.White, modifier = Modifier.size(32.dp))
+            IconButton(
+                onClick = rememberHapticClick(buttonHapticFeedbackEnabled, onClick = onPrev),
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(Icons.Default.SkipPrevious, contentDescription = "上一首", tint = SeamlessLoopPlayerColors.PrimaryText, modifier = Modifier.size(32.dp))
             }
         }
  
@@ -418,8 +460,10 @@ fun PlaybackControls(
                 onClick = rememberHapticClick(buttonHapticFeedbackEnabled) { if (!isPreparing) onPlayPause() },
                 modifier = Modifier.size(64.dp),
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = if (isError) MaterialTheme.colorScheme.error else SeamlessLoopColors.PurpleAccent,
-                    disabledContainerColor = SeamlessLoopColors.PurpleAccent.copy(alpha = 0.5f)
+                    containerColor = playButtonContainerColor,
+                    contentColor = playButtonContentColor,
+                    disabledContainerColor = playButtonContainerColor.copy(alpha = 0.5f),
+                    disabledContentColor = playButtonContentColor.copy(alpha = 0.5f)
                 ),
                 enabled = !isPreparing
             ) {
@@ -427,14 +471,14 @@ fun PlaybackControls(
                     CircularProgressIndicator(
                         modifier = Modifier.size(28.dp),
                         strokeWidth = 3.dp,
-                        color = SeamlessLoopColors.DarkBgGradientStart
+                        color = playButtonContentColor
                     )
                 } else {
                     Icon(
                         if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = "播放/暂停",
                         modifier = Modifier.size(36.dp),
-                        tint = SeamlessLoopColors.DarkBgGradientStart
+                        tint = playButtonContentColor
                     )
                 }
             }
@@ -444,8 +488,11 @@ fun PlaybackControls(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.Center
         ) {
-            IconButton(onClick = rememberHapticClick(buttonHapticFeedbackEnabled, onClick = onNext)) {
-                Icon(Icons.Default.SkipNext, contentDescription = "下一首", tint = SeamlessLoopColors.White, modifier = Modifier.size(32.dp))
+            IconButton(
+                onClick = rememberHapticClick(buttonHapticFeedbackEnabled, onClick = onNext),
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(Icons.Default.SkipNext, contentDescription = "下一首", tint = SeamlessLoopPlayerColors.PrimaryText, modifier = Modifier.size(32.dp))
             }
         }
 
@@ -453,11 +500,14 @@ fun PlaybackControls(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.Center
         ) {
-            IconButton(onClick = rememberHapticClick(buttonHapticFeedbackEnabled, onClick = onToggleSeamlessLoop)) {
+            IconButton(
+                onClick = rememberHapticClick(buttonHapticFeedbackEnabled, onClick = onToggleSeamlessLoop),
+                modifier = Modifier.size(48.dp)
+            ) {
                 Icon(
                     imageVector = Icons.Default.AllInclusive,
                     contentDescription = "单曲无缝循环",
-                    tint = if (isSeamlessLoopEnabled) SeamlessLoopColors.PurpleAccent else SeamlessLoopColors.Gray,
+                    tint = loopControlTint,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -487,7 +537,7 @@ fun MainInfoPagePreview() {
 @Composable
 fun PlaybackControlsPreview() {
     MaterialTheme {
-        Box(modifier = Modifier.background(SeamlessLoopColors.DarkBgGradientStart).padding(16.dp)) {
+        Box(modifier = Modifier.background(SeamlessLoopPlayerColors.GradientStart).padding(16.dp)) {
             PlaybackControls(
                 playMode = com.cpu.seamlessloopmobile.viewmodel.PlayMode.LIST_LOOP,
                 isSeamlessLoopEnabled = true,

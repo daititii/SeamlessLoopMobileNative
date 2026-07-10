@@ -88,7 +88,7 @@ private fun BottomNavButton(
     val hovered by interactionSource.collectIsHoveredAsState()
     val iconColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.onSecondaryContainer
+            MaterialTheme.colorScheme.primaryContainer
         } else {
             MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f)
         },
@@ -97,7 +97,7 @@ private fun BottomNavButton(
     )
     val indicatorColor by animateColorAsState(
         targetValue = when {
-            selected -> MaterialTheme.colorScheme.secondaryContainer
+            selected -> MaterialTheme.colorScheme.onPrimaryContainer
             hovered -> MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.10f)
             else -> Color.Transparent
         },
@@ -105,7 +105,7 @@ private fun BottomNavButton(
         label = "bottom_nav_indicator_color"
     )
     val rippleColor = if (selected) {
-        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.12f)
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f)
     } else {
         MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.10f)
     }
