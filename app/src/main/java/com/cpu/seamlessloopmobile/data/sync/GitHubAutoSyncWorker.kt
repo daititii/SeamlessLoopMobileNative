@@ -8,6 +8,7 @@ import com.cpu.seamlessloopmobile.data.sync.github.GitHubContentsSyncBackend
 import com.cpu.seamlessloopmobile.data.sync.room.RoomSyncSnapshotStore
 import com.cpu.seamlessloopmobile.data.sync.room.SharedPreferencesPlaylistIdMapper
 import com.cpu.seamlessloopmobile.db.AppDatabase
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsRepository
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -51,7 +52,8 @@ class GitHubAutoSyncWorker(
                 database = database,
                 songDao = songDao,
                 playlistDao = playlistDao,
-                playlistIdMapper = playlistIdMapper
+                playlistIdMapper = playlistIdMapper,
+                listenStatsRepository = ListenStatsRepository.getInstance(applicationContext)
             )
             val backend = GitHubContentsSyncBackend(
                 config = config,

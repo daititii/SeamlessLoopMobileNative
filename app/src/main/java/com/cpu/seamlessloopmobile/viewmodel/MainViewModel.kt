@@ -428,8 +428,8 @@ class MainViewModel(
         }
     }
 
-    /** 以本机数据强制覆盖云端数据。 */
-    fun forcePushLocalToCloud() {
+    /** 仅在云端同步文件不存在时，用本机数据创建初始云端快照。 */
+    fun seedCloudFromLocal() {
         viewModelScope.launch {
             updateGitHubSyncState {
                 it.copy(
@@ -445,15 +445,15 @@ class MainViewModel(
             }
 
             try {
-                when (val result = repo.forcePushLocalToCloud()) {
+                when (val result = repo.seedCloudFromLocal()) {
                     is SyncDataManagementResult.Success -> {
                         val lastSyncTime = githubSyncStore.getLastSyncTime()
                         updateGitHubSyncState {
                             it.copy(
                                 isManagementOperationRunning = false,
                                 isManagementLoading = false,
-                                managementStatusMessage = "已用本机数据覆盖云端，可刷新数据预览",
-                                statusMessage = "已用本机数据覆盖云端",
+                                managementStatusMessage = "已用本机数据创建云端同步文件，可刷新数据预览",
+                                statusMessage = "已创建初始云端同步文件",
                                 lastSyncTime = lastSyncTime,
                                 lastReport = result.data,
                                 managementErrorMessage = ""
@@ -477,7 +477,7 @@ class MainViewModel(
                     it.copy(
                         isManagementOperationRunning = false,
                         isManagementLoading = false,
-                        managementErrorMessage = "强制推送失败：${e.message ?: "未知错误"}"
+                        managementErrorMessage = "初始化云端失败：${e.message ?: "未知错误"}"
                     )
                 }
             }
@@ -602,6 +602,69 @@ class MainViewModel(
                         isManagementOperationRunning = false,
                         isManagementLoading = false,
                         managementErrorMessage = "清除失败：${e.message ?: "未知错误"}"
+                    )
+                }
+            }
+        }
+    }
+
+    /** Loads local playback-stat source device data for the data-management UI. */
+    fun loadPlaybackStatsSourceDevices() {
+        viewModelScope.launch {
+            updateGitHubSyncState {
+                it.copy(
+                    isManagementLoading = true,
+                    isManagementOperationRunning = false,
+                    managementStatusMessage = "",
+                    managementErrorMessage = ""
+                )
+            }
+            when (val result = localSyncDataManagementRepository.getLocalPlaybackStatsSourceDevices()) {
+                is SyncDataManagementResult.Success -> updateGitHubSyncState {
+                    it.copy(
+                        isManagementLoading = false,
+                        playbackStatsSourceDevices = result.data,
+                        managementStatusMessage = "播放统计来源已更新",
+                        managementErrorMessage = ""
+                    )
+                }
+                is SyncDataManagementResult.Failure -> updateGitHubSyncState {
+                    it.copy(
+                        isManagementLoading = false,
+                        managementStatusMessage = "",
+                        managementErrorMessage = result.message
+                    )
+                }
+            }
+        }
+    }
+
+    /** Deletes selected local playback-stat source histories using generation tombstones. */
+    fun deletePlaybackStatsSourceDeviceHistories(deviceIds: Set<String>) {
+        viewModelScope.launch {
+            updateGitHubSyncState {
+                it.copy(
+                    isManagementOperationRunning = true,
+                    isManagementLoading = false,
+                    managementStatusMessage = "",
+                    managementErrorMessage = ""
+                )
+            }
+            when (val result = localSyncDataManagementRepository
+                .deleteLocalPlaybackStatsSourceDeviceHistories(deviceIds)) {
+                is SyncDataManagementResult.Success -> updateGitHubSyncState {
+                    it.copy(
+                        isManagementOperationRunning = false,
+                        playbackStatsSourceDevices = result.data,
+                        managementStatusMessage = "所选播放统计来源记录已删除",
+                        managementErrorMessage = ""
+                    )
+                }
+                is SyncDataManagementResult.Failure -> updateGitHubSyncState {
+                    it.copy(
+                        isManagementOperationRunning = false,
+                        managementStatusMessage = "",
+                        managementErrorMessage = result.message
                     )
                 }
             }

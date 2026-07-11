@@ -2,6 +2,15 @@ package com.cpu.seamlessloopmobile.data.sync.room
 
 import androidx.room.withTransaction
 import com.cpu.seamlessloopmobile.db.AppDatabase
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsContribution
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsDevice
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsLocalPayload
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsRepository
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsSongNode
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsSource
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsTombstone
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsUnresolvedNode
+import com.cpu.seamlessloopmobile.data.stats.normalizedStatsFileName
 import com.cpu.seamlessloopmobile.model.Playlist
 import com.cpu.seamlessloopmobile.model.PlaylistDao
 import com.cpu.seamlessloopmobile.model.Song
@@ -18,8 +27,17 @@ import com.cpu.seamlessloopmobile.data.sync.SyncRatingEntry
 import com.cpu.seamlessloopmobile.data.sync.SyncReport
 import com.cpu.seamlessloopmobile.data.sync.SyncSnapshot
 import com.cpu.seamlessloopmobile.data.sync.SyncSongIdentity
+import com.cpu.seamlessloopmobile.data.sync.SyncSongStableKey
 import com.cpu.seamlessloopmobile.data.sync.SyncSnapshotStore
 import com.cpu.seamlessloopmobile.data.sync.stableKey
+import com.cpu.seamlessloopmobile.data.sync.SyncPlaybackStats
+import com.cpu.seamlessloopmobile.data.sync.SyncPlaybackStatsContribution
+import com.cpu.seamlessloopmobile.data.sync.SyncPlaybackStatsDevice
+import com.cpu.seamlessloopmobile.data.sync.SyncPlaybackStatsSong
+import com.cpu.seamlessloopmobile.data.sync.SyncPlaybackStatsTombstone
+import com.cpu.seamlessloopmobile.data.sync.isSemanticallyValid
+import com.cpu.seamlessloopmobile.data.sync.reducePlaybackSongIdentity
+import com.google.gson.Gson
 import kotlin.math.abs
 
 /**
@@ -32,8 +50,10 @@ class RoomSyncSnapshotStore(
     private val database: AppDatabase,
     private val songDao: SongDao,
     private val playlistDao: PlaylistDao,
-    private val playlistIdMapper: PlaylistIdMapper
+    private val playlistIdMapper: PlaylistIdMapper,
+    private val listenStatsRepository: ListenStatsRepository
 ) : SyncSnapshotStore {
+    private val gson = Gson()
 
     // ===================================================================
     // exportSnapshot
@@ -97,13 +117,17 @@ class RoomSyncSnapshotStore(
                 items = items
             )
         }
+        val playbackStats = listenStatsRepository.exportLocalPayload().toSyncPlaybackStats(
+            listenStatsRepository.currentSource()
+        )
 
         return SyncSnapshot(
             deviceId = deviceId,
             exportedAt = now,
             playlists = playlists,
             loopPoints = loopPoints,
-            ratings = ratings
+            ratings = ratings,
+            playbackStats = playbackStats
         )
     }
 
@@ -111,9 +135,34 @@ class RoomSyncSnapshotStore(
     // applySnapshot
     // ===================================================================
 
-    override suspend fun applySnapshot(snapshot: SyncSnapshot): SyncReport {
-        return database.withTransaction {
+    override suspend fun applySnapshot(
+        snapshot: SyncSnapshot,
+        trackLocalMutation: Boolean
+    ): SyncReport {
+        validatePlaybackStats(snapshot.playbackStats)
+        val report = database.withTransaction {
             applySnapshotInternal(snapshot)
+        }
+        applyPlaybackStats(snapshot.playbackStats, trackLocalMutation)
+        // A scan may have completed while the merged payload was being persisted.
+        reAssociatePlaybackStats(songDao.getAllSongs())
+        return report
+    }
+
+    /** Rebinds persisted playback statistics to the current Room song metadata. */
+    suspend fun rebindPlaybackStats() {
+        reAssociatePlaybackStats(songDao.getAllSongs())
+    }
+
+    private fun validatePlaybackStats(stats: SyncPlaybackStats) {
+        stats.songs.forEachIndexed { index, song ->
+            require(song.isSemanticallyValid()) {
+                "Invalid playback statistics song at index $index"
+            }
+        }
+        val stableKeys = stats.songs.map { it.song.stableKey() }
+        require(stableKeys.toSet().size == stableKeys.size) {
+            "Duplicate playback statistics song stable key"
         }
     }
 
@@ -360,6 +409,307 @@ class RoomSyncSnapshotStore(
 
         companion object {
             private const val TOTAL_SAMPLES_TOLERANCE = 10_000L
+        }
+    }
+
+    private suspend fun applyPlaybackStats(
+        stats: SyncPlaybackStats,
+        trackLocalMutation: Boolean
+    ) {
+        val localSongs = songDao.getAllSongs()
+        val matcher = PlaybackStatsSongMatcher(localSongs)
+        val current = listenStatsRepository.exportLocalPayload()
+        val resolved = current.songs.toMutableList()
+        val unresolved = current.unresolvedNodes.toMutableList()
+
+        stats.songs.forEach { remote ->
+            resolved.add(remote.toLocalNode(matcher.match(remote.song)))
+        }
+        listenStatsRepository.applyLocalPayload(
+            ListenStatsLocalPayload(
+                currentDeviceId = current.currentDeviceId,
+                currentGeneration = current.currentGeneration,
+                devices = stats.devices.map { it.toLocalDevice() },
+                songs = resolved,
+                tombstones = stats.tombstones.map { it.toLocalTombstone() },
+                unresolvedNodes = mergeUnresolvedNodes(unresolved)
+            ),
+            trackMutation = trackLocalMutation
+        )
+    }
+
+    private suspend fun reAssociatePlaybackStats(localSongs: List<Song>) {
+        val current = listenStatsRepository.exportLocalPayload()
+        val matcher = PlaybackStatsSongMatcher(localSongs)
+        val parseable = current.unresolvedNodes.mapNotNull { unresolved ->
+            parseUnresolvedSyncSong(unresolved)
+        }
+        val malformed = current.unresolvedNodes.filter { unresolved ->
+            parseUnresolvedSyncSong(unresolved) == null
+        }
+        val candidates = current.songs + parseable.map { it.toLocalNode(null) }
+        val rebound = candidates.map { node ->
+            val local = matcher.match(node.toSyncIdentity())
+            if (local == null) {
+                // The wire identity and last-known presentation metadata survive a stale binding.
+                node.copy(boundSongId = 0L)
+            } else {
+                node.copy(
+                    boundSongId = local.id,
+                    displayName = local.displayName,
+                    artist = local.artist,
+                    album = local.album,
+                    coverPath = local.coverPath,
+                    filePath = local.filePath
+                )
+            }
+        }
+        listenStatsRepository.applyLocalPayload(current.copy(
+            songs = mergeLocalStatsNodes(rebound),
+            unresolvedNodes = malformed
+        ), trackMutation = false)
+    }
+
+    private fun ListenStatsLocalPayload.toSyncPlaybackStats(currentSource: ListenStatsSource): SyncPlaybackStats = SyncPlaybackStats(
+        devices = devices.map { device ->
+            val generation = if (device.deviceId == currentSource.device.deviceId) currentSource.currentGeneration
+            else device.currentGeneration
+            SyncPlaybackStatsDevice(device.deviceId, device.displayName, device.createdAt,
+                device.lastSeenAt, generation, device.platform, device.displayNameUpdatedAtUtcMs)
+        },
+        songs = mergeSyncPlaybackStatsSongs(
+            songs.map { it.toSyncSong(tombstones) } + unresolvedNodes.mapNotNull(::parseUnresolvedSyncSong),
+            tombstones
+        ),
+        tombstones = tombstones.map { tombstone -> SyncPlaybackStatsTombstone(tombstone.deviceId, tombstone.generation,
+            tombstone.tombstonedAtUtcMs, tombstonedByDeviceId = tombstone.operatorDeviceId, reason = tombstone.reason) }
+    ).sorted()
+
+    private fun mergeLocalStatsNodes(nodes: List<ListenStatsSongNode>): List<ListenStatsSongNode> =
+        nodes.groupBy { it.wireKey() }
+            .toSortedMap(compareBy<SyncSongStableKey> { it.fileNameKey }.thenBy { it.durationMs })
+            .values.map { duplicates ->
+                val identity = reducePlaybackSongIdentity(duplicates.map { it.toSyncIdentity() })
+                val binding = duplicates.minWithOrNull(
+                    compareBy<ListenStatsSongNode> { if (it.boundSongId > 0L) 0 else 1 }
+                        .thenBy { it.boundSongId }
+                        .thenBy { it.filePath }
+                        .thenBy { it.displayName }
+                )!!
+                binding.copy(
+                    identityKey = identity.localIdentityKey(),
+                    normalizedFileName = identity.normalizedFileName,
+                    fileName = identity.fileName,
+                    durationMs = identity.durationMs,
+                    totalSamples = identity.totalSamples,
+                    contentHash = identity.contentHash
+                ).withMergedContributions(duplicates.flatMap { it.contributions })
+            }
+
+    /** Collapses parseable revisions while retaining malformed payloads verbatim for later recovery. */
+    private fun mergeUnresolvedNodes(nodes: List<ListenStatsUnresolvedNode>): List<ListenStatsUnresolvedNode> {
+        val parsed = mutableMapOf<SyncSongStableKey, SyncPlaybackStatsSong>()
+        val malformed = mutableListOf<ListenStatsUnresolvedNode>()
+        nodes.forEach { node ->
+            val song = parseUnresolvedSyncSong(node)
+            if (song == null) {
+                malformed += node
+            } else {
+                val key = song.song.stableKey()
+                parsed[key] = parsed[key]?.let { existing ->
+                    existing.copy(
+                        song = reducePlaybackSongIdentity(listOf(existing.song, song.song)),
+                        contributions = mergeSyncContributions(existing.contributions + song.contributions)
+                    )
+                } ?: song.copy(contributions = mergeSyncContributions(song.contributions))
+            }
+        }
+        return parsed.values.map { it.toUnresolvedNode() } + malformed
+    }
+
+    /** Gson permits missing Kotlin non-null fields, so validate before using an unresolved node. */
+    private fun parseUnresolvedSyncSong(node: ListenStatsUnresolvedNode): SyncPlaybackStatsSong? =
+        runCatching {
+            gson.fromJson(node.payloadJson, SyncPlaybackStatsSong::class.java)
+        }.getOrNull()?.takeIf { it.isSemanticallyValid() }
+
+    private fun mergeSyncPlaybackStatsSongs(
+        songs: List<SyncPlaybackStatsSong>,
+        tombstones: List<ListenStatsTombstone>
+    ): List<SyncPlaybackStatsSong> = songs.groupBy { it.song.stableKey() }
+        .toSortedMap(compareBy<SyncSongStableKey> { it.fileNameKey }.thenBy { it.durationMs }).values.map { duplicates ->
+        val identity = reducePlaybackSongIdentity(duplicates.map { it.song })
+        duplicates.first().copy(
+            song = identity,
+            contributions = mergeSyncContributions(duplicates.flatMap { it.contributions })
+        ).let { song ->
+            song.copy(contributions = song.contributions.filterNot { contribution -> tombstones.any {
+                it.deviceId == contribution.deviceId && it.generation == contribution.generation
+            } })
+        }
+    }
+
+    private fun mergeLocalContributions(contributions: List<ListenStatsContribution>): List<ListenStatsContribution> =
+        contributions.groupBy { it.deviceId to it.generation }.toSortedMap(compareBy<Pair<String, Long>> { it.first }.thenBy { it.second }).values.map { duplicates ->
+            duplicates.drop(1).fold(duplicates.first()) { first, second ->
+                ListenStatsContribution(
+                    deviceId = first.deviceId,
+                    generation = first.generation,
+                    dailyListenMs = (first.dailyListenMs.keys + second.dailyListenMs.keys).associateWith { date ->
+                        maxOf(first.dailyListenMs[date] ?: 0L, second.dailyListenMs[date] ?: 0L)
+                    },
+                    undatedListenMs = maxOf(first.undatedListenMs, second.undatedListenMs),
+                    firstPlayedAtUtcMs = earliestMeaningful(first.firstPlayedAtUtcMs, second.firstPlayedAtUtcMs),
+                    lastPlayedAtUtcMs = maxOf(first.lastPlayedAtUtcMs, second.lastPlayedAtUtcMs),
+                    updatedAtUtcMs = maxOf(first.updatedAtUtcMs, second.updatedAtUtcMs)
+                )
+            }
+        }
+
+    private fun mergeSyncContributions(contributions: List<SyncPlaybackStatsContribution>): List<SyncPlaybackStatsContribution> =
+        contributions.groupBy { it.deviceId to it.generation }.toSortedMap(compareBy<Pair<String, Long>> { it.first }.thenBy { it.second }).values.map { duplicates ->
+            duplicates.drop(1).fold(duplicates.first()) { first, second ->
+                SyncPlaybackStatsContribution(
+                    deviceId = first.deviceId,
+                    generation = first.generation,
+                    datedListenMs = (first.datedListenMs.keys + second.datedListenMs.keys).associateWith { date ->
+                        maxOf(first.datedListenMs[date] ?: 0L, second.datedListenMs[date] ?: 0L)
+                    },
+                    undatedListenMs = maxOf(first.undatedListenMs, second.undatedListenMs),
+                    firstPlayedAtUtcMs = earliestMeaningful(first.firstPlayedAtUtcMs, second.firstPlayedAtUtcMs),
+                    lastPlayedAtUtcMs = maxOf(first.lastPlayedAtUtcMs, second.lastPlayedAtUtcMs),
+                    updatedAtUtcMs = maxOf(first.updatedAtUtcMs, second.updatedAtUtcMs)
+                )
+            }
+        }
+
+    private fun earliestMeaningful(first: Long, second: Long): Long = when {
+        first == 0L -> second
+        second == 0L -> first
+        else -> minOf(first, second)
+    }
+
+    private fun ListenStatsSongNode.wireKey(): SyncSongStableKey =
+        SyncSongStableKey(normalizedFileName, durationMs)
+
+    private fun ListenStatsSongNode.toSyncIdentity() = SyncSongIdentity(
+        fileName = fileName,
+        durationMs = durationMs,
+        totalSamples = totalSamples,
+        normalizedFileName = normalizedFileName,
+        contentHash = contentHash
+    )
+
+    private fun SyncSongIdentity.localIdentityKey(): String =
+        "${normalizedFileName}|${durationMs}"
+
+    private fun ListenStatsSongNode.toSyncSong(tombstones: List<ListenStatsTombstone>) = SyncPlaybackStatsSong(
+        song = SyncSongIdentity(
+            fileName = fileName,
+            durationMs = durationMs,
+            totalSamples = totalSamples,
+            normalizedFileName = normalizedFileName,
+            contentHash = contentHash
+        ),
+        contributions = contributions.filterNot { contribution -> tombstones.any {
+            it.deviceId == contribution.deviceId && it.generation == contribution.generation
+        } }.map { contribution -> SyncPlaybackStatsContribution(contribution.deviceId,
+            contribution.generation, contribution.dailyListenMs, contribution.undatedListenMs,
+            contribution.firstPlayedAtUtcMs, contribution.lastPlayedAtUtcMs, contribution.updatedAtUtcMs) }
+    )
+
+    private fun SyncPlaybackStatsSong.toLocalNode(local: Song?) = ListenStatsSongNode(
+        identityKey = song.localIdentityKey(),
+        normalizedFileName = song.normalizedFileName,
+        fileName = song.fileName,
+        boundSongId = local?.id ?: 0L,
+        displayName = local?.displayName ?: song.fileName,
+        artist = local?.artist ?: "",
+        album = local?.album ?: "",
+        coverPath = local?.coverPath,
+        durationMs = song.durationMs,
+        totalSamples = song.totalSamples,
+        contentHash = song.contentHash,
+        filePath = local?.filePath ?: "",
+        contributions = contributions.map { it.toLocalContribution() }
+    ).withMergedContributions(contributions.map { it.toLocalContribution() })
+
+    private fun SyncPlaybackStatsSong.toUnresolvedNode() = ListenStatsUnresolvedNode(
+        normalizedFileName = song.normalizedFileName, durationMs = song.durationMs, payloadJson = gson.toJson(this)
+    )
+
+    private fun SyncPlaybackStatsContribution.toLocalContribution() = ListenStatsContribution(deviceId, generation,
+        datedListenMs, undatedListenMs, firstPlayedAtUtcMs, lastPlayedAtUtcMs, updatedAtUtcMs)
+
+    private fun ListenStatsSongNode.withMergedContributions(
+        contributions: List<ListenStatsContribution>
+    ): ListenStatsSongNode {
+        val merged = mergeLocalContributions(contributions)
+        return copy(
+            contributions = merged,
+            firstPlayedAt = merged.map { it.firstPlayedAtUtcMs }.filter { it > 0L }.minOrNull() ?: 0L,
+            lastPlayedAt = merged.maxOfOrNull { it.lastPlayedAtUtcMs } ?: 0L
+        )
+    }
+
+    private fun SyncPlaybackStatsDevice.toLocalDevice() = ListenStatsDevice(deviceId, displayName,
+        displayNameUpdatedAtUtcMs, platform, currentGeneration = currentGeneration, createdAt = firstSeenAtUtcMs,
+        lastSeenAt = lastSeenAtUtcMs, updatedAtUtcMs = displayNameUpdatedAtUtcMs)
+
+    private fun SyncPlaybackStatsTombstone.toLocalTombstone() = ListenStatsTombstone(deviceId, generation,
+        tombstonedAtUtcMs, tombstonedByDeviceId, reason)
+
+    private class PlaybackStatsSongMatcher(songs: List<Song>) {
+        private val byName: Map<String, List<Song>> = songs.groupBy {
+            normalizedStatsFileName(it.fileName)
+        }
+        private val byDuration: Map<Pair<String, Long>, List<Song>> = songs.groupBy {
+            normalizedStatsFileName(it.fileName) to it.duration
+        }
+        private val bySamples: Map<Pair<String, Long>, List<Song>> = songs
+            .filter { it.totalSamples != 0L }
+            .groupBy { normalizedStatsFileName(it.fileName) to it.totalSamples }
+
+        fun match(identity: SyncSongIdentity): Song? {
+            val name = normalizedStatsFileName(identity.fileName)
+            val candidates = byName[name].orEmpty()
+
+            byDuration[name to identity.durationMs]
+                ?.singleOrNull()
+                ?.let { return it }
+
+            identity.totalSamples?.let { samples ->
+                bySamples[name to samples]
+                    ?.singleOrNull()
+                    ?.let { return it }
+
+                candidates.filter { song ->
+                    song.totalSamples > 0L && withinDistance(song.totalSamples, samples, SAMPLE_TOLERANCE)
+                }.singleOrNull()?.let { return it }
+            }
+
+            candidates.filter { song ->
+                withinDistance(song.duration, identity.durationMs, DURATION_TOLERANCE)
+            }.singleOrNull()?.let { return it }
+
+            return candidates.singleOrNull()
+        }
+
+        private companion object {
+            const val SAMPLE_TOLERANCE = 10_000L
+            const val DURATION_TOLERANCE = 200L
+
+            /** Returns false when the mathematical difference cannot fit in Long. */
+            fun withinDistance(first: Long, second: Long, tolerance: Long): Boolean {
+                val lower = minOf(first, second)
+                val upper = maxOf(first, second)
+                val difference = try {
+                    Math.subtractExact(upper, lower)
+                } catch (_: ArithmeticException) {
+                    return false
+                }
+                return difference <= tolerance
+            }
         }
     }
 

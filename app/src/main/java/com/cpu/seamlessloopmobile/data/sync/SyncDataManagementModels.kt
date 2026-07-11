@@ -43,6 +43,19 @@ data class SyncDataManagementPreview(
     val cloud: CloudSyncDataPreview?
 )
 
+/** Local playback-stat source device information for data-management screens. */
+data class PlaybackStatsSourceDeviceSummary(
+    val deviceId: String,
+    val displayName: String,
+    val fallbackLabel: String,
+    val platform: String,
+    val currentGeneration: Long?,
+    val isCurrentDevice: Boolean,
+    val contributedListenMs: Long,
+    val hasEffectiveContributions: Boolean,
+    val allKnownGenerationsRemoved: Boolean
+)
+
 /** 清除本地同步数据的选择。 */
 data class ClearLocalSyncDataSelection(
     val clearPlaylists: Boolean = false,

@@ -1,6 +1,9 @@
 package com.cpu.seamlessloopmobile.data.sync
 
 import androidx.room.withTransaction
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsContribution
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsLocalPayload
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsTombstone
 import com.cpu.seamlessloopmobile.data.stats.ListenStatsRepository
 import com.cpu.seamlessloopmobile.db.AppDatabase
 import com.cpu.seamlessloopmobile.model.PlaylistDao
@@ -8,13 +11,14 @@ import com.cpu.seamlessloopmobile.model.Song
 import com.cpu.seamlessloopmobile.model.SongDao
 import com.cpu.seamlessloopmobile.data.sync.room.PlaylistIdMapper
 import com.cpu.seamlessloopmobile.data.sync.room.RoomSyncSnapshotStore
+import com.google.gson.Gson
 import kotlinx.coroutines.CancellationException
 import kotlin.math.abs
 
 /**
  * 同步数据管理仓库。
  *
- * 提供本地/云端数据预览、强制推送、远程删除、本地数据清除等管理操作，
+ * 提供本地/云端数据预览、初始云端写入、远程删除、本地数据清除等管理操作，
  * 不涉及自动同步或合并流程。
  */
 class SyncDataManagementRepository(
@@ -27,6 +31,7 @@ class SyncDataManagementRepository(
     private val playlistIdMapper: PlaylistIdMapper,
     private val listenStatsRepository: ListenStatsRepository
 ) {
+    private val gson = Gson()
 
     // ===================================================================
     // 本地摘要
@@ -69,6 +74,12 @@ class SyncDataManagementRepository(
                 if (snapshot == null) {
                     SyncDataManagementPreview(local, CloudSyncDataPreview(exists = false))
                 } else {
+                    if (snapshot.schemaVersion != SYNC_SCHEMA_VERSION_V2) {
+                        return SyncDataManagementResult.Failure(
+                            "Unsupported remote schema version ${snapshot.schemaVersion}",
+                            SyncErrorCode.INVALID_REMOTE
+                        )
+                    }
                     val cloud = buildCloudPreview(snapshot)
                     SyncDataManagementPreview(local, cloud)
                 }
@@ -131,21 +142,21 @@ class SyncDataManagementRepository(
     }
 
     // ===================================================================
-    // 强制推送
+    // 初始云端写入
     // ===================================================================
 
     /**
-     * 将当前本地数据强制推送到云端。
-     * 会覆盖远程已有数据。
+     * 仅当云端同步文件不存在时，用当前本地数据创建初始快照。
      */
-    suspend fun forcePushLocalToCloud(): SyncDataManagementResult<SyncReport> {
+    suspend fun seedCloudFromLocal(): SyncDataManagementResult<SyncReport> {
         val backend = backend ?: return remoteBackendUnavailable()
-        // 获取当前远程 SHA（如文件不存在则 SHA 为 null）
-        val currentSha = when (val result = backend.downloadSnapshot(null)) {
-            is SyncResult.Success -> result.remoteRevision
-            is SyncResult.Failure -> {
-                if (result.code == SyncErrorCode.NOT_FOUND) null
-                else return SyncDataManagementResult.Failure(result.message, result.code)
+        when (val result = backend.downloadSnapshot(null)) {
+            is SyncResult.Success -> return SyncDataManagementResult.Failure(
+                "Cloud snapshot already exists; use normal sync or delete the cloud snapshot first",
+                SyncErrorCode.INVALID_REMOTE
+            )
+            is SyncResult.Failure -> if (result.code != SyncErrorCode.NOT_FOUND) {
+                return SyncDataManagementResult.Failure(result.message, result.code)
             }
             is SyncResult.Cancelled -> return SyncDataManagementResult.Failure(
                 "Operation cancelled", SyncErrorCode.UNKNOWN
@@ -155,7 +166,9 @@ class SyncDataManagementRepository(
         val deviceId = metadataStore.getDeviceId()
         val localSnapshot = snapshotStore.exportSnapshot(deviceId)
 
-        val uploadResult = backend.uploadSnapshot(localSnapshot, currentSha)
+        val preparedSnapshot = localSnapshot.prepareV2Egress()
+
+        val uploadResult = backend.uploadSnapshot(preparedSnapshot, expectedRevision = null)
 
         return when (uploadResult) {
             is SyncResult.Success -> {
@@ -261,6 +274,192 @@ class SyncDataManagementRepository(
         val updated = getLocalSummary()
         return SyncDataManagementResult.Success(updated)
     }
+
+    /** Lists local playback-stat sources and their non-tombstoned listen-time contributions. */
+    suspend fun getLocalPlaybackStatsSourceDevices():
+        SyncDataManagementResult<List<PlaybackStatsSourceDeviceSummary>> = try {
+        SyncDataManagementResult.Success(buildPlaybackStatsSourceDevices())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        SyncDataManagementResult.Failure(
+            "Unable to load playback-stat source devices: ${e.message ?: "unknown error"}"
+        )
+    }
+
+    /**
+     * Tombstones every locally known generation for the selected source devices.
+     * Tombstoning the current source delegates generation rotation to [ListenStatsRepository].
+     */
+    suspend fun deleteLocalPlaybackStatsSourceDeviceHistories(
+        deviceIds: Set<String>
+    ): SyncDataManagementResult<List<PlaybackStatsSourceDeviceSummary>> {
+        val selectedIds = deviceIds.filter { it.isNotBlank() }.toSet()
+        if (selectedIds.isEmpty()) {
+            return SyncDataManagementResult.Failure(
+                "No playback-stat source device selected",
+                SyncErrorCode.UNKNOWN
+            )
+        }
+
+        return try {
+            val payload = listenStatsRepository.exportLocalPayload()
+            val knownDeviceIds = payload.knownSourceDeviceIds()
+            val existingSelectedIds = selectedIds.intersect(knownDeviceIds)
+            if (existingSelectedIds.isEmpty()) {
+                return SyncDataManagementResult.Failure(
+                    "Selected playback-stat source devices no longer exist",
+                    SyncErrorCode.UNKNOWN
+                )
+            }
+
+            val now = System.currentTimeMillis()
+            val tombstones = payload.tombstones.toMutableList()
+            existingSelectedIds.forEach { deviceId ->
+                payload.knownGenerations(deviceId).forEach { generation ->
+                    tombstones += ListenStatsTombstone(
+                        deviceId = deviceId,
+                        generation = generation,
+                        tombstonedAtUtcMs = now,
+                        operatorDeviceId = payload.currentDeviceId,
+                        reason = "source_history_deleted"
+                    )
+                }
+            }
+            listenStatsRepository.applyLocalPayload(
+                payload.copy(tombstones = tombstones.distinctBy { it.deviceId to it.generation })
+            )
+            SyncDataManagementResult.Success(buildPlaybackStatsSourceDevices())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            SyncDataManagementResult.Failure(
+                "Unable to delete playback-stat source histories: ${e.message ?: "unknown error"}"
+            )
+        }
+    }
+
+    private suspend fun buildPlaybackStatsSourceDevices(): List<PlaybackStatsSourceDeviceSummary> {
+        val payload = listenStatsRepository.exportLocalPayload()
+        val tombstonedGenerations = payload.tombstones
+            .map { it.deviceId to it.generation }
+            .toSet()
+        val devices = payload.devices.associateBy { it.deviceId }
+        return payload.knownSourceDeviceIds().map { deviceId ->
+            val effectiveContributions = payload.mergedSourceContributions(deviceId).filter {
+                (it.deviceId to it.generation) !in tombstonedGenerations
+            }
+            val knownGenerations = payload.knownGenerations(deviceId)
+            val device = devices[deviceId]
+            PlaybackStatsSourceDeviceSummary(
+                deviceId = deviceId,
+                displayName = device?.displayName.orEmpty(),
+                fallbackLabel = device?.displayName?.takeIf { it.isNotBlank() } ?: deviceId,
+                platform = device?.platform?.ifBlank { "unknown" } ?: "unknown",
+                currentGeneration = when {
+                    deviceId == payload.currentDeviceId -> payload.currentGeneration
+                    device != null -> device.currentGeneration
+                    else -> null
+                },
+                isCurrentDevice = deviceId == payload.currentDeviceId,
+                contributedListenMs = effectiveContributions.sumOf { it.totalListenMs() },
+                hasEffectiveContributions = effectiveContributions.isNotEmpty(),
+                allKnownGenerationsRemoved = knownGenerations.isNotEmpty() &&
+                    knownGenerations.all { (deviceId to it) in tombstonedGenerations }
+            )
+        }.sortedWith(compareByDescending<PlaybackStatsSourceDeviceSummary> { it.isCurrentDevice }
+            .thenBy { it.fallbackLabel })
+    }
+
+    private fun com.cpu.seamlessloopmobile.data.stats.ListenStatsLocalPayload.knownSourceDeviceIds(): Set<String> =
+        buildSet {
+            addAll(devices.map { it.deviceId })
+            addAll(songs.flatMap { song -> song.contributions.map { it.deviceId } })
+            addAll(tombstones.map { it.deviceId })
+            addAll(unresolvedNodes.flatMap { node ->
+                unresolvedSyncSong(node)?.contributions.orEmpty().map { it.deviceId }
+            })
+        }.filter { it.isNotBlank() }.toSet()
+
+    private fun com.cpu.seamlessloopmobile.data.stats.ListenStatsLocalPayload.knownGenerations(
+        deviceId: String
+    ): Set<Long> = buildSet {
+        if (deviceId == currentDeviceId) add(currentGeneration)
+        devices.find { it.deviceId == deviceId }?.let { add(it.currentGeneration) }
+        songs.forEach { song -> song.contributions.filter { it.deviceId == deviceId }.forEach { add(it.generation) } }
+        tombstones.filter { it.deviceId == deviceId }.forEach { add(it.generation) }
+        unresolvedNodes.forEach { node ->
+            unresolvedSyncSong(node)?.contributions.orEmpty()
+                .filter { it.deviceId == deviceId }
+                .forEach { add(it.generation) }
+        }
+    }
+
+    private fun ListenStatsLocalPayload.mergedSourceContributions(deviceId: String): List<ListenStatsContribution> =
+        (songs.map { song ->
+            SyncPlaybackStatsSong(
+                SyncSongIdentity(song.fileName, song.durationMs, normalizedFileName = song.normalizedFileName),
+                song.contributions.map { contribution ->
+                    SyncPlaybackStatsContribution(
+                        contribution.deviceId, contribution.generation, contribution.dailyListenMs,
+                        contribution.undatedListenMs, contribution.firstPlayedAtUtcMs,
+                        contribution.lastPlayedAtUtcMs, contribution.updatedAtUtcMs
+                    )
+                }
+            )
+        } + unresolvedNodes.mapNotNull(::unresolvedSyncSong))
+            .groupBy { it.song.stableKey() }
+            .values
+            .flatMap { revisions ->
+                revisions.flatMap { it.contributions }
+                    .filter { it.deviceId == deviceId }
+                    .groupBy { it.deviceId to it.generation }
+                    .values
+                    .map(::mergeSourceContributions)
+            }
+            .map { contribution ->
+                ListenStatsContribution(
+                    deviceId = contribution.deviceId,
+                    generation = contribution.generation,
+                    dailyListenMs = contribution.datedListenMs,
+                    undatedListenMs = contribution.undatedListenMs,
+                    firstPlayedAtUtcMs = contribution.firstPlayedAtUtcMs,
+                    lastPlayedAtUtcMs = contribution.lastPlayedAtUtcMs,
+                    updatedAtUtcMs = contribution.updatedAtUtcMs
+                )
+            }
+
+    private fun mergeSourceContributions(
+        revisions: List<SyncPlaybackStatsContribution>
+    ): SyncPlaybackStatsContribution = revisions.reduce { first, second ->
+        first.copy(
+            datedListenMs = (first.datedListenMs.keys + second.datedListenMs.keys).associateWith { date ->
+                maxOf(first.datedListenMs[date] ?: 0L, second.datedListenMs[date] ?: 0L)
+            },
+            undatedListenMs = maxOf(first.undatedListenMs, second.undatedListenMs),
+            firstPlayedAtUtcMs = earliestMeaningful(first.firstPlayedAtUtcMs, second.firstPlayedAtUtcMs),
+            lastPlayedAtUtcMs = maxOf(first.lastPlayedAtUtcMs, second.lastPlayedAtUtcMs),
+            updatedAtUtcMs = maxOf(first.updatedAtUtcMs, second.updatedAtUtcMs)
+        )
+    }
+
+    private fun earliestMeaningful(first: Long, second: Long): Long = when {
+        first == 0L -> second
+        second == 0L -> first
+        else -> minOf(first, second)
+    }
+
+    /** Gson permits missing Kotlin non-null fields, so validate before using unresolved contributions. */
+    private fun unresolvedSyncSong(
+        node: com.cpu.seamlessloopmobile.data.stats.ListenStatsUnresolvedNode
+    ): SyncPlaybackStatsSong? = runCatching {
+        gson.fromJson(node.payloadJson, SyncPlaybackStatsSong::class.java)
+    }.getOrNull()?.takeIf { it.isSemanticallyValid() }
+
+    private fun ListenStatsContribution.totalListenMs(): Long =
+        (dailyListenMs.values + undatedListenMs).fold(0L) { total, value ->
+            if (value <= 0L) total else if (Long.MAX_VALUE - total < value) Long.MAX_VALUE else total + value
+        }
 
     private fun <T> remoteBackendUnavailable(): SyncDataManagementResult<T> {
         return SyncDataManagementResult.Failure(

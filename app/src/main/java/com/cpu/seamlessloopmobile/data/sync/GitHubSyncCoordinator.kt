@@ -119,6 +119,12 @@ class GitHubSyncCoordinator(
                 SyncErrorCode.UNKNOWN, "Unexpected download result: $downloadResult"
             )
         }
+        if (remoteSnapshot != null && remoteSnapshot.schemaVersion != SYNC_SCHEMA_VERSION_V2) {
+            return SyncOutcome.Failure(
+                SyncErrorCode.INVALID_REMOTE,
+                "Unsupported remote schema version ${remoteSnapshot.schemaVersion}"
+            )
+        }
 
         // 6. 合并
         var retriesRemaining = maxConflictRetries
@@ -135,20 +141,26 @@ class GitHubSyncCoordinator(
             }
 
             // 8. 应用合并后快照到本地
-            val applyReport = snapshotStore.applySnapshot(mergeResult.snapshot)
+            val applyReport = snapshotStore.applySnapshot(
+                mergeResult.snapshot,
+                trackLocalMutation = false
+            )
             // 合并 applyReport 中的冲突信息
             report = report.copy(
                 conflicts = report.conflicts + applyReport.conflicts
             )
 
-            // 应用后、上传前再检查一次，避免把同步期间的新本地修改上传覆盖掉。
             if (metadataStore.getMutationVersion() != initialMutationVersion) {
                 return SyncOutcome.LocalMutationDuringSync
             }
 
             // 9. 上传合并后快照
+            val preparedSnapshot = mergeResult.snapshot.prepareV2Egress()
+            if (metadataStore.getMutationVersion() != initialMutationVersion) {
+                return SyncOutcome.LocalMutationDuringSync
+            }
             val uploadResult = backend.uploadSnapshot(
-                snapshot = mergeResult.snapshot,
+                snapshot = preparedSnapshot,
                 expectedRevision = currentRemoteRevision
             )
 
@@ -179,6 +191,14 @@ class GitHubSyncCoordinator(
                         val reDownload = backend.downloadSnapshot()
                         when (reDownload) {
                             is SyncResult.Success -> {
+                                if (reDownload.snapshot != null &&
+                                    reDownload.snapshot.schemaVersion != SYNC_SCHEMA_VERSION_V2
+                                ) {
+                                    return SyncOutcome.Failure(
+                                        SyncErrorCode.INVALID_REMOTE,
+                                        "Unsupported remote schema version ${reDownload.snapshot.schemaVersion}"
+                                    )
+                                }
                                 currentRemoteSnapshot = reDownload.snapshot
                                 currentRemoteRevision = reDownload.remoteRevision
                                 // 继续循环
@@ -215,8 +235,9 @@ class GitHubSyncCoordinator(
             return SyncOutcome.LocalMutationDuringSync
         }
 
+        val preparedSnapshot = localSnapshot.prepareV2Egress()
         val uploadResult = backend.uploadSnapshot(
-            snapshot = localSnapshot,
+            snapshot = preparedSnapshot,
             expectedRevision = null
         )
 

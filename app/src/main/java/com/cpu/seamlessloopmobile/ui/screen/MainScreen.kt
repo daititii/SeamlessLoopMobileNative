@@ -179,7 +179,11 @@ fun MainScreen(
                             onClearGitHubSyncConfig = remember(viewModel) { viewModel::clearGitHubSyncConfig },
                             onRunGitHubSync = remember(viewModel) { viewModel::runGitHubSync },
                             onRefreshSyncDataManagementPreview = remember(viewModel) { viewModel::refreshSyncDataManagementPreview },
-                            onForcePushLocalToCloud = remember(viewModel) { viewModel::forcePushLocalToCloud },
+                            onLoadPlaybackStatsSourceDevices = remember(viewModel) { viewModel::loadPlaybackStatsSourceDevices },
+                            onDeletePlaybackStatsSourceDeviceHistories = remember(viewModel) {
+                                viewModel::deletePlaybackStatsSourceDeviceHistories
+                            },
+                            onSeedCloudFromLocal = remember(viewModel) { viewModel::seedCloudFromLocal },
                             onDeleteCloudSnapshot = remember(viewModel) { viewModel::deleteCloudSnapshot },
                             onClearLocalSyncData = remember(viewModel) { viewModel::clearLocalSyncData }
                         )
@@ -364,15 +368,12 @@ fun MainScreen(
     }
 }
 
-private fun findSongForTrackStat(
+internal fun findSongForTrackStat(
     songs: List<Song>,
     stat: TrackStat
 ): Song? {
-    return songs.firstOrNull { song ->
-        TrackStat.identityKey(song.fileName, song.duration.coerceAtLeast(0L), song.filePath) == stat.identityKey
-    } ?: songs.firstOrNull { song ->
-        stat.filePath.isNotBlank() && song.filePath == stat.filePath
-    }
+    if (stat.songId <= 0L) return null
+    return songs.firstOrNull { song -> song.id == stat.songId }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

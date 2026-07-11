@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Refresh
@@ -53,6 +54,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -60,6 +62,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -78,6 +81,7 @@ import androidx.compose.ui.unit.sp
 import com.cpu.seamlessloopmobile.data.SettingsManager
 import com.cpu.seamlessloopmobile.data.ThemePreference
 import com.cpu.seamlessloopmobile.data.sync.LocalSyncDataSummary
+import com.cpu.seamlessloopmobile.data.sync.PlaybackStatsSourceDeviceSummary
 import com.cpu.seamlessloopmobile.utils.rememberHapticClick
 import com.cpu.seamlessloopmobile.viewmodel.GitHubSyncUiState
 import java.text.DateFormat
@@ -88,6 +92,23 @@ private enum class SettingsPage {
     Playback,
     Data,
     Sync
+}
+
+internal data class PlaybackStatsSourceDevicePresentation(
+    val activeSources: List<PlaybackStatsSourceDeviceSummary>,
+    val historicalSourceCount: Int
+)
+
+internal fun playbackStatsSourceDevicePresentation(
+    sources: List<PlaybackStatsSourceDeviceSummary>
+): PlaybackStatsSourceDevicePresentation {
+    val (historicalSources, activeSources) = sources.partition {
+        it.allKnownGenerationsRemoved && !it.isCurrentDevice
+    }
+    return PlaybackStatsSourceDevicePresentation(
+        activeSources = activeSources,
+        historicalSourceCount = historicalSources.size
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,7 +131,9 @@ fun SettingsScreen(
     onClearGitHubSyncConfig: () -> Unit,
     onRunGitHubSync: () -> Unit,
     onRefreshSyncDataManagementPreview: () -> Unit,
-    onForcePushLocalToCloud: () -> Unit,
+    onLoadPlaybackStatsSourceDevices: () -> Unit,
+    onDeletePlaybackStatsSourceDeviceHistories: (Set<String>) -> Unit,
+    onSeedCloudFromLocal: () -> Unit,
     onDeleteCloudSnapshot: () -> Unit,
     onClearLocalSyncData: (
         clearPlaylists: Boolean,
@@ -202,7 +225,9 @@ fun SettingsScreen(
                             onClearGitHubSyncConfig = onClearGitHubSyncConfig,
                             onRunGitHubSync = onRunGitHubSync,
                             onRefreshSyncDataManagementPreview = onRefreshSyncDataManagementPreview,
-                            onForcePushLocalToCloud = onForcePushLocalToCloud,
+                            onLoadPlaybackStatsSourceDevices = onLoadPlaybackStatsSourceDevices,
+                            onDeletePlaybackStatsSourceDeviceHistories = onDeletePlaybackStatsSourceDeviceHistories,
+                            onSeedCloudFromLocal = onSeedCloudFromLocal,
                             onDeleteCloudSnapshot = onDeleteCloudSnapshot,
                             onClearLocalSyncData = onClearLocalSyncData
                         )
@@ -762,7 +787,9 @@ private fun GitHubSyncSettings(
     onClearGitHubSyncConfig: () -> Unit,
     onRunGitHubSync: () -> Unit,
     onRefreshSyncDataManagementPreview: () -> Unit,
-    onForcePushLocalToCloud: () -> Unit,
+    onLoadPlaybackStatsSourceDevices: () -> Unit,
+    onDeletePlaybackStatsSourceDeviceHistories: (Set<String>) -> Unit,
+    onSeedCloudFromLocal: () -> Unit,
     onDeleteCloudSnapshot: () -> Unit,
     onClearLocalSyncData: (
         clearPlaylists: Boolean,
@@ -777,13 +804,15 @@ private fun GitHubSyncSettings(
     var branch by rememberSaveable(githubSyncState.branch) { mutableStateOf(githubSyncState.branch) }
     var path by rememberSaveable(githubSyncState.path) { mutableStateOf(githubSyncState.path) }
     var showClearDialog by remember { mutableStateOf(false) }
-    var showForcePushDialog by remember { mutableStateOf(false) }
+    var showSeedCloudDialog by remember { mutableStateOf(false) }
     var showDeleteCloudDialog by remember { mutableStateOf(false) }
     var showClearLocalDialog by remember { mutableStateOf(false) }
+    var showDeleteSourceDevicesDialog by remember { mutableStateOf(false) }
     var clearLocalPlaylists by remember { mutableStateOf(false) }
     var clearLocalLoopPoints by remember { mutableStateOf(false) }
     var clearLocalRatings by remember { mutableStateOf(false) }
     var clearLocalListenStats by remember { mutableStateOf(false) }
+    var selectedSourceDeviceIds by remember { mutableStateOf(setOf<String>()) }
 
     val missingConfigFields = owner.isBlank() || repo.isBlank() || branch.isBlank() || path.isBlank()
     val saveEnabled = !missingConfigFields && (githubSyncState.hasToken || token.isNotBlank())
@@ -807,11 +836,18 @@ private fun GitHubSyncSettings(
     val report = githubSyncState.lastReport
     val managementPreview = githubSyncState.managementPreview
     val cloudPreview = managementPreview?.cloud
+    val sourceDevicePresentation = remember(githubSyncState.playbackStatsSourceDevices) {
+        playbackStatsSourceDevicePresentation(githubSyncState.playbackStatsSourceDevices)
+    }
+    val activePlaybackStatsSourceDevices = sourceDevicePresentation.activeSources
     fun resetClearLocalSelections() {
         clearLocalPlaylists = false
         clearLocalLoopPoints = false
         clearLocalRatings = false
         clearLocalListenStats = false
+    }
+    fun resetSourceDeviceSelections() {
+        selectedSourceDeviceIds = emptySet()
     }
     val cloudExportedAtText = remember(cloudPreview?.exportedAt) {
         val exportedAt = cloudPreview?.exportedAt ?: 0L
@@ -821,6 +857,10 @@ private fun GitHubSyncSettings(
         } else {
             null
         }
+    }
+
+    LaunchedEffect(Unit) {
+        onLoadPlaybackStatsSourceDevices()
     }
 
     if (showClearDialog) {
@@ -851,25 +891,25 @@ private fun GitHubSyncSettings(
         )
     }
 
-    if (showForcePushDialog) {
+    if (showSeedCloudDialog) {
         AlertDialog(
-            onDismissRequest = { showForcePushDialog = false },
-            title = { Text("覆盖云端数据") },
-            text = { Text("这会用当前本机歌单、循环点和评分覆盖云端同步文件，云端现有更改会被替换。") },
+            onDismissRequest = { showSeedCloudDialog = false },
+            title = { Text("初始化云端同步") },
+            text = { Text("仅当云端同步文件不存在时，才会用当前本机数据创建它。云端已有文件时请使用普通同步，或先删除云端文件。") },
             confirmButton = {
                 TextButton(
                     onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
-                        onForcePushLocalToCloud()
-                        showForcePushDialog = false
+                        onSeedCloudFromLocal()
+                        showSeedCloudDialog = false
                     }
                 ) {
-                    Text("覆盖")
+                    Text("创建")
                 }
             },
             dismissButton = {
                 TextButton(
                     onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
-                        showForcePushDialog = false
+                        showSeedCloudDialog = false
                     }
                 ) {
                     Text("取消")
@@ -914,7 +954,7 @@ private fun GitHubSyncSettings(
             title = { Text("清理本机数据") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("所选内容将从本机清除；云端的歌单、循环点和评分不会删除，之后同步时可能恢复；播放统计不会同步。")
+                    Text("所选内容将从本机清除。歌单、循环点和评分可能在后续同步中恢复；播放统计会同步永久删除标记，不会恢复已清理的代际。")
                     LocalDataOptionRow(
                         checked = clearLocalPlaylists,
                         label = "歌单",
@@ -963,6 +1003,57 @@ private fun GitHubSyncSettings(
                     onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
                         showClearLocalDialog = false
                         resetClearLocalSelections()
+                    }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    if (showDeleteSourceDevicesDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteSourceDevicesDialog = false
+                resetSourceDeviceSelections()
+            },
+            title = { Text("删除来源设备历史") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("所选设备的播放统计历史将通过 tombstone 标记失效；当前设备会切换到新的空 generation。")
+                    activePlaybackStatsSourceDevices.forEach { source ->
+                        SourceDeviceOptionRow(
+                            checked = source.deviceId in selectedSourceDeviceIds,
+                            source = source,
+                            buttonHapticFeedbackEnabled = buttonHapticFeedbackEnabled,
+                            onCheckedChange = { checked ->
+                                selectedSourceDeviceIds = if (checked) {
+                                    selectedSourceDeviceIds + source.deviceId
+                                } else {
+                                    selectedSourceDeviceIds - source.deviceId
+                                }
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
+                        onDeletePlaybackStatsSourceDeviceHistories(selectedSourceDeviceIds)
+                        showDeleteSourceDevicesDialog = false
+                        resetSourceDeviceSelections()
+                    },
+                    enabled = selectedSourceDeviceIds.isNotEmpty()
+                ) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
+                        showDeleteSourceDevicesDialog = false
+                        resetSourceDeviceSelections()
                     }
                 ) {
                     Text("取消")
@@ -1323,6 +1414,52 @@ private fun GitHubSyncSettings(
             }
         }
 
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "播放统计来源",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        if (activePlaybackStatsSourceDevices.isEmpty() && sourceDevicePresentation.historicalSourceCount == 0) {
+            Text(
+                text = "暂无来源设备记录",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            activePlaybackStatsSourceDevices.forEach { source ->
+                PlaybackStatsSourceDeviceRow(source = source)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            if (sourceDevicePresentation.historicalSourceCount > 0) {
+                if (activePlaybackStatsSourceDevices.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                DeletedPlaybackStatsSourcesRow(
+                    count = sourceDevicePresentation.historicalSourceCount
+                )
+            }
+            if (activePlaybackStatsSourceDevices.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
+                        resetSourceDeviceSelections()
+                        showDeleteSourceDevicesDialog = true
+                    },
+                    enabled = clearLocalActionEnabled,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("删除来源设备历史", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+
         if (githubSyncState.managementStatusMessage.isNotBlank()) {
             Spacer(modifier = Modifier.height(12.dp))
             Text(
@@ -1345,7 +1482,7 @@ private fun GitHubSyncSettings(
 
         OutlinedButton(
             onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
-                showForcePushDialog = true
+                showSeedCloudDialog = true
             },
             enabled = managementActionEnabled,
             modifier = Modifier.fillMaxWidth(),
@@ -1354,7 +1491,7 @@ private fun GitHubSyncSettings(
         ) {
             Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("用本机数据覆盖云端", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("用本机数据初始化云端", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -1433,6 +1570,136 @@ private fun GitHubSyncSettings(
                 color = MaterialTheme.colorScheme.onSurface
             )
         }
+    }
+}
+
+@Composable
+private fun PlaybackStatsSourceDeviceRow(source: PlaybackStatsSourceDeviceSummary) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+        shape = RoundedCornerShape(14.dp),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SettingsIconBox(icon = Icons.Default.Smartphone)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = source.fallbackLabel,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = buildString {
+                        append(source.platform)
+                        source.currentGeneration?.let { append("  Generation $it") }
+                        if (source.isCurrentDevice) append("  当前设备")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                text = formatPlaybackStatsSourceDuration(source.contributedListenMs),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun DeletedPlaybackStatsSourcesRow(count: Int) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+        shape = RoundedCornerShape(14.dp),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SettingsIconBox(icon = Icons.Default.Delete)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = "已删除的来源（${count} 台）",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun SourceDeviceOptionRow(
+    checked: Boolean,
+    source: PlaybackStatsSourceDeviceSummary,
+    buttonHapticFeedbackEnabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(
+                onClick = rememberHapticClick(buttonHapticFeedbackEnabled) {
+                    onCheckedChange(!checked)
+                }
+            )
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null)
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = source.fallbackLabel,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = buildString {
+                    append(source.platform)
+                    source.currentGeneration?.let { append("  Generation $it") }
+                    if (source.isCurrentDevice) append("  当前设备")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            text = formatPlaybackStatsSourceDuration(source.contributedListenMs),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun formatPlaybackStatsSourceDuration(listenMs: Long): String {
+    val totalMinutes = (listenMs.coerceAtLeast(0L) / 60_000L)
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return if (hours > 0) {
+        "${hours}h ${minutes}m"
+    } else {
+        "${minutes}m"
     }
 }
 

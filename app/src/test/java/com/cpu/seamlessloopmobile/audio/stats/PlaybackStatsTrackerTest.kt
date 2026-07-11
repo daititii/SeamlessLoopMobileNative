@@ -236,6 +236,27 @@ class PlaybackStatsTrackerTest {
     }
 
     @Test
+    fun staleFlushBeforeClearEventCannotRepopulateRotatedGeneration() = runTest {
+        val s = song(id = 1, fileName = "rotated.mp3", duration = 90_000L)
+        tracker.onSongChanged(s)
+        tracker.onPlayingChanged(true)
+
+        fakeElapsed = 5_000L
+        repo.clearAll()
+
+        // The service collector may not have delivered clearEvents yet. The active fence must
+        // still reject this delayed periodic flush.
+        tracker.flushPeriodic()
+        val key = TrackStat.identityKey("rotated.mp3", 90_000L, "/music/rotated.mp3")
+        assertEquals(0L, repo.getByIdentityKey(key)?.totalListenMs ?: 0L)
+
+        tracker.onStatsCleared()
+        fakeElapsed = 8_000L
+        tracker.flushFinal()
+        assertEquals(3_000L, repo.getByIdentityKey(key)?.totalListenMs ?: 0L)
+    }
+
+    @Test
     fun identityKeyUsesFileNameAndDurationWhenDurationPositive() {
         val key = TrackStat.identityKey("song.mp3", 200_000L, "/ignored/path.mp3")
         assertEquals("song.mp3|200000", key)

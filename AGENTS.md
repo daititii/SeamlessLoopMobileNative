@@ -9,10 +9,10 @@ Kotlin 2.1.0 + AGP 9.0.1 + Gradle 9.1.0；使用 `org.jetbrains.kotlin.plugin.co
 ## 构建与测试
 
 ```bash
-gradlew.bat assembleDebug
-gradlew.bat testDebugUnitTest
-gradlew.bat testDebugUnitTest --tests "com.cpu.seamlessloopmobile.viewmodel.PlayModeTest"
-gradlew.bat connectedAndroidTest               # 需要设备
+gradlew.bat -q assembleDebug
+gradlew.bat -q testDebugUnitTest
+gradlew.bat -q testDebugUnitTest --tests "com.cpu.seamlessloopmobile.viewmodel.PlayModeTest"
+gradlew.bat -q connectedAndroidTest            # 需要设备
 ```
 
 **测试前提**：`PcDatabaseImporterTest` 需要 `app/src/test/resources/pc_db_samples/pc_3nf_sample.db` 存在才能运行（仅 `pc_3nf_sample.db` 存在且有内容）；若文件缺失则测试静默通过而不报错！
@@ -29,9 +29,9 @@ gradlew.bat connectedAndroidTest               # 需要设备
 
 - **无缝循环次数限制**：`SettingsManager.seamlessLoopCountLimit` 控制当前歌曲完成多少次无缝回绕后触发调度，默认 0 表示无限循环，上限 `SettingsManager.MAX_SEAMLESS_LOOP_COUNT_LIMIT`（当前 9999）。`PlaybackManager` 通过 native `EVENT_LOOP_JUMP` + 实际进度回绕确认来计数；达到上限后 LIST_LOOP/SHUFFLE 切下一首，SINGLE_LOOP 重新播放当前歌曲并重置计数。
 
-- **播放统计**：`PlaybackStatsTracker` 只统计处于 `AudioPlayState.PLAYING` 的真实墙钟收听时长，数据由 `ListenStatsRepository` 写入 `filesDir/listen_stats.json`。除累计总时长外，新记录会按本地日期保存并支持日/周（周一开始）/月/年/总排行；旧 JSON 的历史累计值保留在“总”中。不统计播放次数或循环次数。删除/丢失文件时保留历史并在统计页显示缺失状态。清理入口统一位于 `GitHub 同步 → 数据管理 → 清理本机数据`，播放统计不参与云端同步或同步元数据变更。
+- **播放统计**：`PlaybackStatsTracker` 只统计处于 `AudioPlayState.PLAYING` 的真实墙钟收听时长，数据由 `ListenStatsRepository` 写入 `filesDir/listen_stats.json` 的本地 ListenStatsStore schema 3。日期桶使用来源设备本地日期，并保留无日期时长；不统计播放次数或循环次数。GitHub 云端只接受 schema 2，按 exact wire identity 和 per-device/per-generation 累计 contribution、永久 generation tombstone 同步；可解析但未匹配的歌曲保留为 `boundSongId = 0` 的 typed node，无法安全解析的 payload 才进入 `unresolvedNodes`。本地 fuzzy relink 是非破坏性绑定，多个 wire identity 只在 presentation 层聚合。删除/丢失文件时保留历史并在统计页显示缺失状态，来源设备管理与清理入口位于 `GitHub 同步 → 数据管理`。完整规则见 [播放统计与 GitHub 同步 Schema V2](docs/2026-07-12_播放统计与GitHub同步SchemaV2.md)。
 
-- **GitHub 同步**：设置页含 `GitHub 同步` 页面，用 GitHub Contents API 在单个 JSON 快照文件中同步歌单、循环点和评分。`GitHubSyncCoordinator` 负责导出本地 → 下载远端 → 合并 → 应用 → 带 SHA 乐观锁上传；`RoomSyncSnapshotStore` 负责 Room 快照转换；`SharedPreferencesPlaylistIdMapper` 维护歌单本地 ID 与同步 ID 映射。同步不包含音频文件、播放统计、播放队列、封面/格式展示字段或 App 设置。
+- **GitHub 同步**：设置页含 `GitHub 同步` 页面，用 GitHub Contents API 在单个 JSON 快照文件中同步歌单、循环点、评分和播放统计。`GitHubSyncCoordinator` 负责导出本地 → 下载远端 → 合并 → 应用 → 带 SHA 乐观锁上传；`RoomSyncSnapshotStore` 负责 Room 快照转换；`SharedPreferencesPlaylistIdMapper` 维护歌单本地 ID 与同步 ID 映射。同步不包含音频文件、播放队列、封面/格式展示字段或 App 设置。
 
 - **自动同步**：`GitHubAutoSyncScheduler` + `GitHubAutoSyncWorker` 使用 WorkManager 周期任务实现，默认关闭；开启后在网络可用时约每小时同步一次。配置/token 不完整时 UI 不允许开启；清除 GitHub 配置会关闭并取消 WorkManager 任务。当前不做 mutation-triggered 同步，因为评分/歌单/循环点的本地修改入口尚未全部统一接入 mutation hook。
 
@@ -80,14 +80,15 @@ gradlew.bat connectedAndroidTest               # 需要设备
 - `MusicScannerRepository` — 扫描逻辑，含 `getInitialScannedSongs()`（全量扫描+批量更新+Artist/Album 预创建+A/B 标记+多级匹配）、`findAbPair()` / `findAbPairRobust()`（DB + MediaStore）
 - `SettingsManager` — 单例 `getInstance(context)`，Gson 序列化，持久化 lastSongPath/lastPosition/playMode/isAbMode 等
 - `SettingsManager` 同时持久化 `isSeamlessLoopEnabled`、`seamlessLoopCountLimit`、`themePreference`、`buttonHapticFeedbackEnabled`；循环次数上限 0 表示无限循环，设置 UI 需校验为 `0..MAX_SEAMLESS_LOOP_COUNT_LIMIT` 的整数。
-- `data/stats/` — `TrackStat` + `ListenStatsRepository`，使用 JSON 保存真实收听时长总计与本地日期桶。
+- `data/stats/` — `TrackStat` + `ListenStatsRepository` + `ListenStatsStore`，使用本地 schema 3 JSON 保存真实收听时长、source-local 日期桶、无日期时长、设备/代际贡献、永久 tombstone 和 unresolved 节点。App 私有存储重置会创建新的 `deviceId`；应用内清除当前统计会 tombstone 当前 generation 并旋转到下一代。
 - `data/sync/` — GitHub/云同步模型、portable identity、合并策略、同步协调器、数据管理仓库、WorkManager 自动同步 Worker；`github/` 是 GitHub Contents API 后端，`room/` 是 Room 快照转换与歌单 ID 映射。
 
 **GitHub 同步注意事项**：
 - Token 当前由 `SharedPreferencesGitHubSyncStore` 以 `MODE_PRIVATE` 明文保存，只是 MVP；后续应迁移到 EncryptedSharedPreferences/Android KeyStore。
 - `GitHubSyncConfig.DEFAULT_BRANCH = "main"`，`DEFAULT_PATH = "seamless-loop/sync.json"`。
 - 需要 `INTERNET` 权限；依赖 OkHttp 与 WorkManager (`work-runtime-ktx`)。
-- 快照 schema version 当前为 `1`；同步合并主键使用 `fileName.lowercase() + durationMs`，`totalSamples` 只作辅助匹配字段。手机/桌面端同曲 sample 数可能有微差，不能用 `totalSamples` 区分同 duration 歌曲；合并同一 identity 时优先保留远端原始 `SyncSongIdentity.totalSamples`，避免跨端反复改 JSON。
+- 云端只接受 canonical schema 2：`playbackStatistics` 必须存在，`dateBucketBasis` 必须是 `sourceLocal`，其他 schema 直接拒绝。`prepareV2Egress()` 在上传前统一规范化快照。播放 wire identity 严格是 NFC + `Locale.ROOT` normalized basename 与 exact `durationMs`；`totalSamples` 仅为辅助字段。`RoomSyncSnapshotStore` 本地重绑定顺序为 exact duration、exact/tolerant samples ±10000、duration ±200ms、唯一同名，歧义即停止；绑定不改 wire identity 或 contributions，多个 wire identity 只在 presentation 聚合。非 key ACI metadata 使用确定性 reducer：有效原始 `fileName` 取 ordinal 最小值，`totalSamples` 与 `contentHash` 各取非空最大值。歌单/循环点/评分的通用 identity 可在 Gson 前 backfill `normalizedFileName`，播放 identity 不得 backfill。`seedCloudFromLocal()` 仅在云端文件不存在时创建初始快照，云端已有文件必须使用普通同步或先删除云端文件。
+- 播放统计合并按 `(deviceId, generation)` 做累计最大值；永久 tombstone 抑制对应代际。来源设备完全删除的分组只存在于数据管理 UI，不创建额外 wire identity。应用 stale payload 时必须保留当前本地节点并合并同步期间产生的 current deltas。
 - 循环点 `0/0` 与评分 `0` 视为未设置，不能覆盖远端/本地已有实质数据。
 - 自动同步唯一任务名为 `com.cpu.seamlessloopmobile.GITHUB_AUTO_SYNC_PERIODIC`，周期 1 小时，网络可用约束，`ExistingPeriodicWorkPolicy.KEEP`。
 - Worker 和手动同步当前没有共享同一个 coordinator mutex；依赖 GitHub SHA 乐观锁、Room 事务与下次周期同步收敛。若要更强一致性，需要新增跨入口同步锁。

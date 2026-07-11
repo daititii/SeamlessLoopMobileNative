@@ -26,7 +26,6 @@ class MainViewModelFactory(
             val scope = (viewModel as ViewModel).viewModelScope
             
             val settingsManager = com.cpu.seamlessloopmobile.data.SettingsManager.getInstance(context)
-            val libraryVM = LibraryViewModel(repository, scope, settingsManager)
             val selectionVM = SelectionViewModel()
             val playlistVM = PlaylistViewModel(repository, scope, settingsManager)
             val loopDetectionRepo = com.cpu.seamlessloopmobile.data.LoopDetectionRepository(repository, context.applicationContext)
@@ -42,7 +41,15 @@ class MainViewModelFactory(
                 database = database,
                 songDao = songDao,
                 playlistDao = playlistDao,
-                playlistIdMapper = playlistIdMapper
+                playlistIdMapper = playlistIdMapper,
+                listenStatsRepository = listenStatsRepository
+            )
+
+            val libraryVM = LibraryViewModel(
+                repository = repository,
+                coroutineScope = scope,
+                settingsManager = settingsManager,
+                onScanCompleted = roomSyncSnapshotStore::rebindPlaybackStats
             )
 
             viewModel.githubSyncStore = githubSyncStore

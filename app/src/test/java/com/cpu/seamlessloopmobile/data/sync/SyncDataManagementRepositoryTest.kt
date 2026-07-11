@@ -4,6 +4,10 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.cpu.seamlessloopmobile.data.stats.ListenStatsRepository
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsContribution
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsDevice
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsUnresolvedNode
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsSongNode
 import com.cpu.seamlessloopmobile.data.stats.TrackStat
 import com.cpu.seamlessloopmobile.data.sync.room.PlaylistIdMapper
 import com.cpu.seamlessloopmobile.data.sync.room.PlaylistSyncRecord
@@ -32,7 +36,7 @@ import java.io.File
 /**
  * SyncDataManagementRepository 单元测试。
  *
- * 验证预览、强制推送、云端删除、本地清除等管理操作。
+ * 验证预览、初始云端写入、云端删除、本地清除等管理操作。
  * 使用 Robolectric 内存数据库和 fake 依赖。
  */
 @RunWith(RobolectricTestRunner::class)
@@ -60,11 +64,11 @@ class SyncDataManagementRepositoryTest {
         songDao = db.songDao()
         playlistDao = db.playlistDao()
         mapper = FakePlaylistIdMapper()
-        snapshotStore = RoomSyncSnapshotStore(db, songDao, playlistDao, mapper)
         fakeBackend = FakeGitHubSnapshotRemote()
         fakeMetadata = FakeSyncMetadataStore()
         listenStatsFile = File.createTempFile("listen_stats", ".json")
         listenStatsRepository = ListenStatsRepository(listenStatsFile)
+        snapshotStore = RoomSyncSnapshotStore(db, songDao, playlistDao, mapper, listenStatsRepository)
         repo = SyncDataManagementRepository(
             database = db,
             songDao = songDao,
@@ -334,11 +338,11 @@ class SyncDataManagementRepositoryTest {
     }
 
     // ===================================================================
-    // 3. force push fetches sha and uploads with that sha
+    // 3. seed cloud only when the remote snapshot does not exist
     // ===================================================================
 
     @Test
-    fun `force push fetches current sha and uploads local snapshot with that sha`() = runBlocking {
+    fun `seed cloud creates v2 snapshot when remote is not found`() = runBlocking {
         // Insert local data
         val songId = insertSong(
             fileName = "track.mp3", filePath = "/a/track.mp3",
@@ -349,25 +353,20 @@ class SyncDataManagementRepositoryTest {
         ).toInt()
         playlistDao.clearAndSyncPlaylist(playlistId, listOf(songId))
 
-        // Remote exists with SHA
-        fakeBackend.downloadResult = SyncResult.Success(
-            report = SyncReport(),
-            snapshot = SyncSnapshot(deviceId = "remote", exportedAt = 100L),
-            remoteRevision = "sha-current"
-        )
+        fakeBackend.downloadResult = SyncResult.Failure("Not found", code = SyncErrorCode.NOT_FOUND)
         fakeBackend.uploadResult = SyncResult.Success(
             report = SyncReport(playlistsUploaded = 1, loopPointsUploaded = 1, ratingsUploaded = 1),
             remoteRevision = "sha-new"
         )
 
-        val result = repo.forcePushLocalToCloud()
+        val result = repo.seedCloudFromLocal()
 
         assertTrue("Expected Success", result is SyncDataManagementResult.Success)
         val report = (result as SyncDataManagementResult.Success).data
 
-        // Upload called with expectedRevision = sha-current
+        // Seed upload must use no revision because the file is absent.
         assertEquals(1, fakeBackend.uploadCallCount)
-        assertEquals("sha-current", fakeBackend.lastExpectedRevision)
+        assertNull(fakeBackend.lastExpectedRevision)
 
         // Uploaded snapshot has the right content
         assertNotNull(fakeBackend.lastUploadedSnapshot)
@@ -375,6 +374,8 @@ class SyncDataManagementRepositoryTest {
         assertEquals(1, fakeBackend.lastUploadedSnapshot!!.loopPoints.size)
         assertEquals(1, fakeBackend.lastUploadedSnapshot!!.ratings.size)
         assertEquals("test-device", fakeBackend.lastUploadedSnapshot!!.deviceId)
+        assertEquals(SYNC_SCHEMA_VERSION_V2, fakeBackend.lastUploadedSnapshot!!.schemaVersion)
+        assertNotNull(fakeBackend.lastUploadedSnapshot!!.playbackStats)
 
         // Report reflects uploaded counts
         assertEquals(1, report.playlistsUploaded)
@@ -387,44 +388,39 @@ class SyncDataManagementRepositoryTest {
     }
 
     @Test
-    fun `force push with not-found remote uploads with null sha`() = runBlocking {
+    fun `seed cloud rejects any existing remote snapshot without uploading`() = runBlocking {
         insertSong(fileName = "a.mp3", filePath = "/a/a.mp3", duration = 50_000L)
 
-        fakeBackend.downloadResult = SyncResult.Failure(
-            "Not found", code = SyncErrorCode.NOT_FOUND
-        )
-        fakeBackend.uploadResult = SyncResult.Success(
-            report = SyncReport(), remoteRevision = "sha-first"
+        fakeBackend.downloadResult = SyncResult.Success(
+            SyncReport(),
+            SyncSnapshot(deviceId = "remote", exportedAt = 1L),
+            remoteRevision = "sha-existing"
         )
 
-        val result = repo.forcePushLocalToCloud()
+        val result = repo.seedCloudFromLocal()
 
-        assertTrue("Expected Success", result is SyncDataManagementResult.Success)
-        assertEquals(1, fakeBackend.uploadCallCount)
-        assertNull("expectedRevision should be null when remote not found",
-            fakeBackend.lastExpectedRevision)
-        assertEquals("sha-first", fakeMetadata.lastRemoteRevision)
+        assertTrue(result is SyncDataManagementResult.Failure)
+        assertEquals(SyncErrorCode.INVALID_REMOTE, (result as SyncDataManagementResult.Failure).code)
+        assertTrue(result.message.contains("normal sync"))
+        assertTrue(result.message.contains("delete"))
+        assertEquals(0, fakeBackend.uploadCallCount)
     }
 
     @Test
-    fun `force push conflict returns failure without retry`() = runBlocking {
+    fun `seed cloud propagates upload conflict without retry`() = runBlocking {
         insertSong(fileName = "a.mp3", filePath = "/a/a.mp3", duration = 50_000L)
-        fakeBackend.downloadResult = SyncResult.Success(
-            report = SyncReport(),
-            snapshot = SyncSnapshot(deviceId = "remote", exportedAt = 100L),
-            remoteRevision = "sha-current"
-        )
+        fakeBackend.downloadResult = SyncResult.Failure("Not found", code = SyncErrorCode.NOT_FOUND)
         fakeBackend.uploadResult = SyncResult.Failure(
             "Conflict",
             code = SyncErrorCode.CONFLICT
         )
 
-        val result = repo.forcePushLocalToCloud()
+        val result = repo.seedCloudFromLocal()
 
         assertTrue("Expected Failure", result is SyncDataManagementResult.Failure)
         assertEquals(SyncErrorCode.CONFLICT, (result as SyncDataManagementResult.Failure).code)
         assertEquals(1, fakeBackend.uploadCallCount)
-        assertEquals("sha-current", fakeBackend.lastExpectedRevision)
+        assertNull(fakeBackend.lastExpectedRevision)
         assertEquals("sha-old", fakeMetadata.lastRemoteRevision)
     }
 
@@ -642,8 +638,137 @@ class SyncDataManagementRepositoryTest {
     @Test
     fun `local repository rejects remote operations without backend`() = runBlocking {
         assertTrue(localRepo.preview() is SyncDataManagementResult.Failure)
-        assertTrue(localRepo.forcePushLocalToCloud() is SyncDataManagementResult.Failure)
+        assertTrue(localRepo.seedCloudFromLocal() is SyncDataManagementResult.Failure)
         assertTrue(localRepo.deleteCloudSnapshot() is SyncDataManagementResult.Failure)
+    }
+
+    // ===================================================================
+    // 6. playback-stat source device management
+    // ===================================================================
+
+    @Test
+    fun `lists source devices with aggregated effective contributions`() = runBlocking {
+        seedStatsSources()
+
+        val result = localRepo.getLocalPlaybackStatsSourceDevices()
+
+        assertTrue(result is SyncDataManagementResult.Success)
+        val sources = (result as SyncDataManagementResult.Success).data
+        assertEquals(2, sources.size)
+        val current = sources.first { it.isCurrentDevice }
+        val other = sources.first { it.deviceId == "desktop" }
+        assertEquals(1_500L, current.contributedListenMs)
+        assertTrue(current.hasEffectiveContributions)
+        assertEquals("android", current.platform)
+        assertEquals("Desktop", other.displayName)
+        assertEquals(2_500L, other.contributedListenMs)
+        assertTrue(other.hasEffectiveContributions)
+    }
+
+    @Test
+    fun `deleting current source rotates generation and removes effective contribution`() = runBlocking {
+        seedStatsSources()
+        val before = listenStatsRepository.exportLocalPayload()
+
+        val result = localRepo.deleteLocalPlaybackStatsSourceDeviceHistories(
+            setOf(before.currentDeviceId)
+        )
+
+        assertTrue(result is SyncDataManagementResult.Success)
+        val current = (result as SyncDataManagementResult.Success).data.first { it.isCurrentDevice }
+        val after = listenStatsRepository.exportLocalPayload()
+        assertTrue(after.currentGeneration > before.currentGeneration)
+        assertEquals(0L, current.contributedListenMs)
+        assertTrue(!current.hasEffectiveContributions)
+    }
+
+    @Test
+    fun `deleting another source suppresses its contribution without rotating current generation`() = runBlocking {
+        seedStatsSources()
+        val before = listenStatsRepository.exportLocalPayload()
+
+        val result = localRepo.deleteLocalPlaybackStatsSourceDeviceHistories(setOf("desktop"))
+
+        assertTrue(result is SyncDataManagementResult.Success)
+        val sources = (result as SyncDataManagementResult.Success).data
+        val desktop = sources.first { it.deviceId == "desktop" }
+        val current = sources.first { it.isCurrentDevice }
+        assertEquals(0L, desktop.contributedListenMs)
+        assertTrue(!desktop.hasEffectiveContributions)
+        assertTrue(desktop.allKnownGenerationsRemoved)
+        assertEquals(before.currentGeneration, current.currentGeneration)
+        assertEquals(1_500L, current.contributedListenMs)
+    }
+
+    @Test
+    fun `source device summary includes unresolved contributions`() = runBlocking {
+        seedStatsSources(includeUnresolvedDesktopGeneration = true)
+        val payload = listenStatsRepository.exportLocalPayload()
+        listenStatsRepository.applyLocalPayload(payload.copy(unresolvedNodes = payload.unresolvedNodes +
+            ListenStatsUnresolvedNode("structurally-broken", 0L, "{}")), trackMutation = false)
+
+        val result = localRepo.getLocalPlaybackStatsSourceDevices()
+
+        assertTrue(result is SyncDataManagementResult.Success)
+        val desktop = (result as SyncDataManagementResult.Success).data.first { it.deviceId == "desktop" }
+        assertEquals(5_500L, desktop.contributedListenMs)
+        assertTrue(desktop.hasEffectiveContributions)
+    }
+
+    @Test
+    fun `source device summary collapses duplicate unresolved cumulative revisions`() = runBlocking {
+        val payload = listenStatsRepository.exportLocalPayload()
+        val older = SyncPlaybackStatsSong(
+            SyncSongIdentity("missing.mp3", 60_000L),
+            listOf(SyncPlaybackStatsContribution("desktop", 3L, mapOf("2026-01-01" to 2_000L), 100L))
+        )
+        val newer = older.copy(contributions = listOf(
+            SyncPlaybackStatsContribution("desktop", 3L, mapOf("2026-01-01" to 5_000L), 400L)
+        ))
+        listenStatsRepository.applyLocalPayload(payload.copy(unresolvedNodes = listOf(
+            ListenStatsUnresolvedNode("missing.mp3", 60_000L, com.google.gson.Gson().toJson(older)),
+            ListenStatsUnresolvedNode("missing.mp3", 60_000L, com.google.gson.Gson().toJson(newer))
+        )), trackMutation = false)
+
+        val result = localRepo.getLocalPlaybackStatsSourceDevices()
+
+        assertTrue(result is SyncDataManagementResult.Success)
+        val desktop = (result as SyncDataManagementResult.Success).data.single { it.deviceId == "desktop" }
+        assertEquals(5_400L, desktop.contributedListenMs)
+    }
+
+    @Test
+    fun `source device summary ignores semantically invalid unresolved contributions`() = runBlocking {
+        val invalidDate = """{"song":{"fileName":"bad-date.mp3","durationMs":1,"normalizedFileName":"bad-date.mp3"},"contributions":[{"deviceId":"desktop","generation":0,"datedListenMs":{"not-a-date":1}}]}"""
+        val negativeCumulative = """{"song":{"fileName":"negative-total.mp3","durationMs":1,"normalizedFileName":"negative-total.mp3"},"contributions":[{"deviceId":"desktop","generation":0,"undatedListenMs":-1}]}"""
+        val negativeGeneration = """{"song":{"fileName":"negative-generation.mp3","durationMs":1,"normalizedFileName":"negative-generation.mp3"},"contributions":[{"deviceId":"desktop","generation":-1,"datedListenMs":{}}]}"""
+        val payload = listenStatsRepository.exportLocalPayload()
+        listenStatsRepository.applyLocalPayload(payload.copy(unresolvedNodes = listOf(
+            ListenStatsUnresolvedNode("bad-date.mp3", 1L, invalidDate),
+            ListenStatsUnresolvedNode("negative-total.mp3", 1L, negativeCumulative),
+            ListenStatsUnresolvedNode("negative-generation.mp3", 1L, negativeGeneration)
+        )), trackMutation = false)
+
+        val result = localRepo.getLocalPlaybackStatsSourceDevices()
+
+        assertTrue(result is SyncDataManagementResult.Success)
+        val sources = (result as SyncDataManagementResult.Success).data
+        assertTrue(sources.none { it.deviceId == "desktop" })
+    }
+
+    @Test
+    fun `deleting another source tombstones unresolved generations too`() = runBlocking {
+        seedStatsSources(includeUnresolvedDesktopGeneration = true)
+
+        val result = localRepo.deleteLocalPlaybackStatsSourceDeviceHistories(setOf("desktop"))
+
+        assertTrue(result is SyncDataManagementResult.Success)
+        val desktop = (result as SyncDataManagementResult.Success).data.first { it.deviceId == "desktop" }
+        val payload = listenStatsRepository.exportLocalPayload()
+        val desktopTombstones = payload.tombstones.filter { it.deviceId == "desktop" }.map { it.generation }.toSet()
+        assertEquals(setOf(3L, 4L), desktopTombstones)
+        assertEquals(0L, desktop.contributedListenMs)
+        assertTrue(desktop.allKnownGenerationsRemoved)
     }
 
     @Test
@@ -675,7 +800,7 @@ class SyncDataManagementRepositoryTest {
     }
 
     // ===================================================================
-    // 6. getLocalSummary returns correct counts
+    // 7. getLocalSummary returns correct counts
     // ===================================================================
 
     @Test
@@ -704,10 +829,65 @@ class SyncDataManagementRepositoryTest {
         assertEquals(1, summary.ratingCount)
     }
 
+    private suspend fun seedStatsSources(includeUnresolvedDesktopGeneration: Boolean = false) {
+        val initial = listenStatsRepository.exportLocalPayload()
+        val currentId = initial.currentDeviceId
+        listenStatsRepository.applyLocalPayload(
+            initial.copy(
+                devices = initial.devices + ListenStatsDevice(
+                    deviceId = "desktop",
+                    displayName = "Desktop",
+                    platform = "windows",
+                    currentGeneration = 3L
+                ),
+                songs = listOf(
+                    ListenStatsSongNode(
+                        identityKey = "one|1",
+                        normalizedFileName = "one.mp3",
+                        contributions = listOf(
+                            ListenStatsContribution(
+                                deviceId = currentId,
+                                generation = initial.currentGeneration,
+                                dailyListenMs = mapOf("2026-01-01" to 1_000L),
+                                undatedListenMs = 500L
+                            ),
+                            ListenStatsContribution(
+                                deviceId = "desktop",
+                                generation = 3L,
+                                dailyListenMs = mapOf("2026-01-01" to 2_000L),
+                                undatedListenMs = 500L
+                            )
+                        )
+                    )
+                ),
+                unresolvedNodes = if (includeUnresolvedDesktopGeneration) {
+                    listOf(
+                        ListenStatsUnresolvedNode(
+                            normalizedFileName = "ghost.mp3",
+                            durationMs = 10L,
+                            payloadJson = com.google.gson.Gson().toJson(
+                                SyncPlaybackStatsSong(
+                                    SyncSongIdentity("ghost.mp3", 10L),
+                                    listOf(
+                                        SyncPlaybackStatsContribution(
+                                            deviceId = "desktop",
+                                            generation = 4L,
+                                            datedListenMs = mapOf("2026-01-02" to 3_000L)
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                } else {
+                    initial.unresolvedNodes
+                }
+            )
+        )
+    }
+
     private fun repositoryWithUnwritableStatsFile(): SyncDataManagementRepository {
-        val statsDirectory = File.createTempFile("listen_stats_directory", "").apply {
-            delete()
-            mkdir()
+        val statsParentAsFile = File.createTempFile("listen_stats_parent", ".tmp").apply {
             deleteOnExit()
         }
         return SyncDataManagementRepository(
@@ -718,7 +898,7 @@ class SyncDataManagementRepositoryTest {
             backend = fakeBackend,
             metadataStore = fakeMetadata,
             playlistIdMapper = mapper,
-            listenStatsRepository = ListenStatsRepository(statsDirectory)
+            listenStatsRepository = ListenStatsRepository(File(statsParentAsFile, "listen_stats.json"))
         )
     }
 

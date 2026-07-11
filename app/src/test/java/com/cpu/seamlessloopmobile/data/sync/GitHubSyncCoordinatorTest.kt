@@ -38,6 +38,9 @@ class GitHubSyncCoordinatorTest {
     @Test
     fun `initial sync uploads local when remote not found`() = kotlinx.coroutines.runBlocking {
         backend.downloadResult = SyncResult.Failure("Not found", code = SyncErrorCode.NOT_FOUND)
+        snapshotStore.exportResult = SyncSnapshot(
+            deviceId = "local", exportedAt = 1L, playbackStats = SyncPlaybackStats()
+        )
         backend.uploadResult = SyncResult.Success(
             report = SyncReport(),
             remoteRevision = "sha-initial"
@@ -52,10 +55,23 @@ class GitHubSyncCoordinatorTest {
         // Verify upload was called with local snapshot
         assertEquals(1, backend.uploadCallCount)
         assertEquals(1, backend.downloadCallCount)
+        assertEquals(SYNC_SCHEMA_VERSION_V2, backend.lastUploadedSnapshot?.schemaVersion)
+        assertNotNull(backend.lastUploadedSnapshot?.playbackStats)
 
         // Verify metadata was saved
         assertEquals("sha-initial", metadataStore.lastRemoteRevision)
         assertTrue(metadataStore.lastSyncTime > 0)
+    }
+
+    @Test
+    fun `initial sync uploads schema 2 snapshot with playback statistics`() = kotlinx.coroutines.runBlocking {
+        backend.downloadResult = SyncResult.Failure("Not found", code = SyncErrorCode.NOT_FOUND)
+
+        val outcome = coordinator.syncNow()
+
+        assertTrue(outcome is SyncOutcome.Success)
+        assertEquals(SYNC_SCHEMA_VERSION_V2, backend.lastUploadedSnapshot?.schemaVersion)
+        assertTrue(backend.lastUploadedSnapshot?.playbackStats != null)
     }
 
     @Test
@@ -84,6 +100,21 @@ class GitHubSyncCoordinatorTest {
 
         assertTrue("Expected SyncOutcome.Failure", outcome is SyncOutcome.Failure)
         assertEquals(SyncErrorCode.NETWORK, (outcome as SyncOutcome.Failure).code)
+        assertEquals(0, backend.uploadCallCount)
+    }
+
+    @Test
+    fun `unsupported remote schema is rejected before merge or upload`() = kotlinx.coroutines.runBlocking {
+        backend.downloadResult = SyncResult.Success(
+            SyncReport(),
+            SyncSnapshot(schemaVersion = 999, deviceId = "remote", exportedAt = 1L),
+            remoteRevision = "remote-sha"
+        )
+
+        val outcome = coordinator.syncNow()
+
+        assertTrue(outcome is SyncOutcome.Failure)
+        assertEquals(SyncErrorCode.INVALID_REMOTE, (outcome as SyncOutcome.Failure).code)
         assertEquals(0, backend.uploadCallCount)
     }
 
@@ -130,9 +161,24 @@ class GitHubSyncCoordinatorTest {
         val uploadedSnapshot = backend.lastUploadedSnapshot
         assertNotNull(uploadedSnapshot)
         assertEquals(2, uploadedSnapshot?.playlists?.size)
+        assertEquals(SYNC_SCHEMA_VERSION_V2, uploadedSnapshot?.schemaVersion)
+        assertNotNull(uploadedSnapshot?.playbackStats)
 
         // Verify metadata saved
         assertEquals("new-sha-after-merge", metadataStore.lastRemoteRevision)
+    }
+
+    @Test
+    fun `normal merge upload emits schema 2 snapshot with playback statistics`() = kotlinx.coroutines.runBlocking {
+        backend.downloadResult = SyncResult.Success(
+            SyncReport(), SyncSnapshot(deviceId = "remote", exportedAt = 200L), remoteRevision = "remote-sha"
+        )
+
+        val outcome = coordinator.syncNow()
+
+        assertTrue(outcome is SyncOutcome.Success)
+        assertEquals(SYNC_SCHEMA_VERSION_V2, backend.lastUploadedSnapshot?.schemaVersion)
+        assertTrue(backend.lastUploadedSnapshot?.playbackStats != null)
     }
 
     // -------------------------------------------------------------------
@@ -200,9 +246,36 @@ class GitHubSyncCoordinatorTest {
         assertEquals(2, backend.uploadCallCount)
         // Should have downloaded twice (initial + re-download)
         assertEquals(2, backend.downloadCallCount)
+        assertTrue(backend.uploadedSnapshots.all {
+            it.schemaVersion == SYNC_SCHEMA_VERSION_V2 && it.playbackStats != null
+        })
 
         // Verify metadata saved
         assertEquals("final-sha", metadataStore.lastRemoteRevision)
+    }
+
+    @Test
+    fun `conflict retry emits schema 2 for every upload`() = kotlinx.coroutines.runBlocking {
+        backend.downloadResults = mutableListOf(
+            SyncResult.Success(
+                SyncReport(), SyncSnapshot(deviceId = "remote", exportedAt = 1L), remoteRevision = "sha-1"
+            ),
+            SyncResult.Success(
+                SyncReport(), SyncSnapshot(deviceId = "remote", exportedAt = 2L), remoteRevision = "sha-2"
+            )
+        )
+        backend.uploadResults = mutableListOf(
+            SyncResult.Failure("Conflict", code = SyncErrorCode.CONFLICT),
+            SyncResult.Success(SyncReport(), remoteRevision = "sha-3")
+        )
+
+        val outcome = coordinator.syncNow()
+
+        assertTrue(outcome is SyncOutcome.Success)
+        assertEquals(2, backend.uploadedSnapshots.size)
+        assertTrue(backend.uploadedSnapshots.all {
+            it.schemaVersion == SYNC_SCHEMA_VERSION_V2 && it.playbackStats != null
+        })
     }
 
     @Test
@@ -251,6 +324,9 @@ class GitHubSyncCoordinatorTest {
         assertTrue("Expected SyncOutcome.Failure", outcome is SyncOutcome.Failure)
         assertEquals(SyncErrorCode.CONFLICT, (outcome as SyncOutcome.Failure).code)
         assertEquals(3, backend.uploadCallCount) // 1 initial + 2 retries
+        assertTrue(backend.uploadedSnapshots.all {
+            it.schemaVersion == SYNC_SCHEMA_VERSION_V2 && it.playbackStats != null
+        })
     }
 
     // -------------------------------------------------------------------
@@ -284,6 +360,27 @@ class GitHubSyncCoordinatorTest {
         // Verify no upload occurred
         assertEquals(0, backend.uploadCallCount)
         // Verify no snapshot was applied
+        assertEquals(null, snapshotStore.applyCalledCount)
+    }
+
+    @Test
+    fun `playback stats delta during sync aborts before apply and upload`() = kotlinx.coroutines.runBlocking {
+        backend.downloadResult = SyncResult.Success(
+            report = SyncReport(),
+            snapshot = SyncSnapshot(deviceId = "remote", exportedAt = 200L),
+            remoteRevision = "remote-sha"
+        )
+        snapshotStore.exportResult = SyncSnapshot(
+            deviceId = "local-device",
+            exportedAt = 100L,
+            playbackStats = SyncPlaybackStats()
+        )
+        snapshotStore.onExport = { metadataStore.markMutation() }
+
+        val outcome = coordinator.syncNow()
+
+        assertTrue(outcome is SyncOutcome.LocalMutationDuringSync)
+        assertEquals(0, backend.uploadCallCount)
         assertEquals(null, snapshotStore.applyCalledCount)
     }
 
@@ -323,6 +420,7 @@ class GitHubSyncCoordinatorTest {
         var downloadCallCount = 0
         var uploadCallCount = 0
         var lastUploadedSnapshot: SyncSnapshot? = null
+        val uploadedSnapshots = mutableListOf<SyncSnapshot>()
         var lastExpectedRevision: String? = null
 
         override suspend fun downloadSnapshot(snapshotId: String?): SyncResult {
@@ -339,6 +437,7 @@ class GitHubSyncCoordinatorTest {
         ): SyncResult {
             uploadCallCount++
             lastUploadedSnapshot = snapshot
+            uploadedSnapshots += snapshot
             lastExpectedRevision = expectedRevision
             return when {
                 uploadResults.isNotEmpty() -> uploadResults.removeAt(0)
@@ -362,12 +461,17 @@ class GitHubSyncCoordinatorTest {
         var applyCalledCount: Int? = null
         var lastAppliedSnapshot: SyncSnapshot? = null
         var applyReport: SyncReport = SyncReport()
+        var onExport: (suspend () -> Unit)? = null
 
         override suspend fun exportSnapshot(deviceId: String, now: Long): SyncSnapshot {
+            onExport?.invoke()
             return exportResult.copy(deviceId = deviceId, exportedAt = now)
         }
 
-        override suspend fun applySnapshot(snapshot: SyncSnapshot): SyncReport {
+        override suspend fun applySnapshot(
+            snapshot: SyncSnapshot,
+            trackLocalMutation: Boolean
+        ): SyncReport {
             applyCalledCount = (applyCalledCount ?: 0) + 1
             lastAppliedSnapshot = snapshot
             return applyReport

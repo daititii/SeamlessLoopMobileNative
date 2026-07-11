@@ -2,6 +2,7 @@ package com.cpu.seamlessloopmobile.audio.stats
 
 import android.os.SystemClock
 import com.cpu.seamlessloopmobile.data.stats.ListenStatsRepository
+import com.cpu.seamlessloopmobile.data.stats.ListenStatsWriteFence
 import com.cpu.seamlessloopmobile.data.stats.TrackStat
 import com.cpu.seamlessloopmobile.model.Song
 
@@ -32,9 +33,12 @@ class PlaybackStatsTracker(
         private set
 
     private var currentStat: TrackStat? = null
+    // This is always the exact recording identity derived from the current Song;
+    // it must not use a bound presentation identity from allStats.
     private var currentIdentityKey: String? = null
     private var sessionStartElapsed: Long = 0L
     private var accumulatedThisSession: Long = 0L
+    private var writeFence: ListenStatsWriteFence? = null
 
     // --- Public API ----------------------------------------------------------
 
@@ -58,6 +62,7 @@ class PlaybackStatsTracker(
         if (wasTracking) {
             isTracking = true
             sessionStartElapsed = timeSource()
+            writeFence = captureWriteFence()
         }
     }
 
@@ -71,6 +76,7 @@ class PlaybackStatsTracker(
             if (currentStat != null && !isTracking) {
                 isTracking = true
                 sessionStartElapsed = timeSource()
+                writeFence = captureWriteFence()
             }
         } else {
             if (isTracking) {
@@ -100,6 +106,7 @@ class PlaybackStatsTracker(
         isTracking = false
         currentStat = null
         currentIdentityKey = null
+        writeFence = null
     }
 
     /**
@@ -108,6 +115,7 @@ class PlaybackStatsTracker(
      */
     fun onStatsCleared() {
         accumulatedThisSession = 0L
+        writeFence = captureWriteFence()
         if (isTracking) {
             sessionStartElapsed = timeSource()
         }
@@ -133,9 +141,13 @@ class PlaybackStatsTracker(
 
         if (delta > 0L) {
             kotlinx.coroutines.runBlocking {
-                repository.recordListenDeltaNow(stat, delta)
+                repository.recordListenDeltaNow(stat, delta, writeFence)
             }
         }
+    }
+
+    private fun captureWriteFence(): ListenStatsWriteFence = kotlinx.coroutines.runBlocking {
+        repository.captureWriteFence()
     }
 
     private fun buildTrackStat(song: Song): TrackStat {
@@ -151,6 +163,7 @@ class PlaybackStatsTracker(
             coverPath = song.coverPath,
             durationMs = durationMs,
             filePath = filePath,
+            // Playback recording remains keyed by the exact wire identity.
             identityKey = TrackStat.identityKey(fileName, durationMs, filePath)
         )
     }

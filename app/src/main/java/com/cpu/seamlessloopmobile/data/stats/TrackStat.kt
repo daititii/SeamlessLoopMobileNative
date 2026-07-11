@@ -7,8 +7,10 @@ import java.time.temporal.TemporalAdjusters
 /**
  * Immutable snapshot of a single song's listening statistics.
  *
- * This is persisted outside Room as JSON and is rebuilt from [Song] data
- * on first encounter.
+ * This is a presentation snapshot rebuilt from the persisted contribution
+ * store. Playback recording uses the exact wire identity derived from the
+ * current song; bound presentation rows may instead use a `bound-song:<id>`
+ * identity after aggregation.
  *
  * @property songId       Room SongEntity id (0 if unknown).
  * @property displayName  Human-readable song title.
@@ -23,9 +25,10 @@ import java.time.temporal.TemporalAdjusters
  * @property lastPlayedAt Epoch millis of the most recent listen session end.
  * @property firstPlayedAt Epoch millis of the first-ever listen session end.
  * @property filePath     Absolute file path on disk.
- * @property identityKey  Stable key for matching across rescans.
- *                        `"$fileName|$durationMs"` when [durationMs] > 0,
- *                        otherwise falls back to [filePath].
+ * @property identityKey  Presentation identity. Exact recording identities
+ *                        use `"$fileName|$durationMs"` when [durationMs] > 0,
+ *                        otherwise [filePath]. Aggregated bound rows use
+ *                        `"bound-song:<songId>"`.
  */
 data class TrackStat(
     val songId: Long = 0L,
@@ -74,14 +77,23 @@ data class TrackStat(
     }
 
     companion object {
+        private const val BOUND_PRESENTATION_ID_PREFIX = "bound-song:"
+
         /**
-         * Builds a stable identity key for [fileName] and [durationMs].
-         * When duration is known (> 0) the key is `"$fileName|$durationMs"`,
-         * which survives rescans as long as the file's name and length stay
-         * the same. Falls back to [filePath] when duration is unavailable.
+         * Builds the exact recording identity for [fileName] and [durationMs].
+         * The recording identity is the normalized filename and duration when
+         * the duration is positive. Falls back to [filePath] otherwise.
          */
         fun identityKey(fileName: String, durationMs: Long, filePath: String): String {
-            return if (durationMs > 0L) "$fileName|$durationMs" else filePath
+            return if (durationMs > 0L) {
+                "${normalizedStatsFileName(fileName)}|$durationMs"
+            } else {
+                filePath
+            }
         }
+
+        /** Returns the explicit identity used for an aggregated bound row. */
+        fun boundPresentationIdentityKey(songId: Long): String =
+            "$BOUND_PRESENTATION_ID_PREFIX$songId"
     }
 }

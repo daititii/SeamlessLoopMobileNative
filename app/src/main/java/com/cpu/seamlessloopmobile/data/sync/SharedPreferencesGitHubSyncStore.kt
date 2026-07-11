@@ -147,5 +147,15 @@ class SharedPreferencesGitHubSyncStore(context: Context) :
         private const val KEY_LAST_SYNC_TIME = "last_sync_time"
         private const val KEY_LAST_REMOTE_REVISION = "last_remote_revision"
         private const val KEY_MUTATION_VERSION = "mutation_version"
+
+        fun getOrCreateDeviceId(context: Context): String {
+            val prefs = context.applicationContext
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val existing = prefs.getString(KEY_DEVICE_ID, null)
+            if (existing != null) return existing
+            val newId = UUID.randomUUID().toString()
+            prefs.edit().putString(KEY_DEVICE_ID, newId).apply()
+            return newId
+        }
     }
 }

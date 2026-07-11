@@ -6,7 +6,7 @@ Android 端高性能**无缝循环音频播放器**，采用 Kotlin + C++ (Oboe)
 
 当前界面参考了 NeriPlayer 的本地播放器体验，并结合本项目的无缝循环定位重新实现：底部主导航、毛玻璃迷你播放器、封面展示、独立搜索/设置/播放统计页面，以及统一的弹出式页面切换动画。
 
-同时新增 GitHub 同步：可通过 GitHub Contents API 在单个 JSON 快照中同步歌单、循环点和评分；自动同步默认关闭，用户开启后会在网络可用时由后台周期任务同步。
+同时新增 GitHub 同步：可通过 GitHub Contents API 在单个 JSON 快照中同步歌单、循环点、评分和播放统计；自动同步默认关闭，用户开启后会在网络可用时由后台周期任务同步。
 
 ![a0e7472702aab23e61a4fb1f948aa075](./image/README/a0e7472702aab23e61a4fb1f948aa075.jpg)
 
@@ -20,7 +20,7 @@ Android 端高性能**无缝循环音频播放器**，采用 Kotlin + C++ (Oboe)
 - **Room 3NF 数据持久化**：精心设计的 Room 2.7.0-alpha11 规范 3NF 数据库，支持双指纹去重（优先匹配 `FileName+Duration`，兜底 `FilePath` 匹配）。
 - **现代播放器界面**：Compose + Material3 构建媒体库、搜索、设置、播放统计和全屏播放页；底部 `MiniPlayer` 支持 Haze 毛玻璃、封面、进度与常用播放控制。
 - **真实收听时长统计**：只统计处于播放状态的墙钟收听时间，按累计时长排行；不统计播放次数和循环次数，文件缺失时仍保留历史记录。
-- **GitHub 同步**：将歌单、循环点和评分同步到 GitHub 仓库中的单个 JSON 文件；支持手动同步、云端/本机摘要预览、用本机数据覆盖云端、删除云端快照，以及默认关闭的 WorkManager 自动同步。
+- **GitHub 同步**：将歌单、循环点、评分和播放统计同步到 GitHub 仓库中的单个 JSON 文件；支持手动同步、数据摘要、来源设备管理、删除云端快照，以及默认关闭的 WorkManager 自动同步。
 - **封面与音频格式展示**：扫描时写入封面 URI、MIME、采样率和码率，在列表、迷你播放器和播放页中统一展示。
 - **主题与触感反馈**：支持跟随系统/浅色/深色主题偏好，并可在设置中开关按钮触感反馈。
 
@@ -65,11 +65,17 @@ seamless_loop_pc_export_yyyyMMdd_HHmmss.db
 
 > [!TIP]
 > **点击底部“设置”，进入“GitHub 同步”。**
-> - 填写 GitHub Token、Owner、Repository、Branch 和同步文件 Path 后保存配置。
-> - 点击 **立即同步** 可手动同步歌单、循环点和评分。
-> - 开启 **自动同步** 后，APP 会在网络可用时约每小时后台同步一次；默认关闭。
+1. 在 GitHub 创建一个 token，并只授予目标仓库的 Contents 读写权限。
+2. 在 App 中填写并保存 Token、Owner、Repository、Branch 和同步文件 Path。默认 path 为 `seamless-loop/sync.json`。
+3. 第一次使用时，若云端文件不存在，可点击 **立即同步**；也可在数据管理中执行“初始化云端”。云端文件已存在时，使用普通 **立即同步** 做双向合并，不会无条件用本机覆盖云端。
+4. 可选开启 **自动同步**。任务默认关闭，网络可用时由 WorkManager 约每小时执行一次。
+5. 在 **数据管理** 中查看本机/云端摘要，清理歌单、循环点、评分或播放统计，也可以按来源设备删除播放统计历史；删除云端快照前请确认仓库内容。
 
-GitHub 同步使用仓库内的单个 JSON 快照文件（默认 `seamless-loop/sync.json`），不会上传音频文件本体，也不会同步播放统计、播放队列、封面/格式展示字段或 App 设置。循环点 `0/0` 和评分 `0` 会被视为“未设置”，不会覆盖已有的实质数据。
+同步内容包括歌单、循环点、评分和播放统计。不会上传音频文件、播放队列/位置、封面与音频格式展示字段或 App 设置。循环点 `0/0` 与评分 `0` 表示未设置，不会清空已有实质值。
+
+播放统计严格使用“规范化 basename + 精确时长”的线上身份，本地重新扫描时才按容差规则重绑定；绑定不会改写云端身份。完整规则见 [播放统计与 GitHub 同步 Schema V2](./docs/2026-07-12_播放统计与GitHub同步SchemaV2.md)。
+
+如果旧文件或手工 JSON 导致 `schemaVersion`、`playbackStatistics`、日期或规范化文件名校验失败，请先备份并检查 JSON。schema 2 以外的快照不能直接同步；云端已存在时不要使用 seed，改用普通同步或先明确删除云端文件。
 
 
 
@@ -87,15 +93,15 @@ GitHub 同步使用仓库内的单个 JSON 快照文件（默认 `seamless-loop/
 ### ⌨️ 常用开发命令
 - **编译 Debug 包**：
   ```powershell
-  .\gradlew.bat assembleDebug
+  .\gradlew.bat -q assembleDebug
   ```
 - **运行单元测试**：
   ```powershell
-  .\gradlew.bat testDebugUnitTest
+  .\gradlew.bat -q testDebugUnitTest
   ```
 - **运行特定测试（例如播放模式测试）**：
   ```powershell
-  .\gradlew.bat testDebugUnitTest --tests "com.cpu.seamlessloopmobile.viewmodel.PlayModeTest"
+  .\gradlew.bat -q testDebugUnitTest --tests "com.cpu.seamlessloopmobile.viewmodel.PlayModeTest"
   ```
 - **一键调试部署 (需 Root 设备)**：
   运行根目录下的部署脚本：
@@ -110,6 +116,6 @@ GitHub 同步使用仓库内的单个 JSON 快照文件（默认 `seamless-loop/
 1. **构建天坑**：`app/build.gradle.kts` 中 `kotlin-android` 插件保持注释；Compose compiler 插件不要删除。
 2. **JNI / fopen 路径限制**：Native 音频分析无法直接读取 `content://`，必须先拷贝到私有 cache 目录。
 3. **UI / Haze 层级**：页面内容是唯一 Haze source；底部 `MiniPlayer` 是上层 `hazeChild` sibling，不能放进 source 内。
-4. **播放统计语义**：只按真实收听时长排序，不统计播放次数或循环次数。
+4. **播放统计与 GitHub schema-v2**：统计按真实收听时长累计；线上身份、代际贡献和本地重绑定规则见 [权威文档](./docs/2026-07-12_播放统计与GitHub同步SchemaV2.md)。
 5. **Room Schema**：Room 9 张实体表和 3 个 DAO 的详细映射图。
 6. **包结构速查**：子模块（audio, data, db, viewmodel, model, scanner, jni 等）职责定义。

@@ -2,6 +2,7 @@ package com.cpu.seamlessloopmobile.viewmodel
 
 import com.cpu.seamlessloopmobile.data.sync.SyncDataManagementPreview
 import com.cpu.seamlessloopmobile.data.sync.SyncReport
+import com.cpu.seamlessloopmobile.data.sync.PlaybackStatsSourceDeviceSummary
 
 /**
  * GitHub 同步 UI 状态。
@@ -25,6 +26,7 @@ data class GitHubSyncUiState(
     val isManagementLoading: Boolean = false,
     val isManagementOperationRunning: Boolean = false,
     val managementPreview: SyncDataManagementPreview? = null,
+    val playbackStatsSourceDevices: List<PlaybackStatsSourceDeviceSummary> = emptyList(),
     val managementStatusMessage: String = "",
     val managementErrorMessage: String = ""
 ) {

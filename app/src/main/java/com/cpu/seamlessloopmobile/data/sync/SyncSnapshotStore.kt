@@ -22,7 +22,10 @@ interface SyncSnapshotStore {
     /**
      * 将合并后的快照写回本地存储。
      * @param snapshot 待应用的合并后快照
+     * @param trackLocalMutation Whether this externally initiated apply should advance the
+     * local mutation fence. Coordinators disable it for their own merged apply so concurrent
+     * local writes remain distinguishable.
      * @return 应用操作的详细报告
      */
-    suspend fun applySnapshot(snapshot: SyncSnapshot): SyncReport
+    suspend fun applySnapshot(snapshot: SyncSnapshot, trackLocalMutation: Boolean = true): SyncReport
 }

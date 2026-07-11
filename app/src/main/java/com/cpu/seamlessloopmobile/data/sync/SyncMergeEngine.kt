@@ -27,7 +27,7 @@ class SyncMergeEngine(
      * - 如果远端为 null，直接返回本地快照（首次同步）
      * - 按歌单 ID 合并播放列表
      * - 按 fileName(忽略大小写)+durationMs 合并循环点和评分；totalSamples 仅作辅助匹配字段
-     * - 合并结果保留本地的 schemaVersion、deviceId、exportedAt
+     * - 合并结果使用 schema 2，并保留本地 deviceId、exportedAt
      *
      * @param remote 来自远端的快照（可能为 null）
      * @param local 本地导出的快照
@@ -36,7 +36,7 @@ class SyncMergeEngine(
     suspend fun merge(remote: SyncSnapshot?, local: SyncSnapshot): MergeResult {
         if (remote == null) {
             return MergeResult(
-                snapshot = local,
+                snapshot = local.prepareV2Egress(),
                 report = SyncReport(
                     playlistsUploaded = local.playlists.size,
                     loopPointsUploaded = local.loopPoints.size,
@@ -72,13 +72,14 @@ class SyncMergeEngine(
         )
 
         val mergedSnapshot = SyncSnapshot(
-            schemaVersion = local.schemaVersion,
+            schemaVersion = SYNC_SCHEMA_VERSION_V2,
             deviceId = local.deviceId,
             exportedAt = local.exportedAt,
             playlists = mergedPlaylists,
             loopPoints = mergedLoopPoints,
-            ratings = mergedRatings
-        )
+            ratings = mergedRatings,
+            playbackStats = mergePlaybackStatistics(remote.playbackStats, local.playbackStats)
+        ).canonicalized()
 
         val report = SyncReport(
             playlistsUploaded = local.playlists.size,
@@ -134,6 +135,86 @@ class SyncMergeEngine(
 
     private fun SyncPlaylist.withoutDuplicateStableItems(): SyncPlaylist =
         copy(items = items.distinctBy { it.song.stableKey() })
+
+    private fun mergePlaybackStatistics(
+        remote: SyncPlaybackStats,
+        local: SyncPlaybackStats
+    ): SyncPlaybackStats {
+        val tombstones = (remote.tombstones + local.tombstones)
+            .groupBy { it.deviceId to it.generation }
+            .map { (_, entries) -> entries.maxWith(compareBy<SyncPlaybackStatsTombstone> { it.tombstonedAtUtcMs }
+                .thenBy { it.tombstonedByDeviceId }.thenBy { it.reason }) }
+        val suppressed = tombstones.map { it.deviceId to it.generation }.toSet()
+        val devices = (remote.devices + local.devices)
+            .groupBy { it.deviceId }
+            .map { (_, entries) -> entries.reduce(::mergeDevice) }
+        val songs = (remote.songs + local.songs)
+            .groupBy { it.song.stableKey() }
+            .map { (_, entries) ->
+                val song = reducePlaybackSongIdentity(entries.map { it.song })
+                val contributions = entries.flatMap { it.contributions }
+                    .groupBy { it.deviceId to it.generation }
+                    .filterKeys { it !in suppressed }
+                    .map { (_, values) -> values.reduce(::mergeContribution) }
+                SyncPlaybackStatsSong(song, contributions)
+            }
+        return SyncPlaybackStats(
+            dateBucketBasis = SyncDateBucketBasis.SOURCE_LOCAL,
+            devices = devices,
+            songs = songs,
+            tombstones = tombstones
+        ).sorted()
+    }
+
+    private fun mergeDevice(
+        first: SyncPlaybackStatsDevice,
+        second: SyncPlaybackStatsDevice
+    ): SyncPlaybackStatsDevice {
+        val display = listOf(first, second).maxWith(
+            compareBy<SyncPlaybackStatsDevice> { it.displayNameUpdatedAtUtcMs }
+                .thenBy { it.displayName }
+        )
+        val platform = listOf(first, second).maxWith(
+            compareBy<SyncPlaybackStatsDevice> { it.lastSeenAtUtcMs }
+                .thenBy { it.platform }
+        )
+        return SyncPlaybackStatsDevice(
+            deviceId = first.deviceId,
+            displayName = display.displayName,
+            firstSeenAtUtcMs = minOf(first.firstSeenAtUtcMs, second.firstSeenAtUtcMs),
+            lastSeenAtUtcMs = maxOf(first.lastSeenAtUtcMs, second.lastSeenAtUtcMs),
+            currentGeneration = maxOf(first.currentGeneration, second.currentGeneration),
+            platform = platform.platform,
+            displayNameUpdatedAtUtcMs = maxOf(
+                first.displayNameUpdatedAtUtcMs,
+                second.displayNameUpdatedAtUtcMs
+            )
+        )
+    }
+
+    private fun mergeContribution(
+        first: SyncPlaybackStatsContribution,
+        second: SyncPlaybackStatsContribution
+    ): SyncPlaybackStatsContribution = SyncPlaybackStatsContribution(
+        deviceId = first.deviceId,
+        generation = first.generation,
+        datedListenMs = (first.datedListenMs.keys + second.datedListenMs.keys).associateWith { date ->
+            maxOf(first.datedListenMs[date] ?: 0L, second.datedListenMs[date] ?: 0L)
+        },
+        undatedListenMs = maxOf(first.undatedListenMs, second.undatedListenMs),
+        firstPlayedAtUtcMs = earliestMeaningful(
+            first.firstPlayedAtUtcMs,
+            second.firstPlayedAtUtcMs
+        ),
+        lastPlayedAtUtcMs = maxOf(first.lastPlayedAtUtcMs, second.lastPlayedAtUtcMs),
+        updatedAtUtcMs = maxOf(first.updatedAtUtcMs, second.updatedAtUtcMs)
+    )
+
+    private fun earliestMeaningful(first: Long, second: Long): Long = when {
+        first == 0L -> second
+        second == 0L -> first
+        else -> minOf(first, second)
+    }
 
     /**
      * 泛型条目合并辅助方法。

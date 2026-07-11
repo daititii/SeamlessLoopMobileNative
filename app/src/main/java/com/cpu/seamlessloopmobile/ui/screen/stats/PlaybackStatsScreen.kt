@@ -66,6 +66,8 @@ private data class PeriodTrackStat(
     val listenMs: Long
 )
 
+internal fun canNavigateToPlaybackStat(stat: TrackStat): Boolean = stat.songId > 0L
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlaybackStatsScreen(
@@ -245,8 +247,9 @@ private fun PlaybackStatRow(
     onClick: () -> Unit
 ) {
     val stat = periodStat.stat
-    val isStale = remember(stat.filePath) {
-        stat.filePath.isBlank() || !File(stat.filePath).exists()
+    val canNavigate = canNavigateToPlaybackStat(stat)
+    val isStale = remember(stat.songId, stat.filePath) {
+        stat.songId <= 0L || stat.filePath.isBlank() || !File(stat.filePath).exists()
     }
 
     Surface(
@@ -260,7 +263,7 @@ private fun PlaybackStatRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(
-                    if (!isStale) {
+                    if (canNavigate) {
                         Modifier.clickable(onClick = rememberHapticClick(buttonHapticFeedbackEnabled, onClick = onClick))
                     } else {
                         Modifier
@@ -328,7 +331,7 @@ private fun PlaybackStatRow(
                             tint = MaterialTheme.colorScheme.error
                         )
                         Text(
-                            text = "文件缺失",
+                            text = if (stat.songId <= 0L) "未绑定" else "文件缺失",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error
                         )
